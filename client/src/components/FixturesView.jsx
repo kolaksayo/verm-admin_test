@@ -92,7 +92,7 @@ export default function FixturesView() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const [leagues, setLeagues] = useState([]);
-  const [selectedLeague, setSelectedLeague] = useState('');
+  const [selectedLeague, setSelectedLeague] = useState({ id: '', name: '' });
   const [dateFilter, setDateFilter] = useState('all');
   const [customDate, setCustomDate] = useState(todayStr);
   const [fixtures, setFixtures] = useState([]);
@@ -128,7 +128,12 @@ export default function FixturesView() {
     setLoading(true);
     setError('');
     const dateRange = getDateRange();
-    api.get('/fixtures', { params: { page, limit: 20, leagueId: selectedLeague || undefined, ...dateRange } })
+    api.get('/fixtures', { params: {
+      page, limit: 20,
+      leagueId:   selectedLeague.id   || undefined,
+      leagueName: selectedLeague.name || undefined,
+      ...dateRange,
+    } })
       .then((res) => {
         setFixtures(res.data.fixtures);
         setTotal(res.data.total);
@@ -136,9 +141,9 @@ export default function FixturesView() {
       })
       .catch(() => setError('Failed to load fixtures'))
       .finally(() => setLoading(false));
-  }, [page, selectedLeague, dateFilter, customDate]);
+  }, [page, selectedLeague.id, selectedLeague.name, dateFilter, customDate]);
 
-  useEffect(() => { setPage(1); }, [selectedLeague, dateFilter, customDate]);
+  useEffect(() => { setPage(1); }, [selectedLeague.id, dateFilter, customDate]);
   useEffect(() => { fetchFixtures(); }, [fetchFixtures]);
 
   const pillCls = (active) => `px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
@@ -172,13 +177,16 @@ export default function FixturesView() {
 
         {leagues.length > 0 && (
           <select
-            value={selectedLeague}
-            onChange={(e) => setSelectedLeague(e.target.value)}
+            value={selectedLeague.id}
+            onChange={(e) => {
+              const opt = e.target.selectedOptions[0];
+              setSelectedLeague({ id: e.target.value, name: opt?.dataset?.name || '' });
+            }}
             className="px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
           >
             <option value="">All leagues</option>
             {leagues.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
+              <option key={l.id} value={l.id} data-name={l.name}>{l.name}</option>
             ))}
           </select>
         )}

@@ -24,14 +24,16 @@
 
 /* ── Light theme ─────────────────────────────────────────────────────────── */
 html.light {
-  --vs-bg:      248 248 252;
-  --vs-card:    255 255 255;
-  --vs-elevated: 241 241 246;
-  --vs-hover:   232 231 240;
-  --vs-text:    28 27 32;
-  --vs-text-2:  55 52 72;
-  --vs-text-3:  107 106 120;
-  --vs-border:  219 218 228;
+  --vs-bg:           248 248 252;
+  --vs-card:         255 255 255;
+  --vs-elevated:     241 241 246;
+  --vs-hover:        232 231 240;
+  --vs-text:         28 27 32;
+  --vs-text-2:       49 48 60;
+  --vs-text-3:       100 99 116;
+  --vs-border:       214 213 224;
+  /* purple-light becomes the full purple so links are readable on white */
+  --vs-purple-light: 119 92 223;
 }
 
 @layer base {

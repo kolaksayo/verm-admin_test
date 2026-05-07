@@ -74,36 +74,51 @@ router.get('/', auth, async (req, res) => {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
-    const leagueId = req.query.leagueId;
-    const dateFrom = req.query.dateFrom; // YYYY-MM-DD
-    const dateTo = req.query.dateTo;
+    const leagueId   = req.query.leagueId;
+    const leagueName = req.query.leagueName; // human-readable name from the dropdown
+    const dateFrom   = req.query.dateFrom;
+    const dateTo     = req.query.dateTo;
 
     const query = {};
 
     // League filter — fixtures embed leagues as {id: numericApiId, name: "..."}
-    // so we look up the league document first to get name + any numeric id
-    if (leagueId) {
-      let leagueOid;
-      try { leagueOid = new ObjectId(leagueId); } catch {}
-
+    // We match by name (most reliable) AND by ObjectId reference as fallback.
+    if (leagueId || leagueName) {
       const orClauses = [];
 
-      if (leagueOid) {
-        // Direct reference cases
-        orClauses.push({ league: leagueOid });
-        orClauses.push({ 'league._id': leagueOid });
+      // Name-based match (covers API-Sports embedded objects like {id:39, name:"Premier League"})
+      if (leagueName) {
+        const escaped = leagueName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const nameRe  = new RegExp(`^${escaped}$`, 'i');
+        orClauses.push({ 'league.name':       nameRe });
+        orClauses.push({ 'league.leagueName': nameRe });
+      }
 
-        // Look up the league document to get its name and any numeric API id
-        const leagueDoc = await db.collection('football_leagues').findOne({ _id: leagueOid });
-        if (leagueDoc) {
-          const leagueName = leagueDoc.leagueName || leagueDoc.name;
-          if (leagueName) {
-            orClauses.push({ 'league.name': leagueName });
-            orClauses.push({ 'league.leagueName': leagueName });
+      // ObjectId / numeric reference fallback
+      if (leagueId) {
+        let leagueOid;
+        try { leagueOid = new ObjectId(leagueId); } catch {}
+
+        if (leagueOid) {
+          orClauses.push({ league: leagueOid });
+          orClauses.push({ 'league._id': leagueOid });
+
+          // Look up the league doc for its numeric API id
+          const leagueDoc = await db.collection('football_leagues').findOne({ _id: leagueOid });
+          if (leagueDoc) {
+            for (const field of ['id', 'apiId', 'leagueId', 'footballId']) {
+              if (leagueDoc[field] != null) orClauses.push({ 'league.id': leagueDoc[field] });
+            }
+            // Also try name from the doc if no leagueName was sent
+            if (!leagueName) {
+              const n = leagueDoc.leagueName || leagueDoc.name;
+              if (n) {
+                const r = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                orClauses.push({ 'league.name': r });
+                orClauses.push({ 'league.leagueName': r });
+              }
+            }
           }
-          // API-Sports style numeric id stored on the league doc
-          if (leagueDoc.id != null) orClauses.push({ 'league.id': leagueDoc.id });
-          if (leagueDoc.apiId != null) orClauses.push({ 'league.id': leagueDoc.apiId });
         }
       }
 
