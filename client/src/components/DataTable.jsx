@@ -31,14 +31,29 @@ function cellValue(val) {
   return str.length > CELL_MAX_LEN ? str.slice(0, CELL_MAX_LEN) + '…' : str;
 }
 
-function pickColumns(docs) {
+// Collection-specific columns to show first (replaces _id as the leading column)
+const PRIORITY_COLUMNS = {
+  game_bet: ['bookingCode', 'gameLeagueId', 'currencyType', 'createdBy', 'status', 'createdAt'],
+  game_bet_leaderboard: ['user', 'gameBet', 'rank', 'points', 'correctPredictions', 'totalPredictions'],
+  users: ['username', 'email', 'name', 'isVerified', 'isActive', 'createdAt'],
+  transactions: ['type', 'amount', 'user', 'currencyType', 'status', 'createdAt'],
+  walletusers: ['user', 'currencyType', 'balance', 'updatedAt'],
+};
+
+function pickColumns(docs, collectionName) {
   if (!docs.length) return [];
-  const sample = docs[0];
-  const keys = Object.keys(sample);
-  const priority = ['_id'];
+  const keys = Object.keys(docs[0]);
+  const priority = PRIORITY_COLUMNS[collectionName];
+  if (priority) {
+    const present = priority.filter((k) => keys.includes(k));
+    const rest = keys.filter((k) => !present.includes(k) && k !== 'createdAt' && k !== 'updatedAt');
+    const timestamps = keys.filter((k) => k === 'createdAt' || k === 'updatedAt');
+    return [...present, ...rest, ...timestamps].slice(0, MAX_COLS);
+  }
+  const fallback = ['_id'];
   const timestamps = keys.filter((k) => k === 'createdAt' || k === 'updatedAt');
-  const rest = keys.filter((k) => !priority.includes(k) && !timestamps.includes(k));
-  return [...priority, ...rest, ...timestamps].slice(0, MAX_COLS);
+  const rest = keys.filter((k) => !fallback.includes(k) && !timestamps.includes(k));
+  return [...fallback, ...rest, ...timestamps].slice(0, MAX_COLS);
 }
 
 export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName, onUserClick }) {
@@ -74,7 +89,7 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
     });
   }, [docs, collectionName]);
 
-  const columns = pickColumns(docs);
+  const columns = pickColumns(docs, collectionName);
 
   const handleSort = (col) => {
     onSort(col, col === sort && order === 'desc' ? 'asc' : 'desc');

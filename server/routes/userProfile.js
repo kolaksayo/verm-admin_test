@@ -5,6 +5,10 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+function userQuery(userId, userIdStr) {
+  return { $or: [{ user: userId }, { user: userIdStr }, { userId: userId }, { userId: userIdStr }] };
+}
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const db = getDb();
@@ -17,23 +21,37 @@ router.get('/:id', auth, async (req, res) => {
     const user = await db.collection('users').findOne({ _id: userId });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Leaderboard — try ObjectId and string variants of user ID
+    // Leaderboard: try all common field name patterns and both ObjectId/string
     const leaderboardEntries = await db.collection('game_bet_leaderboard').find({
-      $or: [{ user: userId }, { user: userIdStr }, { userId: userId }, { userId: userIdStr }],
+      $or: [
+        { user: userId }, { user: userIdStr },
+        { userId: userId }, { userId: userIdStr },
+        { player: userId }, { player: userIdStr },
+        { participant: userId }, { participant: userIdStr },
+      ],
     }).toArray();
 
+    // Also find game_bets this user participated in (via participants array or createdBy)
+    const participatedBets = await db.collection('game_bet').find({
+      $or: [
+        { createdBy: userId }, { createdBy: userIdStr },
+        { participants: userId }, { participants: userIdStr },
+        { 'participants.user': userId }, { 'participants.user': userIdStr },
+        { 'players.user': userId }, { 'players.user': userIdStr },
+      ],
+    }, { projection: { bookingCode: 1, title: 1, name: 1, createdAt: 1 } }).toArray();
+
     const [wallets, txAgg, betsCreatedAgg] = await Promise.all([
-      db.collection('walletusers').find({
-        $or: [{ user: userId }, { user: userIdStr }],
-      }).toArray(),
+      db.collection('walletusers').find(userQuery(userId, userIdStr)).toArray(),
 
       db.collection('transactions').aggregate([
-        { $match: { $or: [{ user: userId }, { user: userIdStr }, { userId: userId }, { userId: userIdStr }] } },
+        { $match: userQuery(userId, userIdStr) },
         { $group: {
           _id: '$type',
           total: { $sum: 1 },
           amount: { $sum: '$amount' },
           last: { $max: '$createdAt' },
+          first: { $min: '$createdAt' },
         }},
       ]).toArray(),
 
@@ -46,18 +64,18 @@ router.get('/:id', auth, async (req, res) => {
     const toObjectId = (id) => { try { return new ObjectId(id.toString()); } catch { return null; } };
 
     const currencyIds = wallets.map((w) => w.currencyType).filter(Boolean);
-    const gameBetIds = leaderboardEntries.map((e) => e.gameBet).filter(Boolean);
+    const leaderboardBetIds = leaderboardEntries.map((e) => e.gameBet).filter(Boolean);
 
-    const [currencies, gameBets] = await Promise.all([
+    const [currencies, leaderboardBets] = await Promise.all([
       currencyIds.length
         ? db.collection('currencytypes').find({
             _id: { $in: currencyIds.map(toObjectId).filter(Boolean) },
           }, { projection: { name: 1, symbol: 1, code: 1 } }).toArray()
         : [],
-      gameBetIds.length
+      leaderboardBetIds.length
         ? db.collection('game_bet').find({
-            _id: { $in: gameBetIds.map(toObjectId).filter(Boolean) },
-          }, { projection: { bookingCode: 1, title: 1, name: 1, gameLeagueId: 1, createdAt: 1 } }).toArray()
+            _id: { $in: leaderboardBetIds.map(toObjectId).filter(Boolean) },
+          }, { projection: { bookingCode: 1, title: 1, name: 1, createdAt: 1 } }).toArray()
         : [],
     ]);
 
@@ -65,12 +83,36 @@ router.get('/:id', auth, async (req, res) => {
     currencies.forEach((c) => { currencyMap[c._id.toString()] = { name: c.name, symbol: c.symbol, code: c.code }; });
 
     const gameBetMap = {};
-    gameBets.forEach((g) => {
-      gameBetMap[g._id.toString()] = {
-        label: g.bookingCode || g.title || g.name || g._id.toString(),
-        createdAt: g.createdAt,
+    leaderboardBets.forEach((g) => {
+      gameBetMap[g._id.toString()] = { label: g.bookingCode || g.title || g.name || g._id.toString(), createdAt: g.createdAt };
+    });
+
+    // Merge leaderboard entries and direct participation
+    const leaderboardCompetitions = leaderboardEntries.map((e) => {
+      const betKey = e.gameBet ? String(e.gameBet) : null;
+      const bet = betKey ? gameBetMap[betKey] : null;
+      return {
+        source: 'leaderboard',
+        competition: bet?.label || betKey || 'Unknown',
+        competitionDate: bet?.createdAt || null,
+        rank: e.rank ?? e.position ?? null,
+        points: e.points ?? e.score ?? e.totalPoints ?? null,
+        correct: e.correctPredictions ?? null,
+        total: e.totalPredictions ?? null,
       };
     });
+
+    const directCompetitions = participatedBets
+      .filter((g) => !leaderboardBetIds.some((id) => String(id) === String(g._id)))
+      .map((g) => ({
+        source: 'direct',
+        competition: g.bookingCode || g.title || g.name || g._id.toString(),
+        competitionDate: g.createdAt || null,
+        rank: null,
+        points: null,
+        correct: null,
+        total: null,
+      }));
 
     res.json({
       user: {
@@ -92,21 +134,66 @@ router.get('/:id', auth, async (req, res) => {
       })),
       transactions: txAgg,
       betsCreated: betsCreatedAgg[0] || { total: 0, last: null },
-      leaderboard: leaderboardEntries.map((e) => {
-        const betKey = e.gameBet ? String(e.gameBet) : null;
-        const bet = betKey ? gameBetMap[betKey] : null;
-        return {
-          competition: bet?.label || betKey || 'Unknown',
-          competitionDate: bet?.createdAt || null,
-          rank: e.rank ?? e.position ?? null,
-          points: e.points ?? e.score ?? e.totalPoints ?? null,
-          correct: e.correctPredictions ?? null,
-          total: e.totalPredictions ?? null,
-        };
-      }),
+      leaderboard: [...leaderboardCompetitions, ...directCompetitions],
     });
   } catch (err) {
     console.error('User profile error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paginated individual transactions for a user
+router.get('/:id/transactions', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    let userId;
+    try { userId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    const userIdStr = req.params.id;
+    const type = req.query.type; // 'credit' | 'debit' | undefined
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+
+    const matchBase = userQuery(userId, userIdStr);
+    const match = type ? { $and: [matchBase, { type }] } : matchBase;
+
+    const total = await db.collection('transactions').countDocuments(match);
+    const docs = await db.collection('transactions')
+      .find(match)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .toArray();
+
+    // Resolve currency names
+    const currencyIds = [...new Set(docs.map((d) => d.currencyType).filter(Boolean).map(String))];
+    const currencies = currencyIds.length
+      ? await db.collection('currencytypes').find({
+          _id: { $in: currencyIds.map((id) => { try { return new ObjectId(id); } catch { return null; } }).filter(Boolean) },
+        }, { projection: { name: 1, symbol: 1 } }).toArray()
+      : [];
+    const currencyMap = {};
+    currencies.forEach((c) => { currencyMap[c._id.toString()] = { name: c.name, symbol: c.symbol }; });
+
+    res.json({
+      docs: docs.map((d) => ({
+        _id: d._id.toString(),
+        type: d.type,
+        amount: d.amount,
+        description: d.description || d.narration || d.reference || d.note || null,
+        reference: d.reference || d.txRef || d.transactionRef || null,
+        currency: d.currencyType ? (currencyMap[String(d.currencyType)] || null) : null,
+        status: d.status || null,
+        createdAt: d.createdAt,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error('User transactions error:', err);
     res.status(500).json({ error: err.message });
   }
 });

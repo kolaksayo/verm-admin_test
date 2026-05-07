@@ -92,8 +92,12 @@ function FixtureCard({ fixture, onClick }) {
 }
 
 export default function FixturesView({ total: parentTotal }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   const [leagues, setLeagues] = useState([]);
   const [selectedLeague, setSelectedLeague] = useState('');
+  const [dateFilter, setDateFilter] = useState('all'); // 'all'|'today'|'tomorrow'|'week'|'custom'
+  const [customDate, setCustomDate] = useState(todayStr);
   const [fixtures, setFixtures] = useState([]);
   const [total, setTotal] = useState(parentTotal || 0);
   const [page, setPage] = useState(1);
@@ -103,15 +107,31 @@ export default function FixturesView({ total: parentTotal }) {
   const [selectedId, setSelectedId] = useState(null);
 
   useEffect(() => {
-    api.get('/fixtures/leagues').then((res) => {
-      setLeagues(res.data);
-    }).catch(() => {});
+    api.get('/fixtures/leagues').then((res) => setLeagues(res.data)).catch(() => {});
   }, []);
+
+  function getDateRange() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    if (dateFilter === 'today') return { dateFrom: fmt(now), dateTo: fmt(now) };
+    if (dateFilter === 'tomorrow') {
+      const t = new Date(now); t.setDate(t.getDate() + 1);
+      return { dateFrom: fmt(t), dateTo: fmt(t) };
+    }
+    if (dateFilter === 'week') {
+      const end = new Date(now); end.setDate(end.getDate() + 7);
+      return { dateFrom: fmt(now), dateTo: fmt(end) };
+    }
+    if (dateFilter === 'custom') return { dateFrom: customDate, dateTo: customDate };
+    return {};
+  }
 
   const fetchFixtures = useCallback(() => {
     setLoading(true);
     setError('');
-    api.get('/fixtures', { params: { page, limit: 20, leagueId: selectedLeague || undefined } })
+    const dateRange = getDateRange();
+    api.get('/fixtures', { params: { page, limit: 20, leagueId: selectedLeague || undefined, ...dateRange } })
       .then((res) => {
         setFixtures(res.data.fixtures);
         setTotal(res.data.total);
@@ -119,17 +139,49 @@ export default function FixturesView({ total: parentTotal }) {
       })
       .catch(() => setError('Failed to load fixtures'))
       .finally(() => setLoading(false));
-  }, [page, selectedLeague]);
+  }, [page, selectedLeague, dateFilter, customDate]);
 
-  useEffect(() => { setPage(1); }, [selectedLeague]);
+  useEffect(() => { setPage(1); }, [selectedLeague, dateFilter, customDate]);
   useEffect(() => { fetchFixtures(); }, [fetchFixtures]);
 
   return (
     <div>
       {/* Controls */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-500 font-medium">League</label>
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* Date quick filters */}
+        <div className="flex items-center gap-1">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'today', label: 'Today' },
+            { key: 'tomorrow', label: 'Tomorrow' },
+            { key: 'week', label: 'Next 7 days' },
+            { key: 'custom', label: 'Pick date' },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setDateFilter(f.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                dateFilter === f.key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {dateFilter === 'custom' && (
+          <input
+            type="date"
+            value={customDate}
+            onChange={(e) => setCustomDate(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          />
+        )}
+
+        {/* League filter */}
+        {leagues.length > 0 && (
           <select
             value={selectedLeague}
             onChange={(e) => setSelectedLeague(e.target.value)}
@@ -140,9 +192,10 @@ export default function FixturesView({ total: parentTotal }) {
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
           </select>
-        </div>
+        )}
+
         {!loading && (
-          <span className="text-sm text-gray-400">{total.toLocaleString()} fixture{total !== 1 ? 's' : ''}</span>
+          <span className="text-sm text-gray-400 ml-auto">{total.toLocaleString()} fixture{total !== 1 ? 's' : ''}</span>
         )}
       </div>
 

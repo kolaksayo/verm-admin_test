@@ -96,9 +96,21 @@ router.get('/', auth, async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const leagueId = req.query.leagueId;
 
+    const dateFrom = req.query.dateFrom; // YYYY-MM-DD
+    const dateTo = req.query.dateTo;
+
     let query = {};
     if (leagueId) {
       try { query.league = new ObjectId(leagueId); } catch {}
+    }
+    if (dateFrom || dateTo) {
+      query.date = {};
+      if (dateFrom) query.date.$gte = new Date(dateFrom).toISOString();
+      if (dateTo) {
+        const endOfDay = new Date(dateTo);
+        endOfDay.setHours(23, 59, 59, 999);
+        query.date.$lte = endOfDay.toISOString();
+      }
     }
 
     const total = await db.collection('football_fixtures').countDocuments(query);
