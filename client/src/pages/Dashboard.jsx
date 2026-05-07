@@ -25,12 +25,12 @@ export default function Dashboard() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-1">{today}</p>
+        <h1 className="text-2xl font-bold text-vs-text">Dashboard</h1>
+        <p className="text-sm text-vs-text-3 mt-1">{today}</p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-6">
+        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-6">
           {error}
         </div>
       )}
@@ -38,9 +38,9 @@ export default function Dashboard() {
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-2/3 mb-3" />
-              <div className="h-8 bg-gray-200 rounded w-1/2" />
+            <div key={i} className="bg-vs-card rounded-xl border border-vs-border p-5 animate-pulse">
+              <div className="h-4 bg-vs-elevated rounded w-2/3 mb-3" />
+              <div className="h-8 bg-vs-elevated rounded w-1/2" />
             </div>
           ))}
         </div>

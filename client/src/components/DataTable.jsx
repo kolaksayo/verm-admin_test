@@ -20,18 +20,17 @@ function formatDate(val) {
 }
 
 function cellValue(val) {
-  if (val === null || val === undefined) return <span className="text-gray-300">—</span>;
+  if (val === null || val === undefined) return <span className="text-vs-text-3 opacity-40">—</span>;
   if (typeof val === 'boolean') return val ? '✓' : '✗';
-  if (isISODate(val)) return <span className="text-gray-500">{formatDate(val)}</span>;
+  if (isISODate(val)) return <span className="text-vs-text-3">{formatDate(val)}</span>;
   if (typeof val === 'object') {
     const str = JSON.stringify(val);
-    return <span className="text-gray-400 italic">{str.length > CELL_MAX_LEN ? str.slice(0, CELL_MAX_LEN) + '…' : str}</span>;
+    return <span className="text-vs-text-3 italic">{str.length > CELL_MAX_LEN ? str.slice(0, CELL_MAX_LEN) + '…' : str}</span>;
   }
   const str = String(val);
   return str.length > CELL_MAX_LEN ? str.slice(0, CELL_MAX_LEN) + '…' : str;
 }
 
-// Collection-specific columns to show first (replaces _id as the leading column)
 const PRIORITY_COLUMNS = {
   game_bet: ['bookingCode', 'gameLeagueId', 'currencyType', 'createdBy', 'status', 'createdAt'],
   game_bet_leaderboard: ['user', 'gameBet', 'rank', 'points', 'correctPredictions', 'totalPredictions'],
@@ -56,7 +55,6 @@ function pickColumns(docs, collectionName) {
   return [...fallback, ...rest, ...timestamps].slice(0, MAX_COLS);
 }
 
-// Fields that are clickable with a specific action per collection
 const CLICKABLE_FIELDS = {
   game_bet: { bookingCode: 'gameBet' },
 };
@@ -101,13 +99,12 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
   };
 
   const resolvedCell = (field, value, doc) => {
-    // Clickable special fields (e.g. bookingCode on game_bet)
     const clickableAction = CLICKABLE_FIELDS[collectionName]?.[field];
     if (clickableAction === 'gameBet' && value && onGameBetClick) {
       return (
         <button
           onClick={(e) => { e.stopPropagation(); onGameBetClick(String(doc._id), String(value)); }}
-          className="font-mono font-semibold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-2"
+          className="font-mono font-semibold text-vs-purple-light hover:text-vs-purple underline decoration-dotted underline-offset-2"
         >
           {String(value)}
         </button>
@@ -126,7 +123,10 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
             {imageUrl && (
               <img src={imageUrl} alt="" className="w-5 h-5 object-contain rounded-sm flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
             )}
-            <span className={isUser ? 'text-blue-600 font-medium underline decoration-dotted underline-offset-2' : 'text-blue-600 font-medium'}>
+            <span className={isUser
+              ? 'text-vs-purple-light font-medium underline decoration-dotted underline-offset-2'
+              : 'text-vs-purple-light font-medium'
+            }>
               {displayName}
             </span>
           </span>
@@ -153,47 +153,47 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-vs-card rounded-xl border border-vs-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
+              <tr className="bg-vs-elevated border-b border-vs-border">
                 {columns.map((col) => (
                   <th
                     key={col}
                     onClick={() => handleSort(col)}
-                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
+                    className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider cursor-pointer hover:text-vs-text-2 select-none whitespace-nowrap"
                   >
                     {col}
                     {sort === col && (
-                      <span className="ml-1 text-blue-500">{order === 'asc' ? '↑' : '↓'}</span>
+                      <span className="ml-1 text-vs-purple-light">{order === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </th>
                 ))}
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-vs-border">
               {docs.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length + 1} className="px-4 py-8 text-center text-gray-400 text-sm">
+                  <td colSpan={columns.length + 1} className="px-4 py-8 text-center text-vs-text-3 text-sm">
                     No documents found.
                   </td>
                 </tr>
               )}
               {docs.map((doc, i) => (
-                <tr key={String(doc._id ?? i)} className="hover:bg-gray-50 transition-colors">
+                <tr key={String(doc._id ?? i)} className="hover:bg-vs-elevated transition-colors">
                   {columns.map((col) => (
-                    <td key={col} className="px-4 py-3 text-gray-700 font-mono text-xs max-w-xs truncate">
+                    <td key={col} className="px-4 py-3 text-vs-text-2 font-mono text-xs max-w-xs truncate">
                       {resolvedCell(col, doc[col], doc)}
                     </td>
                   ))}
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setSelectedId(String(doc._id))}
-                      className="text-xs text-blue-500 hover:text-blue-700 font-medium"
+                      className="text-xs text-vs-purple-light hover:text-vs-purple font-medium transition-colors"
                     >
                       View
                     </button>
@@ -205,16 +205,16 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
-          <p className="text-xs text-gray-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-vs-border bg-vs-elevated">
+          <p className="text-xs text-vs-text-3">
             {total === 0 ? 'No results' : `Showing ${start}–${end} of ${total.toLocaleString()}`}
           </p>
           <div className="flex items-center gap-1">
-            <button onClick={() => onPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">«</button>
-            <button onClick={() => onPage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">‹</button>
-            <span className="px-3 py-1 text-xs text-gray-600">{page} / {totalPages || 1}</span>
-            <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">›</button>
-            <button onClick={() => onPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">»</button>
+            <button onClick={() => onPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover hover:text-vs-text transition-colors">«</button>
+            <button onClick={() => onPage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover hover:text-vs-text transition-colors">‹</button>
+            <span className="px-3 py-1 text-xs text-vs-text-3">{page} / {totalPages || 1}</span>
+            <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover hover:text-vs-text transition-colors">›</button>
+            <button onClick={() => onPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover hover:text-vs-text transition-colors">»</button>
           </div>
         </div>
       </div>

@@ -14,7 +14,6 @@ function formatName(name) {
     .join(' ');
 }
 
-// Collections that have a fully custom view (no DataTable)
 const CUSTOM_VIEWS = ['football_fixtures', 'game_bet_leaderboard'];
 
 export default function Collection() {
@@ -29,8 +28,8 @@ export default function Collection() {
   const [order, setOrder] = useState('desc');
   const [page, setPage] = useState(1);
 
-  const [profileUser, setProfileUser] = useState(null); // { id, displayName }
-  const [gameBet, setGameBet] = useState(null); // { id, bookingCode }
+  const [profileUser, setProfileUser] = useState(null);
+  const [gameBet, setGameBet] = useState(null);
 
   const isCustom = CUSTOM_VIEWS.includes(name);
 
@@ -71,35 +70,29 @@ export default function Collection() {
     setPage(1);
   };
 
-  const handleUserClick = (userId, displayName) => {
-    setProfileUser({ id: userId, displayName });
-  };
-
-  const handleGameBetClick = (betId, bookingCode) => {
-    setGameBet({ id: betId, bookingCode });
-  };
+  const handleUserClick = (userId, displayName) => setProfileUser({ id: userId, displayName });
+  const handleGameBetClick = (betId, bookingCode) => setGameBet({ id: betId, bookingCode });
 
   return (
     <div>
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-        <Link to="/" className="hover:text-gray-600">Dashboard</Link>
+      <div className="flex items-center gap-2 text-sm text-vs-text-3 mb-4">
+        <Link to="/" className="hover:text-vs-text-2 transition-colors">Dashboard</Link>
         <span>›</span>
-        <span className="text-gray-700 font-medium">{formatName(name)}</span>
+        <span className="text-vs-text-2 font-medium">{formatName(name)}</span>
       </div>
 
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{formatName(name)}</h1>
+          <h1 className="text-2xl font-bold text-vs-text">{formatName(name)}</h1>
           {!isCustom && !loading && (
-            <p className="text-sm text-gray-400 mt-0.5">
+            <p className="text-sm text-vs-text-3 mt-0.5">
               {data.total.toLocaleString()} document{data.total !== 1 ? 's' : ''}
             </p>
           )}
         </div>
 
-        {/* Search — only for standard table views */}
         {!isCustom && (
           <form onSubmit={handleSearch} className="flex items-center gap-2">
             <input
@@ -107,11 +100,11 @@ export default function Collection() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by ID or field value…"
-              className="w-72 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-72 px-4 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
             />
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4 py-2 bg-vs-purple hover:bg-vs-purple-on text-white text-sm font-medium rounded-lg transition-colors"
             >
               Search
             </button>
@@ -119,7 +112,7 @@ export default function Collection() {
               <button
                 type="button"
                 onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}
-                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg"
+                className="px-3 py-2 text-sm text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors"
               >
                 Clear
               </button>
@@ -129,24 +122,17 @@ export default function Collection() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">
+        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">
           {error}
         </div>
       )}
 
-      {/* Custom views */}
-      {name === 'football_fixtures' && (
-        <FixturesView />
-      )}
+      {name === 'football_fixtures' && <FixturesView />}
+      {name === 'game_bet_leaderboard' && <LeaderboardView onUserClick={handleUserClick} />}
 
-      {name === 'game_bet_leaderboard' && (
-        <LeaderboardView onUserClick={handleUserClick} />
-      )}
-
-      {/* Standard table view */}
       {!isCustom && (
         loading ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm animate-pulse">
+          <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">
             Loading…
           </div>
         ) : (
@@ -167,7 +153,6 @@ export default function Collection() {
         )
       )}
 
-      {/* User profile modal */}
       {profileUser && (
         <UserProfileModal
           userId={profileUser.id}
@@ -176,13 +161,12 @@ export default function Collection() {
         />
       )}
 
-      {/* Game bet detail modal */}
       {gameBet && (
         <GameBetModal
           betId={gameBet.id}
           bookingCode={gameBet.bookingCode}
           onClose={() => setGameBet(null)}
-          onUserClick={(userId, name) => { setGameBet(null); setProfileUser({ id: userId, displayName: name }); }}
+          onUserClick={(userId, uname) => { setGameBet(null); setProfileUser({ id: userId, displayName: uname }); }}
         />
       )}
     </div>

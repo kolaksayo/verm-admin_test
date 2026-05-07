@@ -156,7 +156,8 @@ router.get('/:id/transactions', auth, async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
 
     const matchBase = userQuery(userId, userIdStr);
-    const match = type ? { $and: [matchBase, { type }] } : matchBase;
+    // Case-insensitive match so CREDIT/credit/Credit all work
+    const match = type ? { $and: [matchBase, { type: { $regex: new RegExp(`^${type}$`, 'i') } }] } : matchBase;
 
     const total = await db.collection('transactions').countDocuments(match);
     const docs = await db.collection('transactions')

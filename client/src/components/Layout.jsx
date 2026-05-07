@@ -60,16 +60,16 @@ const NAV_GROUPS = [
 ];
 
 const ROLE_COLORS = {
-  superadmin: 'text-purple-400',
-  admin: 'text-blue-400',
-  viewer: 'text-gray-400',
+  superadmin: 'text-vs-purple-light',
+  admin:      'text-vs-lime',
+  viewer:     'text-vs-text-3',
 };
 
 const linkClass = ({ isActive }) =>
-  `block px-3 py-1.5 rounded text-sm transition-colors ${
+  `block px-3 py-1.5 rounded-lg text-sm transition-colors ${
     isActive
-      ? 'bg-blue-600 text-white font-medium'
-      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+      ? 'bg-vs-purple text-white font-medium'
+      : 'text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text'
   }`;
 
 export default function Layout() {
@@ -83,20 +83,22 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-vs-bg">
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 bg-gray-900 flex flex-col transition-all duration-200`}>
+      <aside className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 bg-vs-card flex flex-col transition-all duration-200 border-r border-vs-border`}>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-700 flex-shrink-0">
-          <span className="text-blue-400 text-lg font-bold">⚡</span>
-          <span className="text-white font-bold text-base tracking-wide">VermoSports Admin</span>
+        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-vs-border flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-vs-purple flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-sm font-bold">V</span>
+          </div>
+          <span className="text-vs-text font-bold text-sm tracking-wide">VermoSports Admin</span>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 scrollbar-thin">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mb-4">
-              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60">
                 {group.label}
               </p>
               <ul className="px-2 space-y-0.5">
@@ -118,7 +120,7 @@ export default function Layout() {
           {/* Admin users — superadmin only */}
           {role === 'superadmin' && (
             <div className="mb-4">
-              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60">
                 Admin
               </p>
               <ul className="px-2 space-y-0.5">
@@ -133,17 +135,22 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-3 border-t border-gray-700 flex-shrink-0">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-sm text-white font-medium truncate">{user}</p>
-            <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-gray-400'}`}>{role}</span>
+        <div className="px-4 py-3 border-t border-vs-border flex-shrink-0">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-full bg-vs-purple flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-bold">{(user || '?')[0].toUpperCase()}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-vs-text font-medium truncate">{user}</p>
+              <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-vs-text-3'}`}>{role}</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 mt-1">
-            <NavLink to="/profile" className="text-xs text-gray-400 hover:text-gray-200 transition-colors">
+          <div className="flex items-center gap-3 pl-9">
+            <NavLink to="/profile" className="text-xs text-vs-text-3 hover:text-vs-text-2 transition-colors">
               Profile
             </NavLink>
-            <span className="text-gray-600 text-xs">·</span>
-            <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-400 transition-colors">
+            <span className="text-vs-border text-xs">·</span>
+            <button onClick={handleLogout} className="text-xs text-vs-text-3 hover:text-vs-danger transition-colors">
               Sign out
             </button>
           </div>
@@ -153,20 +160,23 @@ export default function Layout() {
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-white border-b border-gray-200">
+        <header className="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-vs-card border-b border-vs-border">
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="text-gray-500 hover:text-gray-700 p-1 rounded"
+            className="text-vs-text-3 hover:text-vs-text p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
             aria-label="Toggle sidebar"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-sm text-gray-400">vermo-production</span>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-vs-success inline-block" />
+            <span className="text-xs text-vs-text-3">vermo-production</span>
+          </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">
           <Outlet />
         </main>
       </div>

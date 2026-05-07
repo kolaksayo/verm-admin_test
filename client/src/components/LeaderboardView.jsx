@@ -6,91 +6,77 @@ function initials(name) {
   return name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-const AVATAR_COLORS = [
-  'bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500',
-  'bg-pink-500', 'bg-teal-500', 'bg-red-500', 'bg-indigo-500',
+const AVATAR_PALETTE = [
+  '#775CDF', '#B5DB1C', '#1CDB2F', '#F5CB3E',
+  '#EB3333', '#B19CFF', '#7E9E00', '#6247CF',
 ];
 
-function avatarColor(name) {
-  if (!name) return AVATAR_COLORS[0];
+function avatarBg(name) {
+  if (!name) return AVATAR_PALETTE[0];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
 }
 
 function Avatar({ name, size = 'md' }) {
   const sz = size === 'lg' ? 'w-14 h-14 text-base' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
   return (
-    <div className={`${sz} ${avatarColor(name)} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}>
+    <div
+      className={`${sz} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
+      style={{ backgroundColor: avatarBg(name) }}
+    >
       {initials(name)}
     </div>
   );
 }
 
-// ── Podium (rank 1–3) ────────────────────────────────────────────────────────
+// ── Podium ──────────────────────────────────────────────────────────────────
 
 const PODIUM_CONFIG = {
-  1: { label: '🥇', height: 'h-24', order: 'order-2', badge: 'bg-yellow-400 text-yellow-900', ring: 'ring-2 ring-yellow-400' },
-  2: { label: '🥈', height: 'h-16', order: 'order-1', badge: 'bg-gray-300 text-gray-700', ring: 'ring-2 ring-gray-300' },
-  3: { label: '🥉', height: 'h-12', order: 'order-3', badge: 'bg-amber-600 text-amber-100', ring: 'ring-2 ring-amber-500' },
+  1: { medal: '🥇', height: 'h-20', ring: '2px solid #F5CB3E', platform: 'bg-vs-warning/10 border-t-2 border-vs-warning/40' },
+  2: { medal: '🥈', height: 'h-14', ring: '2px solid #9F9F9F', platform: 'bg-vs-elevated border-t-2 border-vs-text-3/30' },
+  3: { medal: '🥉', height: 'h-10', ring: '2px solid #B5DB1C', platform: 'bg-vs-lime/5 border-t-2 border-vs-lime/30' },
 };
 
 function PodiumSlot({ entry, rank, onUserClick }) {
   const cfg = PODIUM_CONFIG[rank];
   return (
-    <div className={`flex flex-col items-center gap-2 flex-1 ${cfg.order}`}>
-      {/* Medal emoji above */}
-      <span className="text-2xl">{cfg.label}</span>
-
-      {/* Avatar */}
-      <div className={`rounded-full ${cfg.ring}`}>
+    <div className={`flex flex-col items-center gap-1.5 flex-1 ${rank === 1 ? 'order-2' : rank === 2 ? 'order-1' : 'order-3'}`}>
+      <span className="text-xl">{cfg.medal}</span>
+      <div className="rounded-full p-0.5" style={{ boxShadow: `0 0 0 ${cfg.ring}` }}>
         <Avatar name={entry.username} size="lg" />
       </div>
-
-      {/* Name */}
       {onUserClick && entry.userId ? (
         <button
           onClick={() => onUserClick(entry.userId, entry.username)}
-          className="text-sm font-bold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-2 text-center max-w-[100px] truncate"
+          className="text-xs font-bold text-vs-purple-light hover:text-vs-purple underline decoration-dotted underline-offset-2 text-center max-w-[90px] truncate"
         >
           {entry.username || 'Unknown'}
         </button>
       ) : (
-        <p className="text-sm font-bold text-gray-800 text-center max-w-[100px] truncate">
-          {entry.username || 'Unknown'}
-        </p>
+        <p className="text-xs font-bold text-vs-text-2 text-center max-w-[90px] truncate">{entry.username || 'Unknown'}</p>
       )}
-
-      {/* Points */}
-      {entry.points !== null && entry.points !== undefined && (
-        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${cfg.badge}`}>
-          {typeof entry.points === 'number' ? entry.points.toLocaleString() : entry.points} pts
+      {entry.currentScore != null && (
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-vs-elevated text-vs-text-3 border border-vs-border">
+          {typeof entry.currentScore === 'number' ? entry.currentScore.toLocaleString() : entry.currentScore} pts
         </span>
       )}
-
-      {/* Prediction accuracy */}
-      {entry.correct !== null && entry.correct !== undefined && (
-        <span className="text-xs text-gray-400">{entry.correct}/{entry.total ?? '?'} correct</span>
-      )}
-
-      {/* Podium platform */}
-      <div className={`${cfg.height} w-full rounded-t-lg ${rank === 1 ? 'bg-yellow-100 border-t-2 border-yellow-300' : rank === 2 ? 'bg-gray-100 border-t-2 border-gray-300' : 'bg-amber-50 border-t-2 border-amber-300'}`} />
+      <div className={`${cfg.height} w-full rounded-t-md ${cfg.platform}`} />
     </div>
   );
 }
 
 function Podium({ top3, onUserClick }) {
-  // Render order: 2nd, 1st, 3rd
-  const slots = [
+  const ordered = [
     top3.find((e) => e.displayRank === 2),
     top3.find((e) => e.displayRank === 1),
     top3.find((e) => e.displayRank === 3),
   ].filter(Boolean);
 
   return (
-    <div className="flex items-end gap-4 mb-6 px-4 py-5 bg-white rounded-xl border border-gray-200">
-      {slots.map((e) => (
-        <PodiumSlot key={String(e._id)} entry={e} rank={e.displayRank} onUserClick={onUserClick} />
+    <div className="flex items-end gap-3 mb-4 px-4 py-4 bg-vs-card rounded-xl border border-vs-border">
+      {ordered.map((e) => (
+        <PodiumSlot key={e.userId} entry={e} rank={e.displayRank} onUserClick={onUserClick} />
       ))}
     </div>
   );
@@ -100,30 +86,28 @@ function Podium({ top3, onUserClick }) {
 
 function EntryRow({ entry, onUserClick }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-      <div className="w-8 text-center">
-        <span className="text-sm font-bold text-gray-400">#{entry.displayRank}</span>
+    <div className="flex items-center gap-3 px-4 py-3 border-b border-vs-border last:border-0 hover:bg-vs-hover transition-colors">
+      <div className="w-8 text-center flex-shrink-0">
+        <span className="text-sm font-bold text-vs-text-3">#{entry.displayRank}</span>
       </div>
       <Avatar name={entry.username} size="sm" />
       <div className="flex-1 min-w-0">
         {onUserClick && entry.userId ? (
           <button
             onClick={() => onUserClick(entry.userId, entry.username)}
-            className="text-sm font-semibold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-2 truncate block text-left"
+            className="text-sm font-semibold text-vs-purple-light hover:text-vs-purple underline decoration-dotted underline-offset-2 truncate block text-left"
           >
             {entry.username || 'Unknown'}
           </button>
         ) : (
-          <p className="text-sm font-semibold text-gray-800 truncate">{entry.username || 'Unknown'}</p>
+          <p className="text-sm font-semibold text-vs-text-2 truncate">{entry.username || 'Unknown'}</p>
         )}
-        {entry.correct !== null && entry.correct !== undefined && (
-          <p className="text-xs text-gray-400">{entry.correct}/{entry.total ?? '?'} correct</p>
-        )}
+        {entry.isWinner && <span className="text-xs text-vs-warning">🏆 Winner</span>}
       </div>
-      {entry.points !== null && entry.points !== undefined && (
-        <div className="text-right">
-          <p className="text-sm font-bold text-gray-800">{typeof entry.points === 'number' ? entry.points.toLocaleString() : entry.points}</p>
-          <p className="text-xs text-gray-400">pts</p>
+      {entry.currentScore != null && (
+        <div className="text-right flex-shrink-0">
+          <p className="text-sm font-bold text-vs-text">{typeof entry.currentScore === 'number' ? entry.currentScore.toLocaleString() : entry.currentScore}</p>
+          <p className="text-xs text-vs-text-3">pts</p>
         </div>
       )}
     </div>
@@ -132,35 +116,43 @@ function EntryRow({ entry, onUserClick }) {
 
 // ── Competition section ───────────────────────────────────────────────────────
 
-function CompetitionSection({ name, entries, onUserClick, defaultOpen }) {
+function CompetitionSection({ comp, onUserClick, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen ?? true);
 
-  const sorted = [...entries].sort((a, b) => (a.displayRank ?? 999) - (b.displayRank ?? 999));
-  const top3 = sorted.filter((e) => e.displayRank <= 3);
-  const rest = sorted.filter((e) => e.displayRank > 3);
+  const top3 = comp.participants.filter((p) => p.displayRank <= 3);
+  const rest = comp.participants.filter((p) => p.displayRank > 3);
+
+  const statusCls = comp.status === 'FINISHED'
+    ? 'bg-vs-elevated text-vs-text-3'
+    : comp.status === 'ACTIVE' || comp.status === 'LIVE'
+    ? 'bg-vs-success/10 text-vs-success'
+    : 'bg-vs-warning/10 text-vs-warning';
 
   return (
-    <div className="mb-6">
+    <div className="mb-5">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between mb-3 group"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-base font-bold text-gray-800">{name}</span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{entries.length} players</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-bold text-vs-text font-mono">{comp.bookingCode || comp._id}</span>
+          {comp.betType && <span className="text-xs text-vs-text-3 bg-vs-elevated px-2 py-0.5 rounded border border-vs-border">{comp.betType}</span>}
+          {comp.status && <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${statusCls}`}>{comp.status}</span>}
+          <span className="text-xs text-vs-text-3">{comp.participants.length} player{comp.participants.length !== 1 ? 's' : ''}</span>
         </div>
-        <span className="text-gray-400 group-hover:text-gray-600 text-sm">{open ? '▾' : '▸'}</span>
+        <span className="text-vs-text-3 group-hover:text-vs-text-2 text-sm transition-colors">{open ? '▾' : '▸'}</span>
       </button>
 
       {open && (
         <>
           {top3.length > 0 && <Podium top3={top3} onUserClick={onUserClick} />}
           {rest.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {rest.map((e) => (
-                <EntryRow key={String(e._id)} entry={e} onUserClick={onUserClick} />
-              ))}
+            <div className="bg-vs-card rounded-xl border border-vs-border overflow-hidden">
+              {rest.map((e) => <EntryRow key={e.userId} entry={e} onUserClick={onUserClick} />)}
             </div>
+          )}
+          {comp.participants.length === 0 && (
+            <p className="text-sm text-vs-text-3 text-center py-4">No participants yet.</p>
           )}
         </>
       )}
@@ -171,56 +163,21 @@ function CompetitionSection({ name, entries, onUserClick, defaultOpen }) {
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function LeaderboardView({ onUserClick }) {
-  const [groups, setGroups] = useState([]);
+  const [competitions, setCompetitions] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchLeaderboard = useCallback(async () => {
+  const fetch = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/collections/game_bet_leaderboard', {
-        params: { page, limit: 100, sort: 'rank', order: 'asc' },
-      });
-      const raw = res.data.docs;
+      const res = await api.get('/game-bets/leaderboard', { params: { page, limit: 20 } });
+      setCompetitions(res.data.competitions);
       setTotal(res.data.total);
       setTotalPages(res.data.totalPages);
-
-      const userIds = [...new Set(raw.map((d) => d.user).filter(Boolean).map(String))];
-      const gameBetIds = [...new Set(raw.map((d) => d.gameBet).filter(Boolean).map(String))];
-
-      const [userMap, gameBetMap] = await Promise.all([
-        userIds.length ? api.post('/lookup/users', { ids: userIds }).then((r) => r.data) : {},
-        gameBetIds.length ? api.post('/lookup/game_bet', { ids: gameBetIds }).then((r) => r.data) : {},
-      ]);
-
-      const resolved = raw.map((d, i) => {
-        const userVal = d.user ? userMap[String(d.user)] : null;
-        const username = userVal ? (typeof userVal === 'object' ? userVal.name : userVal) : null;
-        const gameBetVal = d.gameBet ? gameBetMap[String(d.gameBet)] : null;
-        const competition = gameBetVal ? (typeof gameBetVal === 'object' ? gameBetVal.name : gameBetVal) : 'Unknown';
-
-        return {
-          _id: d._id,
-          userId: d.user ? String(d.user) : null,
-          username,
-          competition,
-          displayRank: d.rank ?? d.position ?? i + 1,
-          points: d.points ?? d.score ?? d.totalPoints ?? null,
-          correct: d.correctPredictions ?? null,
-          total: d.totalPredictions ?? null,
-        };
-      });
-
-      // Group by competition
-      const grouped = {};
-      resolved.forEach((e) => {
-        (grouped[e.competition] = grouped[e.competition] || []).push(e);
-      });
-      setGroups(Object.entries(grouped));
     } catch {
       setError('Failed to load leaderboard');
     } finally {
@@ -228,48 +185,44 @@ export default function LeaderboardView({ onUserClick }) {
     }
   }, [page]);
 
-  useEffect(() => { fetchLeaderboard(); }, [fetchLeaderboard]);
+  useEffect(() => { fetch(); }, [fetch]);
 
   return (
     <div>
       {!loading && (
-        <p className="text-sm text-gray-400 mb-5">{total.toLocaleString()} entr{total !== 1 ? 'ies' : 'y'} across {groups.length} competition{groups.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-vs-text-3 mb-5">
+          {total.toLocaleString()} game bet{total !== 1 ? 's' : ''} · page {page} of {totalPages}
+        </p>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
+        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
       )}
 
       {loading ? (
         <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-48 bg-gray-100 rounded-xl animate-pulse" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-48 bg-vs-card rounded-xl border border-vs-border animate-pulse" />
           ))}
         </div>
-      ) : groups.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">
-          No leaderboard entries found.
+      ) : competitions.length === 0 ? (
+        <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm">
+          No game bets found.
         </div>
       ) : (
         <>
-          {groups.map(([name, entries], i) => (
-            <CompetitionSection
-              key={name}
-              name={name}
-              entries={entries}
-              onUserClick={onUserClick}
-              defaultOpen={i === 0}
-            />
+          {competitions.map((comp, i) => (
+            <CompetitionSection key={comp._id} comp={comp} onUserClick={onUserClick} defaultOpen={i === 0} />
           ))}
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              <span className="text-xs text-gray-500">Page {page} of {totalPages}</span>
+            <div className="flex items-center justify-between pt-4 border-t border-vs-border">
+              <span className="text-xs text-vs-text-3">Page {page} of {totalPages}</span>
               <div className="flex gap-1">
-                <button onClick={() => setPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">«</button>
-                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">‹</button>
-                <button onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">›</button>
-                <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">»</button>
+                <button onClick={() => setPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">«</button>
+                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">‹</button>
+                <button onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">›</button>
+                <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">»</button>
               </div>
             </div>
           )}

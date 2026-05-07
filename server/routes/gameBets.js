@@ -7,6 +7,71 @@ const router = express.Router();
 
 const toOid = (val) => { try { return new ObjectId(String(val)); } catch { return null; } };
 
+router.get('/leaderboard', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+
+    const total = await db.collection('game_bet').countDocuments({});
+    const bets = await db.collection('game_bet')
+      .find({})
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .toArray();
+
+    const userIds = new Set();
+    bets.forEach((bet) => {
+      (bet.participants || []).forEach((p) => { if (p.user) userIds.add(String(p.user)); });
+    });
+
+    const users = userIds.size
+      ? await db.collection('users')
+          .find({ _id: { $in: [...userIds].map(toOid).filter(Boolean) } }, { projection: { username: 1, name: 1, email: 1 } })
+          .toArray()
+      : [];
+    const userMap = {};
+    users.forEach((u) => { userMap[u._id.toString()] = u.username || u.name || u.email || u._id.toString(); });
+
+    const competitions = bets.map((bet) => {
+      const participants = (bet.participants || [])
+        .map((p) => {
+          const uid = String(p.user);
+          return {
+            userId: uid,
+            username: userMap[uid] || uid,
+            isCreator: !!p.creator,
+            isWinner: bet.winnerId ? String(bet.winnerId) === uid : false,
+            currentScore: p.currentScore ?? null,
+          };
+        })
+        .sort((a, b) => (b.currentScore ?? -Infinity) - (a.currentScore ?? -Infinity));
+
+      let rank = 1;
+      participants.forEach((p, i) => {
+        if (i > 0 && p.currentScore !== participants[i - 1].currentScore) rank = i + 1;
+        p.displayRank = rank;
+      });
+
+      return {
+        _id: bet._id.toString(),
+        bookingCode: bet.bookingCode,
+        betType: bet.betType,
+        betMode: bet.betMode,
+        status: bet.status,
+        createdAt: bet.createdAt,
+        participants,
+      };
+    });
+
+    res.json({ competitions, total, page, limit, totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('Game bet leaderboard error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const db = getDb();
