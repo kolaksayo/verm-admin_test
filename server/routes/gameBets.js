@@ -6,89 +6,6 @@ const auth = require('../middleware/auth');
 const router = express.Router();
 
 const toOid = (val) => { try { return new ObjectId(String(val)); } catch { return null; } };
-const isOid = (val) => val && (val instanceof ObjectId || (typeof val === 'string' && /^[a-f\d]{24}$/i.test(val)));
-
-// Collect all user-looking IDs from any nested structure
-function collectUserIds(obj, depth = 0) {
-  if (!obj || depth > 4) return new Set();
-  const ids = new Set();
-  const userFields = ['user', 'userId', 'player', 'participant', 'member', 'createdBy'];
-
-  if (Array.isArray(obj)) {
-    obj.forEach((item) => {
-      if (isOid(item)) ids.add(String(item));
-      else collectUserIds(item, depth + 1).forEach((id) => ids.add(id));
-    });
-    return ids;
-  }
-
-  if (typeof obj === 'object') {
-    for (const [key, val] of Object.entries(obj)) {
-      if (userFields.includes(key) && isOid(val)) {
-        ids.add(String(val));
-      } else if (typeof val === 'object') {
-        collectUserIds(val, depth + 1).forEach((id) => ids.add(id));
-      }
-    }
-  }
-  return ids;
-}
-
-// Collect all fixture-looking IDs
-function collectFixtureIds(obj, depth = 0) {
-  if (!obj || depth > 4) return new Set();
-  const ids = new Set();
-  const fixtureFields = ['fixture', 'fixtureId', 'match', 'matchId', 'game'];
-
-  if (Array.isArray(obj)) {
-    obj.forEach((item) => collectFixtureIds(item, depth + 1).forEach((id) => ids.add(id)));
-    return ids;
-  }
-
-  if (typeof obj === 'object') {
-    for (const [key, val] of Object.entries(obj)) {
-      if (fixtureFields.includes(key) && isOid(val)) {
-        ids.add(String(val));
-      } else if (Array.isArray(val) && key === 'fixtures') {
-        val.forEach((v) => { if (isOid(v)) ids.add(String(v)); });
-      } else if (typeof val === 'object') {
-        collectFixtureIds(val, depth + 1).forEach((id) => ids.add(id));
-      }
-    }
-  }
-  return ids;
-}
-
-// Replace known ObjectIds in a nested structure with display names
-function resolveIds(obj, userMap, fixtureMap, depth = 0) {
-  if (!obj || depth > 6) return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map((item) => resolveIds(item, userMap, fixtureMap, depth + 1));
-  }
-
-  if (obj instanceof ObjectId) {
-    const s = obj.toString();
-    return userMap[s] || fixtureMap[s] || s;
-  }
-
-  if (typeof obj === 'string' && /^[a-f\d]{24}$/i.test(obj)) {
-    return userMap[obj] || fixtureMap[obj] || obj;
-  }
-
-  if (typeof obj === 'object') {
-    const result = {};
-    for (const [key, val] of Object.entries(obj)) {
-      if (key === '_id') { result[key] = val?.toString?.() || val; continue; }
-      result[key] = resolveIds(val, userMap, fixtureMap, depth + 1);
-    }
-    return result;
-  }
-
-  return obj;
-}
-
-// ── GET /api/game-bets/:id ────────────────────────────────────────────────────
 
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -99,17 +16,23 @@ router.get('/:id', auth, async (req, res) => {
     const bet = await db.collection('game_bet').findOne({ _id: oid });
     if (!bet) return res.status(404).json({ error: 'Game bet not found' });
 
-    // Collect all user and fixture IDs found anywhere in the document
-    const userIds = collectUserIds(bet);
-    const fixtureIds = collectFixtureIds(bet);
+    // ── Collect all IDs to resolve ──────────────────────────────────────────
 
-    // Also add known top-level user fields
+    const userIds = new Set();
     if (bet.createdBy) userIds.add(String(bet.createdBy));
+    if (bet.acceptedBy) userIds.add(String(bet.acceptedBy));
+    if (bet.winnerId) userIds.add(String(bet.winnerId));
 
-    // Add fixtures from explicit top-level array
-    if (Array.isArray(bet.fixtures)) {
-      bet.fixtures.forEach((f) => { if (isOid(f)) fixtureIds.add(String(f)); });
-    }
+    const fixtureIds = new Set();
+    if (bet.gameFixtureId) fixtureIds.add(String(bet.gameFixtureId));
+
+    (bet.participants || []).forEach((p) => {
+      if (p.user) userIds.add(String(p.user));
+      (p.fixtures || []).forEach((f) => { if (f.gameFixtureId) fixtureIds.add(String(f.gameFixtureId)); });
+      (p.scoreDetails || []).forEach((sd) => { if (sd.fixtureId) fixtureIds.add(String(sd.fixtureId)); });
+    });
+
+    // ── Resolve in parallel ─────────────────────────────────────────────────
 
     const [users, fixtures, league, currency] = await Promise.all([
       userIds.size
@@ -130,77 +53,135 @@ router.get('/:id', auth, async (req, res) => {
         : null,
     ]);
 
-    // Build lookup maps
     const userMap = {};
-    users.forEach((u) => { userMap[u._id.toString()] = u.username || u.name || u.email || u._id.toString(); });
+    users.forEach((u) => { userMap[u._id.toString()] = { id: u._id.toString(), username: u.username || u.name || u.email || u._id.toString() }; });
 
-    // Resolve fixture team/league names
+    // Resolve fixture team names
+    const getTeamName = async (val) => {
+      if (!val) return null;
+      if (val && typeof val === 'object' && !(val instanceof ObjectId)) return val.name || val.teamName || null;
+      const t = await db.collection('football_teams').findOne({ _id: toOid(val) }, { projection: { name: 1 } });
+      return t?.name || null;
+    };
+
     const resolvedFixtures = await Promise.all(
       fixtures.map(async (f) => {
-        const getTeamName = async (val) => {
-          if (!val) return 'TBD';
-          if (val && typeof val === 'object' && !(val instanceof ObjectId)) return val.name || val.teamName || 'Unknown';
-          const team = await db.collection('football_teams').findOne({ _id: toOid(val) }, { projection: { name: 1, logo: 1 } });
-          return team?.name || String(val);
-        };
         const [home, away] = await Promise.all([getTeamName(f.homeTeam), getTeamName(f.awayTeam)]);
         return {
           _id: f._id.toString(),
-          homeTeam: home,
-          awayTeam: away,
+          homeTeam: home || 'TBD',
+          awayTeam: away || 'TBD',
           date: f.firstPeriod || f.date || f.fixture?.date || null,
           status: f.status || f.fixture?.status?.long || null,
+          scoreHome: f.goals?.home ?? f.score?.fulltime?.home ?? f.score?.home ?? null,
+          scoreAway: f.goals?.away ?? f.score?.fulltime?.away ?? f.score?.away ?? null,
         };
       })
     );
 
     const fixtureMap = {};
-    resolvedFixtures.forEach((f) => { fixtureMap[f._id] = `${f.homeTeam} vs ${f.awayTeam}`; });
+    resolvedFixtures.forEach((f) => { fixtureMap[f._id] = f; });
 
-    // Resolve the full bet document — replace all ObjectIds with display names
-    const resolved = resolveIds(bet, userMap, fixtureMap);
+    const winnerUser = bet.winnerId ? (userMap[String(bet.winnerId)] || null) : null;
+    const createdByUser = bet.createdBy ? (userMap[String(bet.createdBy)] || null) : null;
+    const acceptedByUser = bet.acceptedBy ? (userMap[String(bet.acceptedBy)] || null) : null;
 
-    // Extract participant list with resolved names for the UI
-    // Try common patterns: participants[], players[], selections grouped by user
-    const participantField = ['participants', 'players', 'members', 'entries']
-      .find((k) => Array.isArray(bet[k]) && bet[k].length > 0);
+    // ── Build participants ──────────────────────────────────────────────────
 
-    const participants = participantField
-      ? bet[participantField].map((entry) => {
-          const userId = entry.user || entry.userId || entry.player || entry.participant;
-          const username = userId ? (userMap[String(userId)] || String(userId)) : 'Unknown';
-          const rawUserId = userId ? String(userId) : null;
+    const isGoalsAndCards = bet.betType === 'GOALSANDCARDS';
 
-          // Find selections/picks — try common field names
-          const picks = entry.selections || entry.picks || entry.predictions ||
-            entry.choices || entry.bets || entry.answers || null;
+    const participants = (bet.participants || []).map((p) => {
+      const userId = String(p.user);
+      const user = userMap[userId] || { id: userId, username: userId };
+      const isCreator = !!p.creator;
+      const isWinner = bet.winnerId && String(bet.winnerId) === userId;
 
-          const resolvedPicks = picks
-            ? (Array.isArray(picks) ? picks : [picks]).map((pick) => ({
-                fixture: pick.fixture || pick.fixtureId || pick.match
-                  ? (fixtureMap[String(pick.fixture || pick.fixtureId || pick.match)] || String(pick.fixture || pick.fixtureId || pick.match))
-                  : null,
-                prediction: pick.prediction || pick.choice || pick.pick || pick.result ||
-                  pick.outcome || pick.value || JSON.stringify(pick),
-              }))
-            : null;
+      // Map scoreDetails by fixtureId for quick lookup
+      const scoreByFixture = {};
+      (p.scoreDetails || []).forEach((sd) => {
+        if (sd.fixtureId) scoreByFixture[String(sd.fixtureId)] = sd;
+      });
 
-          return { userId: rawUserId, username, picks: resolvedPicks, raw: resolveIds(entry, userMap, fixtureMap) };
-        })
-      : [];
+      // Build per-fixture selection objects
+      const fixtureSelections = (p.fixtures || []).map((pf) => {
+        const fxId = String(pf.gameFixtureId);
+        const fx = fixtureMap[fxId] || null;
+        const sd = scoreByFixture[fxId] || null;
+
+        return {
+          fixtureId: fxId,
+          fixtureLabel: fx ? `${fx.homeTeam} vs ${fx.awayTeam}` : fxId,
+          fixtureHome: fx?.homeTeam || null,
+          fixtureAway: fx?.awayTeam || null,
+          fixtureDate: fx?.date || null,
+          status: pf.status || null,
+          // Selections
+          players: (pf.players || []).map((pl) => ({ id: pl.playerId, name: pl.playerName })),
+          times: (pf.time || []),
+          // Actual scored events for this fixture
+          pointsEarned: sd?.points ?? 0,
+          scoredPlayerEvents: (sd?.player || []).map((e) => ({
+            player: e.selection,
+            event: e.info,
+            type: e.type,
+            points: e.point,
+          })),
+          scoredTimeEvents: (sd?.time || []).map((e) => ({
+            minute: e.selection,
+            event: e.info,
+            type: e.type,
+            points: e.point,
+          })),
+        };
+      });
+
+      return {
+        userId: user.id,
+        username: user.username,
+        isCreator,
+        isWinner,
+        currentScore: p.currentScore ?? null,
+        totalPointPlayer: p.totalPointPlayer ?? null,
+        totalPointTime: p.totalPointTime ?? null,
+        totalPlayerGoalPoints: p.totalPlayerGoalPoints ?? null,
+        totalPlayerYellowCardPoints: p.totalPlayerYellowCardPoints ?? null,
+        totalPlayerRedCardPoints: p.totalPlayerRedCardPoints ?? null,
+        // WINNER type: show chosen team
+        chosenTeam: !isGoalsAndCards ? (isCreator ? bet.createdByTeam : bet.acceptedByTeam) : null,
+        fixtureSelections,
+      };
+    });
+
+    // Sort participants by score descending so top scorer shows first
+    participants.sort((a, b) => (b.currentScore ?? 0) - (a.currentScore ?? 0));
 
     res.json({
       _id: bet._id.toString(),
       bookingCode: bet.bookingCode,
-      league: league ? { name: league.leagueName || league.name, image: league.image } : null,
-      currency: currency || null,
-      createdBy: bet.createdBy ? (userMap[String(bet.createdBy)] || String(bet.createdBy)) : null,
+      betType: bet.betType,
+      betMode: bet.betMode,
+      gameType: bet.gameType,
+      status: bet.status,
+      amount: bet.amount,
+      totalFeesDeducted: bet.totalFeesDeducted,
+      capacity: bet.capacity,
+      possibleStartPeriod: bet.possibleStartPeriod,
       createdAt: bet.createdAt,
-      status: bet.status || null,
-      fixtures: resolvedFixtures,
+      resolved: bet.resolved,
+      winnerSplit: bet.winnerSplit || null,
+
+      league: league ? { name: league.leagueName || league.name, image: league.image } : null,
+      currency,
+      mainFixture: bet.gameFixtureId ? (fixtureMap[String(bet.gameFixtureId)] || null) : null,
+      scoreline: bet.scoreline ? { home: bet.scoreline.home, away: bet.scoreline.away } : null,
+
+      createdBy: createdByUser,
+      acceptedBy: acceptedByUser,
+      winner: winnerUser,
+
       participants,
       participantCount: participants.length,
-      raw: resolved,
+      allFixtures: resolvedFixtures,
     });
   } catch (err) {
     console.error('Game bet detail error:', err);
