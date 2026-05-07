@@ -1,0 +1,30 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+
+const DB_PATH = process.env.ADMIN_DB_PATH || path.join(__dirname, '../admin.db');
+
+let db;
+
+function getDb() {
+  if (!db) {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS admin_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        two_factor_secret TEXT,
+        two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  }
+  return db;
+}
+
+module.exports = { getDb };

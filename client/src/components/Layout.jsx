@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const NAV_GROUPS = [
   {
     label: 'Overview',
-    items: [{ name: null, label: 'Dashboard', path: '/' }],
+    items: [{ label: 'Dashboard', path: '/' }],
   },
   {
     label: 'Users & Finance',
@@ -59,6 +59,12 @@ const NAV_GROUPS = [
   },
 ];
 
+const ROLE_COLORS = {
+  superadmin: 'text-purple-400',
+  admin: 'text-blue-400',
+  viewer: 'text-gray-400',
+};
+
 const linkClass = ({ isActive }) =>
   `block px-3 py-1.5 rounded text-sm transition-colors ${
     isActive
@@ -67,7 +73,7 @@ const linkClass = ({ isActive }) =>
   }`;
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -79,13 +85,9 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}
-      <aside
-        className={`${
-          sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'
-        } flex-shrink-0 bg-gray-900 flex flex-col transition-all duration-200`}
-      >
+      <aside className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 bg-gray-900 flex flex-col transition-all duration-200`}>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-700">
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-700 flex-shrink-0">
           <span className="text-blue-400 text-lg font-bold">⚡</span>
           <span className="text-white font-bold text-base tracking-wide">Verm Admin</span>
         </div>
@@ -112,18 +114,39 @@ export default function Layout() {
               </ul>
             </div>
           ))}
+
+          {/* Admin users — superadmin only */}
+          {role === 'superadmin' && (
+            <div className="mb-4">
+              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Admin
+              </p>
+              <ul className="px-2 space-y-0.5">
+                <li>
+                  <NavLink to="/admin-users" className={linkClass}>
+                    Admin Users
+                  </NavLink>
+                </li>
+              </ul>
+            </div>
+          )}
         </nav>
 
-        {/* User */}
-        <div className="px-4 py-3 border-t border-gray-700">
-          <p className="text-xs text-gray-400 mb-1">Signed in as</p>
-          <p className="text-sm text-white font-medium truncate">{user}</p>
-          <button
-            onClick={handleLogout}
-            className="mt-2 text-xs text-gray-400 hover:text-red-400 transition-colors"
-          >
-            Sign out
-          </button>
+        {/* User footer */}
+        <div className="px-4 py-3 border-t border-gray-700 flex-shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm text-white font-medium truncate">{user}</p>
+            <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-gray-400'}`}>{role}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <NavLink to="/profile" className="text-xs text-gray-400 hover:text-gray-200 transition-colors">
+              Profile
+            </NavLink>
+            <span className="text-gray-600 text-xs">·</span>
+            <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-400 transition-colors">
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -143,7 +166,6 @@ export default function Layout() {
           <span className="text-sm text-gray-400">vermo-production</span>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
