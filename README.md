@@ -11,7 +11,7 @@ A view-only admin centre for the `vermo-production` MongoDB database. Built with
 - **Collection browser** — all 25 collections accessible from a grouped sidebar
 - **Data table** — paginated (20 rows/page), sortable columns, text search
 - **Document viewer** — click any row to see the full document as formatted JSON with a copy button
-- **VPS-ready** — Express serves the built React app as static files on a single port
+- **VPS-ready** — Express serves the built React app as static files on a single port; runs as a systemd service that starts on boot
 
 ---
 
@@ -32,6 +32,7 @@ A view-only admin centre for the `vermo-production` MongoDB database. Built with
 - **npm** v9 or higher
 - A running MongoDB instance (Atlas or self-hosted) with the `vermo-production` database
 - Your MongoDB connection string (URI)
+- A Linux VPS with `systemd` (Ubuntu 20.04+ or similar)
 
 ---
 
@@ -68,6 +69,9 @@ verm-admin/
 │   ├── vite.config.js
 │   ├── tailwind.config.js
 │   └── package.json
+├── scripts/
+│   └── deploy.sh                 # One-command deploy + systemd install script
+├── verm-admin.service            # systemd unit file
 ├── seed-admin.js                 # Creates the first admin user in MongoDB
 ├── package.json                  # Root scripts
 └── .env.example                  # Environment variable template
@@ -75,7 +79,7 @@ verm-admin/
 
 ---
 
-## Setup
+## Local Development Setup
 
 ### 1. Clone and enter the repository
 
@@ -116,15 +120,11 @@ ADMIN_PASSWORD=changeme123
 
 ### 3. Install all dependencies
 
-This installs both the server and client packages in one command:
-
 ```bash
 npm run install:all
 ```
 
 ### 4. Seed the first admin user
-
-This creates (or updates) an admin user in the `admin_users` collection of your MongoDB database, using the `ADMIN_USERNAME` and `ADMIN_PASSWORD` values from your `.env`:
 
 ```bash
 npm run seed
@@ -143,27 +143,7 @@ Change your password after first login!
 
 > You can re-run `npm run seed` at any time to reset the admin password.
 
-### 5. Build the React frontend
-
-```bash
-npm run build
-```
-
-This compiles the React app into `client/dist/`, which Express will serve as static files.
-
-### 6. Start the server
-
-```bash
-npm start
-```
-
-The admin centre is now available at `http://your-server:3001`.
-
----
-
-## Development Mode
-
-To run the frontend and backend simultaneously with hot-reloading:
+### 5. Start in development mode
 
 **Terminal 1 — Express API server (with nodemon):**
 ```bash
@@ -175,68 +155,201 @@ npm run dev:server
 npm run dev:client
 ```
 
-The React dev server runs on port `5173` and proxies all `/api` requests to the Express server on port `3001`, so you only need to open `http://localhost:5173`.
+The React dev server runs on port `5173` and proxies all `/api` calls to Express on port `3001`. Open `http://localhost:5173`.
 
 ---
 
-## Running in Production (VPS)
+## Production Deployment to `/opt/verm-admin_test`
 
-### Using a process manager (recommended)
+This is the recommended setup for a Linux VPS. The app lives at `/opt/verm-admin_test` and runs as a **systemd service** that starts automatically on boot.
 
-Install PM2 globally if you haven't already:
-
-```bash
-npm install -g pm2
-```
-
-Start the admin server:
+### Step 1 — SSH into your server
 
 ```bash
-pm2 start server/index.js --name verm-admin
-pm2 save
-pm2 startup   # follow the printed command to enable auto-start on reboot
+ssh root@your-server-ip
 ```
 
-### Using a reverse proxy (Nginx)
+### Step 2 — Install Node.js (if not already installed)
 
-To expose the admin centre on a subdomain (e.g. `admin.yourdomain.com`) with HTTPS, add an Nginx server block:
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+node -v   # should print v20.x.x
+```
+
+### Step 3 — Clone the repository to `/opt`
+
+```bash
+git clone https://github.com/kolaksayo/verm-admin_test.git /opt/verm-admin_test
+```
+
+### Step 4 — Create the `.env` file
+
+```bash
+cp /opt/verm-admin_test/.env.example /opt/verm-admin_test/.env
+nano /opt/verm-admin_test/.env
+```
+
+Fill in your `MONGODB_URI`, `JWT_SECRET`, and the admin credentials. Save and exit (`Ctrl+X`, then `Y`, then `Enter`).
+
+To generate a secure `JWT_SECRET`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+### Step 5 — Install dependencies and build the frontend
+
+```bash
+cd /opt/verm-admin_test
+npm run install:all
+npm run build
+```
+
+### Step 6 — Seed the admin user
+
+```bash
+npm run seed
+```
+
+### Step 7 — Install and enable the systemd service
+
+```bash
+# Copy the service file into systemd
+cp /opt/verm-admin_test/verm-admin.service /etc/systemd/system/verm-admin.service
+
+# Reload systemd so it picks up the new file
+systemctl daemon-reload
+
+# Enable the service to start automatically on every boot
+systemctl enable verm-admin
+
+# Start it now
+systemctl start verm-admin
+
+# Confirm it is running
+systemctl status verm-admin
+```
+
+You should see `Active: active (running)`. The admin centre is now live at `http://your-server-ip:3001`.
+
+---
+
+## Updating the App
+
+To deploy new code after pulling changes:
+
+```bash
+cd /opt/verm-admin_test
+
+# Pull latest
+git pull origin claude/admin-center-mongodb-YPyBe
+
+# Rebuild frontend
+npm run build
+
+# Restart the service
+systemctl restart verm-admin
+```
+
+Or use the deploy script, which handles all of the above in one command:
+
+```bash
+bash /opt/verm-admin_test/scripts/deploy.sh
+```
+
+> The deploy script also auto-detects your `node` binary path, which is important if you installed Node via `nvm`.
+
+---
+
+## Useful Service Commands
+
+```bash
+# View live logs
+journalctl -u verm-admin -f
+
+# View last 100 lines of logs
+journalctl -u verm-admin -n 100
+
+# Stop the service
+systemctl stop verm-admin
+
+# Restart the service
+systemctl restart verm-admin
+
+# Disable auto-start on boot
+systemctl disable verm-admin
+
+# Check status
+systemctl status verm-admin
+```
+
+---
+
+## Nginx Reverse Proxy (optional)
+
+To serve the admin centre on a subdomain (`admin.yourdomain.com`) with HTTPS instead of exposing port 3001 directly:
+
+### 1. Install Nginx and Certbot
+
+```bash
+apt-get install -y nginx certbot python3-certbot-nginx
+```
+
+### 2. Create an Nginx site config
+
+```bash
+nano /etc/nginx/sites-available/verm-admin
+```
+
+Paste:
 
 ```nginx
 server {
     listen 80;
     server_name admin.yourdomain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name admin.yourdomain.com;
-
-    ssl_certificate     /etc/letsencrypt/live/admin.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/admin.yourdomain.com/privkey.pem;
 
     location / {
         proxy_pass         http://127.0.0.1:3001;
         proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-Reload Nginx after editing:
+### 3. Enable the site and reload Nginx
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
+ln -s /etc/nginx/sites-available/verm-admin /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+```
+
+### 4. Obtain an SSL certificate
+
+```bash
+certbot --nginx -d admin.yourdomain.com
+```
+
+Certbot will automatically update your Nginx config to redirect HTTP → HTTPS. The admin centre is now available at `https://admin.yourdomain.com`.
+
+---
+
+## Changing the Admin Password
+
+Update `ADMIN_PASSWORD` in `/opt/verm-admin_test/.env`, then re-run the seed script:
+
+```bash
+cd /opt/verm-admin_test && npm run seed
 ```
 
 ---
 
 ## Available Collections
 
-All 25 collections in `vermo-production` are accessible, grouped in the sidebar:
+All 25 collections in `vermo-production` are accessible from the sidebar:
 
 | Group | Collections |
 |-------|------------|
@@ -250,7 +363,7 @@ All 25 collections in `vermo-production` are accessible, grouped in the sidebar:
 
 ## API Reference
 
-All API routes (except login) require a `Authorization: Bearer <token>` header.
+All routes except `/api/auth/login` require an `Authorization: Bearer <token>` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -271,19 +384,9 @@ GET /api/collections/:name?page=1&limit=20&search=&sort=_id&order=desc
 |-----------|---------|-------------|
 | `page` | `1` | Page number |
 | `limit` | `20` | Documents per page (max 100) |
-| `search` | `""` | Search term — matches ObjectId exactly, or regex on all string fields |
+| `search` | `""` | Matches ObjectId exactly, or regex across all string fields |
 | `sort` | `_id` | Field to sort by |
 | `order` | `desc` | Sort direction: `asc` or `desc` |
-
----
-
-## Changing the Admin Password
-
-Update `ADMIN_PASSWORD` in your `.env`, then re-run the seed script:
-
-```bash
-npm run seed
-```
 
 ---
 

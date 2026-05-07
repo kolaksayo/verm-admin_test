@@ -1,0 +1,19 @@
+[Unit]
+Description=Verm Admin Centre
+Documentation=https://github.com/kolaksayo/verm-admin_test
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/verm-admin_test
+EnvironmentFile=/opt/verm-admin_test/.env
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=verm-admin
+
+[Install]
+WantedBy=multi-user.target
