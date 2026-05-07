@@ -24,10 +24,16 @@ function safeUser(u) {
 // ── Own profile ──────────────────────────────────────────────────────────────
 
 router.get('/me', auth, (req, res) => {
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(safeUser(user));
+  try {
+    if (!req.user.id) return res.status(401).json({ error: 'Session outdated — please log out and log in again' });
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(safeUser(user));
+  } catch (err) {
+    console.error('GET /me error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.patch('/me/password', auth, (req, res) => {
@@ -56,20 +62,30 @@ router.patch('/me/password', auth, (req, res) => {
 // ── 2FA setup ────────────────────────────────────────────────────────────────
 
 router.post('/me/2fa/setup', auth, async (req, res) => {
-  const secret = speakeasy.generateSecret({
-    name: `Verm Admin (${req.user.username})`,
-    length: 32,
-  });
-
-  const db = getDb();
-  db.prepare('UPDATE admin_users SET two_factor_secret = ?, two_factor_enabled = 0, updated_at = datetime("now") WHERE id = ?')
-    .run(secret.base32, req.user.id);
-
   try {
+    if (!req.user.id) {
+      return res.status(401).json({ error: 'Session outdated — please log out and log in again' });
+    }
+
+    const db = getDb();
+    const user = db.prepare('SELECT id FROM admin_users WHERE id = ?').get(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found in admin database' });
+    }
+
+    const secret = speakeasy.generateSecret({
+      name: `Verm Admin (${req.user.username})`,
+      length: 32,
+    });
+
+    db.prepare('UPDATE admin_users SET two_factor_secret = ?, two_factor_enabled = 0, updated_at = datetime("now") WHERE id = ?')
+      .run(secret.base32, req.user.id);
+
     const qrCode = await QRCode.toDataURL(secret.otpauth_url);
     res.json({ qrCode, secret: secret.base32 });
-  } catch {
-    res.status(500).json({ error: 'Failed to generate QR code' });
+  } catch (err) {
+    console.error('2FA setup error:', err);
+    res.status(500).json({ error: err.message || 'Failed to set up 2FA' });
   }
 });
 
