@@ -54,7 +54,7 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-8">
           <span className="text-4xl">⚡</span>
-          <h1 className="text-2xl font-bold text-white mt-2">Verm Admin</h1>
+          <h1 className="text-2xl font-bold text-white mt-2">VermoSports Admin</h1>
           <p className="text-gray-400 text-sm mt-1">
             {step === '2fa' ? 'Enter your authenticator code' : 'Sign in to continue'}
           </p>

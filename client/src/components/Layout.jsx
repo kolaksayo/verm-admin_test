@@ -89,7 +89,7 @@ export default function Layout() {
         {/* Logo */}
         <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-700 flex-shrink-0">
           <span className="text-blue-400 text-lg font-bold">⚡</span>
-          <span className="text-white font-bold text-base tracking-wide">Verm Admin</span>
+          <span className="text-white font-bold text-base tracking-wide">VermoSports Admin</span>
         </div>
 
         {/* Nav */}
