@@ -318,7 +318,11 @@ export default function GameBetModal({ betId, bookingCode, onClose, onUserClick 
                   <div className="flex justify-between py-2 border-b border-vs-border">
                     <span className="text-vs-text-3">League</span>
                     <span className="flex items-center gap-1.5 font-medium text-vs-text-2">
-                      {bet.league.image && <img src={bet.league.image} alt="" className="w-4 h-4 object-contain" onError={(e) => e.target.remove()} />}
+                      {bet.league.image && (
+                        <span className="w-5 h-5 rounded bg-white/90 flex items-center justify-center flex-shrink-0 p-0.5 inline-flex">
+                          <img src={bet.league.image} alt="" className="w-4 h-4 object-contain" onError={(e) => e.target.parentElement.remove()} />
+                        </span>
+                      )}
                       {bet.league.name}
                     </span>
                   </div>

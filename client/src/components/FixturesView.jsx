@@ -216,7 +216,9 @@ export default function FixturesView() {
               <div key={key} className="mb-6">
                 <div className="flex items-center gap-2 mb-2 px-1">
                   {leagueImage && (
-                    <img src={leagueImage} alt="" className="w-5 h-5 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                    <div className="w-5 h-5 rounded bg-white/90 flex items-center justify-center flex-shrink-0 p-0.5">
+                      <img src={leagueImage} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.target.parentElement.style.display = 'none'; }} />
+                    </div>
                   )}
                   <span className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">{leagueName}</span>
                 </div>

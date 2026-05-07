@@ -2,26 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Dark theme (default) ────────────────────────────────────────────────── */
+:root {
+  --vs-bg:           28 27 32;
+  --vs-card:         36 35 42;
+  --vs-elevated:     49 48 56;
+  --vs-hover:        59 58 66;
+  --vs-purple:       119 92 223;
+  --vs-purple-on:    98 71 207;
+  --vs-purple-light: 177 156 255;
+  --vs-lime:         181 219 28;
+  --vs-lime-on:      126 158 0;
+  --vs-text:         255 255 255;
+  --vs-text-2:       226 226 226;
+  --vs-text-3:       159 159 159;
+  --vs-border:       48 48 48;
+  --vs-danger:       235 51 51;
+  --vs-success:      28 219 47;
+  --vs-warning:      245 203 62;
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────── */
+html.light {
+  --vs-bg:      248 248 252;
+  --vs-card:    255 255 255;
+  --vs-elevated: 241 241 246;
+  --vs-hover:   232 231 240;
+  --vs-text:    28 27 32;
+  --vs-text-2:  55 52 72;
+  --vs-text-3:  107 106 120;
+  --vs-border:  219 218 228;
+}
+
 @layer base {
   body {
-    background-color: #1C1B20;
-    color: #FFFFFF;
+    background-color: rgb(var(--vs-bg));
+    color: rgb(var(--vs-text));
   }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #3B3A42 transparent;
+    scrollbar-color: rgb(var(--vs-hover)) transparent;
   }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #3B3A42;
+    background-color: rgb(var(--vs-hover));
     border-radius: 3px;
   }
 }

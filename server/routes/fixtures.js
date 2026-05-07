@@ -80,17 +80,34 @@ router.get('/', auth, async (req, res) => {
 
     const query = {};
 
-    // League filter — handle both ObjectId ref and embedded object with _id
+    // League filter — fixtures embed leagues as {id: numericApiId, name: "..."}
+    // so we look up the league document first to get name + any numeric id
     if (leagueId) {
       let leagueOid;
       try { leagueOid = new ObjectId(leagueId); } catch {}
+
+      const orClauses = [];
+
       if (leagueOid) {
-        query.$or = [
-          { league: leagueOid },
-          { 'league._id': leagueOid },
-          { 'league.id': leagueId },
-        ];
+        // Direct reference cases
+        orClauses.push({ league: leagueOid });
+        orClauses.push({ 'league._id': leagueOid });
+
+        // Look up the league document to get its name and any numeric API id
+        const leagueDoc = await db.collection('football_leagues').findOne({ _id: leagueOid });
+        if (leagueDoc) {
+          const leagueName = leagueDoc.leagueName || leagueDoc.name;
+          if (leagueName) {
+            orClauses.push({ 'league.name': leagueName });
+            orClauses.push({ 'league.leagueName': leagueName });
+          }
+          // API-Sports style numeric id stored on the league doc
+          if (leagueDoc.id != null) orClauses.push({ 'league.id': leagueDoc.id });
+          if (leagueDoc.apiId != null) orClauses.push({ 'league.id': leagueDoc.apiId });
+        }
       }
+
+      if (orClauses.length) query.$or = orClauses;
     }
 
     // Date filter using firstPeriod (confirmed field name)

@@ -6,6 +6,7 @@ import FixturesView from '../components/FixturesView';
 import LeaderboardView from '../components/LeaderboardView';
 import UserProfileModal from '../components/UserProfileModal';
 import GameBetModal from '../components/GameBetModal';
+import UserRankingsView from '../components/UserRankingsView';
 
 function formatName(name) {
   return name
@@ -14,7 +15,7 @@ function formatName(name) {
     .join(' ');
 }
 
-const CUSTOM_VIEWS = ['football_fixtures', 'game_bet_leaderboard'];
+const CUSTOM_VIEWS = ['football_fixtures', 'game_bet_leaderboard', 'game_bet_user_rankings'];
 
 export default function Collection() {
   const { name } = useParams();
@@ -129,6 +130,7 @@ export default function Collection() {
 
       {name === 'football_fixtures' && <FixturesView />}
       {name === 'game_bet_leaderboard' && <LeaderboardView onUserClick={handleUserClick} />}
+      {name === 'game_bet_user_rankings' && <UserRankingsView onUserClick={handleUserClick} />}
 
       {!isCustom && (
         loading ? (

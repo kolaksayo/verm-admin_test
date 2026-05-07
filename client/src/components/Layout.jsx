@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const NAV_GROUPS = [
   {
@@ -22,6 +23,7 @@ const NAV_GROUPS = [
     items: [
       { name: 'game_bet', label: 'Game Bets' },
       { name: 'game_bet_leaderboard', label: 'Leaderboard' },
+      { name: 'game_bet_user_rankings', label: 'User Rankings' },
       { name: 'football_bet_template', label: 'Bet Templates' },
     ],
   },
@@ -74,6 +76,7 @@ const linkClass = ({ isActive }) =>
 
 export default function Layout() {
   const { user, role, logout } = useAuth();
+  const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -174,6 +177,15 @@ export default function Layout() {
             <span className="w-1.5 h-1.5 rounded-full bg-vs-success inline-block" />
             <span className="text-xs text-vs-text-3">vermo-production</span>
           </div>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggle}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="ml-auto p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors text-base leading-none"
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">

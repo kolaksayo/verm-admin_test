@@ -7,6 +7,69 @@ const router = express.Router();
 
 const toOid = (val) => { try { return new ObjectId(String(val)); } catch { return null; } };
 
+router.get('/user-rankings', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+
+    const pipeline = [
+      { $unwind: '$participants' },
+      { $group: {
+        _id: '$participants.user',
+        totalScore:        { $sum: { $ifNull: ['$participants.currentScore', 0] } },
+        betsCount:         { $sum: 1 },
+        playerPoints:      { $sum: { $ifNull: ['$participants.totalPointPlayer', 0] } },
+        timePoints:        { $sum: { $ifNull: ['$participants.totalPointTime', 0] } },
+        goalPoints:        { $sum: { $ifNull: ['$participants.totalPlayerGoalPoints', 0] } },
+        yellowCardPoints:  { $sum: { $ifNull: ['$participants.totalPlayerYellowCardPoints', 0] } },
+      }},
+      { $sort: { totalScore: -1 } },
+    ];
+
+    const countPipeline = [
+      { $unwind: '$participants' },
+      { $group: { _id: '$participants.user' } },
+      { $count: 'total' },
+    ];
+
+    const [allRows, countResult] = await Promise.all([
+      db.collection('game_bet').aggregate(pipeline).toArray(),
+      db.collection('game_bet').aggregate(countPipeline).toArray(),
+    ]);
+
+    const total = countResult[0]?.total || 0;
+    const rows = allRows.slice((page - 1) * limit, page * limit);
+
+    const userIds = rows.map((r) => r._id).filter(Boolean);
+    const users = userIds.length
+      ? await db.collection('users')
+          .find({ _id: { $in: userIds.map(toOid).filter(Boolean) } }, { projection: { username: 1, name: 1, email: 1 } })
+          .toArray()
+      : [];
+    const userMap = {};
+    users.forEach((u) => { userMap[u._id.toString()] = u.username || u.name || u.email || u._id.toString(); });
+
+    const rankings = rows.map((r, i) => ({
+      rank: (page - 1) * limit + i + 1,
+      userId: r._id ? String(r._id) : null,
+      username: r._id ? (userMap[String(r._id)] || String(r._id)) : 'Unknown',
+      totalScore: r.totalScore,
+      betsCount: r.betsCount,
+      playerPoints: r.playerPoints,
+      timePoints: r.timePoints,
+      goalPoints: r.goalPoints,
+      yellowCardPoints: r.yellowCardPoints,
+      avgScore: r.betsCount > 0 ? Math.round((r.totalScore / r.betsCount) * 10) / 10 : 0,
+    }));
+
+    res.json({ rankings, total, page, limit, totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('User rankings error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/leaderboard', auth, async (req, res) => {
   try {
     const db = getDb();
