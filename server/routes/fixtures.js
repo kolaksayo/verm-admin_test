@@ -5,60 +5,31 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-// Extract team info whether homeTeam/awayTeam is an embedded object or an ObjectId reference
+function isEmbeddedObj(val) {
+  return val && typeof val === 'object' && !Buffer.isBuffer(val) && !(val instanceof ObjectId);
+}
+
 function extractTeamInfo(val) {
   if (!val) return null;
-  // Already an embedded object with name/logo
-  if (typeof val === 'object' && !Buffer.isBuffer(val) && !(val instanceof ObjectId)) {
-    return {
-      isEmbedded: true,
-      name: val.name || val.teamName || 'Unknown',
-      logo: val.logo || val.image || null,
-      id: null,
-    };
+  if (isEmbeddedObj(val)) {
+    return { isEmbedded: true, name: val.name || val.teamName || 'Unknown', logo: val.logo || val.image || null, id: null };
   }
-  // ObjectId or string reference
-  try {
-    return { isEmbedded: false, id: val.toString(), name: null, logo: null };
-  } catch {
-    return null;
-  }
+  try { return { isEmbedded: false, id: val.toString(), name: null, logo: null }; } catch { return null; }
 }
 
 function extractLeagueInfo(val) {
   if (!val) return null;
-  if (typeof val === 'object' && !Buffer.isBuffer(val) && !(val instanceof ObjectId)) {
-    return {
-      isEmbedded: true,
-      name: val.name || val.leagueName || 'Unknown',
-      image: val.logo || val.image || null,
-      id: null,
-    };
+  if (isEmbeddedObj(val)) {
+    return { isEmbedded: true, name: val.name || val.leagueName || 'Unknown', image: val.logo || val.image || null, id: null };
   }
-  try {
-    return { isEmbedded: false, id: val.toString(), name: null, image: null };
-  } catch {
-    return null;
-  }
+  try { return { isEmbedded: false, id: val.toString(), name: null, image: null }; } catch { return null; }
 }
 
 function extractScore(f) {
-  // Try multiple common schema patterns
-  const home =
-    f.goals?.home ??
-    f.score?.fulltime?.home ??
-    f.score?.home ??
-    null;
-  const away =
-    f.goals?.away ??
-    f.score?.fulltime?.away ??
-    f.score?.away ??
-    null;
-  return { home, away };
-}
-
-function extractDate(f) {
-  return f.date || f.fixture?.date || f.matchDate || f.kickoff || null;
+  return {
+    home: f.goals?.home ?? f.score?.fulltime?.home ?? f.score?.home ?? null,
+    away: f.goals?.away ?? f.score?.fulltime?.away ?? f.score?.away ?? null,
+  };
 }
 
 function extractStatus(f) {
@@ -69,6 +40,9 @@ function extractStatus(f) {
   };
 }
 
+// ── GET /api/fixtures/leagues ─────────────────────────────────────────────────
+// Only leagues that have allowFixture: true
+
 router.get('/leagues', auth, async (req, res) => {
   try {
     const db = getDb();
@@ -76,18 +50,24 @@ router.get('/leagues', auth, async (req, res) => {
       .collection('football_leagues')
       .find({ allowFixture: true }, { projection: { _id: 1, leagueName: 1, name: 1, image: 1 } })
       .toArray();
-    res.json(
-      leagues.map((l) => ({
-        id: l._id.toString(),
-        name: l.leagueName || l.name || 'Unknown',
-        image: l.image || null,
-      }))
-    );
+
+    if (!leagues.length) {
+      // Fallback: return all leagues so the UI isn't broken
+      const all = await db
+        .collection('football_leagues')
+        .find({}, { projection: { _id: 1, leagueName: 1, name: 1, image: 1 } })
+        .toArray();
+      return res.json(all.map((l) => ({ id: l._id.toString(), name: l.leagueName || l.name || 'Unknown', image: l.image || null })));
+    }
+
+    res.json(leagues.map((l) => ({ id: l._id.toString(), name: l.leagueName || l.name || 'Unknown', image: l.image || null })));
   } catch (err) {
     console.error('Fixtures leagues error:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+// ── GET /api/fixtures ─────────────────────────────────────────────────────────
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -95,21 +75,32 @@ router.get('/', auth, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const leagueId = req.query.leagueId;
-
     const dateFrom = req.query.dateFrom; // YYYY-MM-DD
     const dateTo = req.query.dateTo;
 
-    let query = {};
+    const query = {};
+
+    // League filter — handle both ObjectId ref and embedded object with _id
     if (leagueId) {
-      try { query.league = new ObjectId(leagueId); } catch {}
+      let leagueOid;
+      try { leagueOid = new ObjectId(leagueId); } catch {}
+      if (leagueOid) {
+        query.$or = [
+          { league: leagueOid },
+          { 'league._id': leagueOid },
+          { 'league.id': leagueId },
+        ];
+      }
     }
+
+    // Date filter using firstPeriod (confirmed field name)
     if (dateFrom || dateTo) {
-      query.date = {};
-      if (dateFrom) query.date.$gte = new Date(dateFrom).toISOString();
+      query.firstPeriod = {};
+      if (dateFrom) {
+        query.firstPeriod.$gte = new Date(dateFrom + 'T00:00:00.000Z');
+      }
       if (dateTo) {
-        const endOfDay = new Date(dateTo);
-        endOfDay.setHours(23, 59, 59, 999);
-        query.date.$lte = endOfDay.toISOString();
+        query.firstPeriod.$lte = new Date(dateTo + 'T23:59:59.999Z');
       }
     }
 
@@ -117,12 +108,12 @@ router.get('/', auth, async (req, res) => {
     const fixtures = await db
       .collection('football_fixtures')
       .find(query)
-      .sort({ date: 1, _id: 1 })
+      .sort({ firstPeriod: 1, _id: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .toArray();
 
-    // Separate embedded objects from reference IDs
+    // Resolve team/league IDs
     const refTeamIds = new Set();
     const refLeagueIds = new Set();
 
@@ -135,17 +126,17 @@ router.get('/', auth, async (req, res) => {
       if (lg && !lg.isEmbedded) refLeagueIds.add(lg.id);
     });
 
-    const toObjectId = (id) => { try { return new ObjectId(id); } catch { return id; } };
+    const toOid = (id) => { try { return new ObjectId(id); } catch { return id; } };
 
     const [dbTeams, dbLeagues] = await Promise.all([
       refTeamIds.size
         ? db.collection('football_teams')
-            .find({ _id: { $in: [...refTeamIds].map(toObjectId) } }, { projection: { name: 1, logo: 1 } })
+            .find({ _id: { $in: [...refTeamIds].map(toOid) } }, { projection: { name: 1, logo: 1 } })
             .toArray()
         : [],
       refLeagueIds.size
         ? db.collection('football_leagues')
-            .find({ _id: { $in: [...refLeagueIds].map(toObjectId) } }, { projection: { leagueName: 1, name: 1, image: 1 } })
+            .find({ _id: { $in: [...refLeagueIds].map(toOid) } }, { projection: { leagueName: 1, name: 1, image: 1 } })
             .toArray()
         : [],
     ]);
@@ -176,7 +167,9 @@ router.get('/', auth, async (req, res) => {
 
       return {
         _id: f._id.toString(),
-        date: extractDate(f),
+        // Use firstPeriod as the match start time, secondPeriod as end time
+        date: f.firstPeriod || f.date || f.fixture?.date || null,
+        endDate: f.secondPeriod || null,
         statusLong: status.long,
         statusShort: status.short,
         elapsed: status.elapsed,

@@ -56,7 +56,12 @@ function pickColumns(docs, collectionName) {
   return [...fallback, ...rest, ...timestamps].slice(0, MAX_COLS);
 }
 
-export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName, onUserClick }) {
+// Fields that are clickable with a specific action per collection
+const CLICKABLE_FIELDS = {
+  game_bet: { bookingCode: 'gameBet' },
+};
+
+export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName, onUserClick, onGameBetClick }) {
   const [selectedId, setSelectedId] = useState(null);
   const [nameMap, setNameMap] = useState({});
   const [fieldTypeMap, setFieldTypeMap] = useState({});
@@ -96,6 +101,19 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
   };
 
   const resolvedCell = (field, value, doc) => {
+    // Clickable special fields (e.g. bookingCode on game_bet)
+    const clickableAction = CLICKABLE_FIELDS[collectionName]?.[field];
+    if (clickableAction === 'gameBet' && value && onGameBetClick) {
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); onGameBetClick(String(doc._id), String(value)); }}
+          className="font-mono font-semibold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-2"
+        >
+          {String(value)}
+        </button>
+      );
+    }
+
     if (nameMap[field] && value) {
       const resolved = nameMap[field][String(value)];
       if (resolved) {

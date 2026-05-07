@@ -5,6 +5,7 @@ import DataTable from '../components/DataTable';
 import FixturesView from '../components/FixturesView';
 import LeaderboardView from '../components/LeaderboardView';
 import UserProfileModal from '../components/UserProfileModal';
+import GameBetModal from '../components/GameBetModal';
 
 function formatName(name) {
   return name
@@ -29,6 +30,7 @@ export default function Collection() {
   const [page, setPage] = useState(1);
 
   const [profileUser, setProfileUser] = useState(null); // { id, displayName }
+  const [gameBet, setGameBet] = useState(null); // { id, bookingCode }
 
   const isCustom = CUSTOM_VIEWS.includes(name);
 
@@ -71,6 +73,10 @@ export default function Collection() {
 
   const handleUserClick = (userId, displayName) => {
     setProfileUser({ id: userId, displayName });
+  };
+
+  const handleGameBetClick = (betId, bookingCode) => {
+    setGameBet({ id: betId, bookingCode });
   };
 
   return (
@@ -156,6 +162,7 @@ export default function Collection() {
             onPage={setPage}
             collectionName={name}
             onUserClick={handleUserClick}
+            onGameBetClick={handleGameBetClick}
           />
         )
       )}
@@ -166,6 +173,16 @@ export default function Collection() {
           userId={profileUser.id}
           displayName={profileUser.displayName}
           onClose={() => setProfileUser(null)}
+        />
+      )}
+
+      {/* Game bet detail modal */}
+      {gameBet && (
+        <GameBetModal
+          betId={gameBet.id}
+          bookingCode={gameBet.bookingCode}
+          onClose={() => setGameBet(null)}
+          onUserClick={(userId, name) => { setGameBet(null); setProfileUser({ id: userId, displayName: name }); }}
         />
       )}
     </div>

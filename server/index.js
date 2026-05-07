@@ -11,6 +11,7 @@ const lookupRoutes = require('./routes/lookup');
 const adminUsersRoutes = require('./routes/adminUsers');
 const fixturesRoutes = require('./routes/fixtures');
 const userProfileRoutes = require('./routes/userProfile');
+const gameBetsRoutes = require('./routes/gameBets');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api/lookup', lookupRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/fixtures', fixturesRoutes);
 app.use('/api/user-profile', userProfileRoutes);
+app.use('/api/game-bets', gameBetsRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
