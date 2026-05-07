@@ -1,12 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '../api';
+import { COLLECTION_REFERENCES } from '../config/references';
 import DocumentModal from './DocumentModal';
 
 const MAX_COLS = 7;
 const CELL_MAX_LEN = 60;
 
+function isISODate(val) {
+  return typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val);
+}
+
+function formatDate(val) {
+  try {
+    return new Date(val).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return val; }
+}
+
 function cellValue(val) {
   if (val === null || val === undefined) return <span className="text-gray-300">—</span>;
   if (typeof val === 'boolean') return val ? '✓' : '✗';
+  if (isISODate(val)) return <span className="text-gray-500">{formatDate(val)}</span>;
   if (typeof val === 'object') {
     const str = JSON.stringify(val);
     return <span className="text-gray-400 italic">{str.length > CELL_MAX_LEN ? str.slice(0, CELL_MAX_LEN) + '…' : str}</span>;
@@ -19,26 +35,58 @@ function pickColumns(docs) {
   if (!docs.length) return [];
   const sample = docs[0];
   const keys = Object.keys(sample);
-
   const priority = ['_id'];
   const timestamps = keys.filter((k) => k === 'createdAt' || k === 'updatedAt');
   const rest = keys.filter((k) => !priority.includes(k) && !timestamps.includes(k));
-
-  const ordered = [...priority, ...rest, ...timestamps];
-  return ordered.slice(0, MAX_COLS);
+  return [...priority, ...rest, ...timestamps].slice(0, MAX_COLS);
 }
 
 export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName }) {
   const [selectedId, setSelectedId] = useState(null);
+  const [nameMap, setNameMap] = useState({}); // { fieldName: { id: displayName } }
+
+  useEffect(() => {
+    const refs = COLLECTION_REFERENCES[collectionName];
+    if (!refs || !docs.length) { setNameMap({}); return; }
+
+    Promise.all(
+      refs.map(async ({ field, collection }) => {
+        const ids = [...new Set(
+          docs.map((d) => d[field]).filter(Boolean).map(String)
+        )];
+        if (!ids.length) return { field, map: {} };
+        try {
+          const res = await api.post(`/lookup/${collection}`, { ids });
+          return { field, map: res.data };
+        } catch {
+          return { field, map: {} };
+        }
+      })
+    ).then((results) => {
+      const combined = {};
+      results.forEach(({ field, map }) => { combined[field] = map; });
+      setNameMap(combined);
+    });
+  }, [docs, collectionName]);
 
   const columns = pickColumns(docs);
 
   const handleSort = (col) => {
-    if (col === sort) {
-      onSort(col, order === 'asc' ? 'desc' : 'asc');
-    } else {
-      onSort(col, 'desc');
+    onSort(col, col === sort && order === 'desc' ? 'asc' : 'desc');
+  };
+
+  const resolvedCell = (field, value) => {
+    if (nameMap[field] && value) {
+      const resolved = nameMap[field][String(value)];
+      if (resolved) {
+        return (
+          <span className="inline-flex items-center gap-1">
+            <span className="text-blue-600 font-medium">{resolved}</span>
+          </span>
+        );
+      }
     }
+    return cellValue(value);
   };
 
   const start = (page - 1) * limit + 1;
@@ -46,7 +94,6 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
 
   return (
     <>
-      {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -55,8 +102,8 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
                 {columns.map((col) => (
                   <th
                     key={col}
-                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
                     onClick={() => handleSort(col)}
+                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
                   >
                     {col}
                     {sort === col && (
@@ -81,7 +128,7 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
                 <tr key={String(doc._id ?? i)} className="hover:bg-gray-50 transition-colors">
                   {columns.map((col) => (
                     <td key={col} className="px-4 py-3 text-gray-700 font-mono text-xs max-w-xs truncate">
-                      {cellValue(doc[col])}
+                      {resolvedCell(col, doc[col])}
                     </td>
                   ))}
                   <td className="px-4 py-3">
@@ -104,37 +151,11 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
             {total === 0 ? 'No results' : `Showing ${start}–${end} of ${total.toLocaleString()}`}
           </p>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => onPage(1)}
-              disabled={page === 1}
-              className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
-            >
-              «
-            </button>
-            <button
-              onClick={() => onPage(page - 1)}
-              disabled={page === 1}
-              className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
-            >
-              ‹
-            </button>
-            <span className="px-3 py-1 text-xs text-gray-600">
-              {page} / {totalPages || 1}
-            </span>
-            <button
-              onClick={() => onPage(page + 1)}
-              disabled={page >= totalPages}
-              className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
-            >
-              ›
-            </button>
-            <button
-              onClick={() => onPage(totalPages)}
-              disabled={page >= totalPages}
-              className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
-            >
-              »
-            </button>
+            <button onClick={() => onPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">«</button>
+            <button onClick={() => onPage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">‹</button>
+            <span className="px-3 py-1 text-xs text-gray-600">{page} / {totalPages || 1}</span>
+            <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">›</button>
+            <button onClick={() => onPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">»</button>
           </div>
         </div>
       </div>
