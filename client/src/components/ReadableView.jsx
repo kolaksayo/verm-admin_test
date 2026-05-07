@@ -21,6 +21,11 @@ function formatLabel(key) {
     .trim();
 }
 
+function isImageUrl(val) {
+  if (typeof val !== 'string') return false;
+  return /\.(png|jpg|jpeg|gif|webp|svg)(\?|$)/i.test(val) || val.includes('api-sports.io');
+}
+
 function PrimitiveValue({ value }) {
   if (value === null || value === undefined) {
     return <span className="text-gray-300 italic">null</span>;
@@ -35,6 +40,19 @@ function PrimitiveValue({ value }) {
   }
   if (typeof value === 'number') {
     return <span className="text-gray-800">{value.toLocaleString()}</span>;
+  }
+  if (isImageUrl(value)) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <img
+          src={value}
+          alt=""
+          className="w-10 h-10 object-contain rounded border border-gray-100 bg-gray-50"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-xs break-all">{value}</a>
+      </span>
+    );
   }
   return <span className="text-gray-800 break-all">{String(value)}</span>;
 }

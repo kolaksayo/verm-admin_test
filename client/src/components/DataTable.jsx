@@ -79,6 +79,16 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
     if (nameMap[field] && value) {
       const resolved = nameMap[field][String(value)];
       if (resolved) {
+        if (resolved && typeof resolved === 'object' && resolved.name) {
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {resolved.image && (
+                <img src={resolved.image} alt="" className="w-5 h-5 object-contain rounded-sm flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+              )}
+              <span className="text-blue-600 font-medium">{resolved.name}</span>
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1">
             <span className="text-blue-600 font-medium">{resolved}</span>

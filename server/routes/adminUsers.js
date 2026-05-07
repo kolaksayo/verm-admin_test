@@ -53,7 +53,7 @@ router.patch('/me/password', auth, (req, res) => {
   }
 
   const hashed = bcrypt.hashSync(newPassword, 12);
-  db.prepare('UPDATE admin_users SET password = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare('UPDATE admin_users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(hashed, req.user.id);
 
   res.json({ message: 'Password updated successfully' });
@@ -78,7 +78,7 @@ router.post('/me/2fa/setup', auth, async (req, res) => {
       length: 32,
     });
 
-    db.prepare('UPDATE admin_users SET two_factor_secret = ?, two_factor_enabled = 0, updated_at = datetime("now") WHERE id = ?')
+    db.prepare('UPDATE admin_users SET two_factor_secret = ?, two_factor_enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(secret.base32, req.user.id);
 
     const qrCode = await QRCode.toDataURL(secret.otpauth_url);
@@ -109,7 +109,7 @@ router.post('/me/2fa/enable', auth, (req, res) => {
 
   if (!valid) return res.status(400).json({ error: 'Invalid code, please try again' });
 
-  db.prepare('UPDATE admin_users SET two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
+  db.prepare('UPDATE admin_users SET two_factor_enabled = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(req.user.id);
 
   res.json({ message: '2FA enabled successfully' });
@@ -135,7 +135,7 @@ router.delete('/me/2fa', auth, (req, res) => {
 
   if (!valid) return res.status(400).json({ error: 'Invalid code' });
 
-  db.prepare('UPDATE admin_users SET two_factor_enabled = 0, two_factor_secret = NULL, updated_at = datetime("now") WHERE id = ?')
+  db.prepare('UPDATE admin_users SET two_factor_enabled = 0, two_factor_secret = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(req.user.id);
 
   res.json({ message: '2FA disabled' });
@@ -194,13 +194,13 @@ router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
         return res.status(400).json({ error: 'Cannot demote the last superadmin' });
       }
     }
-    db.prepare('UPDATE admin_users SET role = ?, updated_at = datetime("now") WHERE id = ?').run(role, id);
+    db.prepare('UPDATE admin_users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(role, id);
   }
 
   if (password !== undefined) {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hashed = bcrypt.hashSync(password, 12);
-    db.prepare('UPDATE admin_users SET password = ?, updated_at = datetime("now") WHERE id = ?').run(hashed, id);
+    db.prepare('UPDATE admin_users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashed, id);
   }
 
   const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
