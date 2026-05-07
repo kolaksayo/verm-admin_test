@@ -43,15 +43,12 @@ function PrimitiveValue({ value }) {
   }
   if (isImageUrl(value)) {
     return (
-      <span className="inline-flex items-center gap-2">
-        <img
-          src={value}
-          alt=""
-          className="w-10 h-10 object-contain rounded border border-gray-100 bg-gray-50"
-          onError={(e) => { e.target.style.display = 'none'; }}
-        />
-        <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-xs break-all">{value}</a>
-      </span>
+      <img
+        src={value}
+        alt=""
+        className="w-10 h-10 object-contain rounded border border-gray-100 bg-gray-50"
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
     );
   }
   return <span className="text-gray-800 break-all">{String(value)}</span>;

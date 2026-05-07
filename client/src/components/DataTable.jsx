@@ -41,13 +41,18 @@ function pickColumns(docs) {
   return [...priority, ...rest, ...timestamps].slice(0, MAX_COLS);
 }
 
-export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName }) {
+export default function DataTable({ docs, total, page, totalPages, limit, sort, order, onSort, onPage, collectionName, onUserClick }) {
   const [selectedId, setSelectedId] = useState(null);
-  const [nameMap, setNameMap] = useState({}); // { fieldName: { id: displayName } }
+  const [nameMap, setNameMap] = useState({});
+  const [fieldTypeMap, setFieldTypeMap] = useState({});
 
   useEffect(() => {
     const refs = COLLECTION_REFERENCES[collectionName];
-    if (!refs || !docs.length) { setNameMap({}); return; }
+    if (!refs || !docs.length) { setNameMap({}); setFieldTypeMap({}); return; }
+
+    const typeMap = {};
+    refs.forEach(({ field, type }) => { if (type) typeMap[field] = type; });
+    setFieldTypeMap(typeMap);
 
     Promise.all(
       refs.map(async ({ field, collection }) => {
@@ -75,25 +80,36 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
     onSort(col, col === sort && order === 'desc' ? 'asc' : 'desc');
   };
 
-  const resolvedCell = (field, value) => {
+  const resolvedCell = (field, value, doc) => {
     if (nameMap[field] && value) {
       const resolved = nameMap[field][String(value)];
       if (resolved) {
-        if (resolved && typeof resolved === 'object' && resolved.name) {
-          return (
-            <span className="inline-flex items-center gap-1.5">
-              {resolved.image && (
-                <img src={resolved.image} alt="" className="w-5 h-5 object-contain rounded-sm flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
-              )}
-              <span className="text-blue-600 font-medium">{resolved.name}</span>
+        const isUser = fieldTypeMap[field] === 'user';
+        const displayName = typeof resolved === 'object' ? resolved.name : resolved;
+        const imageUrl = typeof resolved === 'object' ? resolved.image : null;
+
+        const inner = (
+          <span className="inline-flex items-center gap-1.5">
+            {imageUrl && (
+              <img src={imageUrl} alt="" className="w-5 h-5 object-contain rounded-sm flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+            )}
+            <span className={isUser ? 'text-blue-600 font-medium underline decoration-dotted underline-offset-2' : 'text-blue-600 font-medium'}>
+              {displayName}
             </span>
-          );
-        }
-        return (
-          <span className="inline-flex items-center gap-1">
-            <span className="text-blue-600 font-medium">{resolved}</span>
           </span>
         );
+
+        if (isUser && onUserClick) {
+          return (
+            <button
+              onClick={(e) => { e.stopPropagation(); onUserClick(String(value), displayName); }}
+              className="hover:opacity-75 transition-opacity"
+            >
+              {inner}
+            </button>
+          );
+        }
+        return inner;
       }
     }
     return cellValue(value);
@@ -138,7 +154,7 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
                 <tr key={String(doc._id ?? i)} className="hover:bg-gray-50 transition-colors">
                   {columns.map((col) => (
                     <td key={col} className="px-4 py-3 text-gray-700 font-mono text-xs max-w-xs truncate">
-                      {resolvedCell(col, doc[col])}
+                      {resolvedCell(col, doc[col], doc)}
                     </td>
                   ))}
                   <td className="px-4 py-3">

@@ -9,6 +9,8 @@ const dashboardRoutes = require('./routes/dashboard');
 const collectionsRoutes = require('./routes/collections');
 const lookupRoutes = require('./routes/lookup');
 const adminUsersRoutes = require('./routes/adminUsers');
+const fixturesRoutes = require('./routes/fixtures');
+const userProfileRoutes = require('./routes/userProfile');
 
 const app = express();
 
@@ -20,6 +22,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/lookup', lookupRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
+app.use('/api/fixtures', fixturesRoutes);
+app.use('/api/user-profile', userProfileRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
