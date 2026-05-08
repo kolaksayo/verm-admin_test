@@ -215,8 +215,8 @@ export default function CashFlow() {
         <div className="bg-vs-warning/10 border border-vs-warning/30 rounded-xl p-4 mb-5">
           <p className="text-xs font-semibold text-vs-warning mb-1">Withdrawal transactions not matched</p>
           <p className="text-xs text-vs-text-3">
-            Looking for <code className="bg-vs-elevated px-1 rounded">type: DEBIT</code> with description containing <code className="bg-vs-elevated px-1 rounded">withdraw</code>.
-            Check the Transaction Types tab to see the actual description values used for withdrawals.
+            Looking for <code className="bg-vs-elevated px-1 rounded">type: DEBIT, description: SafeHaven Naira transfer</code>.
+            Check the Transaction Types tab to confirm the exact description value.
           </p>
           {distinctTypes.length > 0 && (
             <p className="text-xs text-vs-text-3 mt-1">
@@ -336,7 +336,7 @@ export default function CashFlow() {
               <tbody className="divide-y divide-vs-border">
                 {typeBreakdown.map((row, i) => {
                   const isDeposit    = /^CREDIT$/i.test(row.type) && /^TOP\s*UP$/i.test(row.description);
-                  const isWithdrawal = /^DEBIT$/i.test(row.type)  && /withdraw/i.test(row.description);
+                  const isWithdrawal = /^DEBIT$/i.test(row.type)  && /safehaven naira transfer/i.test(row.description);
                   return (
                     <tr key={i} className="hover:bg-vs-elevated/50 transition-colors">
                       <td className="px-4 py-3">

@@ -11,11 +11,12 @@ const DEPOSIT_FILTER = {
   'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
 };
 
-// Safehaven NGN withdrawal — do NOT require gateWayResponse.data.amount
-// because withdrawal transactions may have a different gateway structure.
+// Safehaven NGN withdrawal — description is "SafeHaven Naira transfer"
+// fee = USD withdrawn × 200 NGN  (platform deducts 200 NGN from exchange rate)
+// gateWayResponse.data.amount = NGN actually sent to customer (already at reduced rate)
 const WITHDRAWAL_FILTER = {
   type: { $regex: /^DEBIT$/i },
-  description: { $regex: /withdraw/i },
+  description: { $regex: /safehaven naira transfer/i },
 };
 
 const DEPOSIT_FEE_PER_USD   = 100;  // platform adds    100 NGN to rate → fee = USD_credited  × 100
