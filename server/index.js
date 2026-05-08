@@ -12,6 +12,7 @@ const adminUsersRoutes = require('./routes/adminUsers');
 const fixturesRoutes = require('./routes/fixtures');
 const userProfileRoutes = require('./routes/userProfile');
 const gameBetsRoutes = require('./routes/gameBets');
+const cashflowRoutes = require('./routes/cashflow');
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/fixtures', fixturesRoutes);
 app.use('/api/user-profile', userProfileRoutes);
 app.use('/api/game-bets', gameBetsRoutes);
+app.use('/api/cashflow', cashflowRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));

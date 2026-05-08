@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Collection from './pages/Collection';
 import AdminUsers from './pages/AdminUsers';
 import Profile from './pages/Profile';
+import CashFlow from './pages/CashFlow';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -37,6 +38,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="collections/:name" element={<Collection />} />
+        <Route path="cash-flow" element={<CashFlow />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"

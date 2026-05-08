@@ -6,7 +6,10 @@ import { useTheme } from '../context/ThemeContext';
 const NAV_GROUPS = [
   {
     label: 'Overview',
-    items: [{ label: 'Dashboard', path: '/' }],
+    items: [
+      { label: 'Dashboard', path: '/' },
+      { label: 'Cash Flow', path: '/cash-flow' },
+    ],
   },
   {
     label: 'Users & Finance',
