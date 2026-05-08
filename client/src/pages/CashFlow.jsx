@@ -12,7 +12,7 @@ function fmtNGN(n) {
   return '₦' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 function fmtRate(n) {
-  if (n == null || isNaN(n)) return '—';
+  if (n == null || isNaN(n) || n === 0) return '—';
   return '₦' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function monthLabel(year, month) {
@@ -20,17 +20,6 @@ function monthLabel(year, month) {
 }
 function monthKey(year, month) {
   return `${year}-${String(month).padStart(2, '0')}`;
-}
-
-function SummaryCard({ title, value, sub, sub2, accent = 'text-vs-purple' }) {
-  return (
-    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">{title}</p>
-      <p className={`text-2xl font-bold ${accent}`}>{value}</p>
-      {sub && <p className="text-xs text-vs-text-3 mt-1">{sub}</p>}
-      {sub2 && <p className="text-xs text-vs-text-3/70 mt-0.5 italic">{sub2}</p>}
-    </div>
-  );
 }
 
 function MiniBar({ value, max, accent = 'bg-vs-purple' }) {
@@ -66,8 +55,8 @@ export default function CashFlow() {
     return (
       <div>
         <h1 className="text-2xl font-bold text-vs-text mb-6">Cash Flow</h1>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-vs-card rounded-xl border border-vs-border p-5 h-28 animate-pulse" />
           ))}
         </div>
@@ -86,109 +75,156 @@ export default function CashFlow() {
 
   const { summary, monthly, typeBreakdown, distinctTypes } = data;
   const bank = summary.bankBalance || {};
+  const dep  = summary.depositFees;
+  const wit  = summary.withdrawalFees;
 
   // ── Build unified monthly timeline ──────────────────────────────────────────
   const allKeys = new Set([
-    ...monthly.betFees.map((m) => monthKey(m.year, m.month)),
     ...monthly.deposits.map((m) => monthKey(m.year, m.month)),
     ...monthly.withdrawals.map((m) => monthKey(m.year, m.month)),
   ]);
   const sortedKeys = [...allKeys].sort();
-
-  const betByMonth = Object.fromEntries(monthly.betFees.map((m) => [monthKey(m.year, m.month), m]));
-  const depByMonth = Object.fromEntries(monthly.deposits.map((m) => [monthKey(m.year, m.month), m]));
-  const withByMonth = Object.fromEntries(monthly.withdrawals.map((m) => [monthKey(m.year, m.month), m]));
+  const depByMonth  = Object.fromEntries(monthly.deposits.map((m) => [monthKey(m.year, m.month), m]));
+  const witByMonth  = Object.fromEntries(monthly.withdrawals.map((m) => [monthKey(m.year, m.month), m]));
 
   const timeline = sortedKeys.map((key) => {
     const [y, m] = key.split('-').map(Number);
     return {
-      label: monthLabel(y, m),
-      betFees: betByMonth[key]?.fees ?? 0,
-      betCount: betByMonth[key]?.count ?? 0,
-      depFeeNGN: depByMonth[key]?.feeNGN ?? 0,
-      depCount: depByMonth[key]?.count ?? 0,
+      label:       monthLabel(y, m),
+      depFeeNGN:   depByMonth[key]?.feeNGN ?? 0,
+      depCount:    depByMonth[key]?.count ?? 0,
       depTotalUSD: depByMonth[key]?.totalUSD ?? 0,
-      depAvgRate: depByMonth[key]?.avgRateCharged ?? null,
-      witFeeNGN: withByMonth[key]?.feeNGN ?? 0,
-      witCount: withByMonth[key]?.count ?? 0,
-      witTotalUSD: withByMonth[key]?.totalUSD ?? 0,
-      witAvgRate: withByMonth[key]?.avgRateCharged ?? null,
+      depTotalNGN: depByMonth[key]?.totalNGN ?? 0,
+      depAvgRate:  depByMonth[key]?.avgRateCharged ?? null,
+      witFeeNGN:   witByMonth[key]?.feeNGN ?? 0,
+      witCount:    witByMonth[key]?.count ?? 0,
+      witTotalUSD: witByMonth[key]?.totalUSD ?? 0,
+      witAvgRate:  witByMonth[key]?.avgRatePaid ?? null,
     };
   });
 
-  const maxBet = Math.max(...timeline.map((t) => t.betFees), 0.01);
   const maxDep = Math.max(...timeline.map((t) => t.depFeeNGN), 1);
   const maxWit = Math.max(...timeline.map((t) => t.witFeeNGN), 1);
   const maxTxCount = Math.max(...typeBreakdown.map((t) => t.count), 1);
 
-  const noSafehaven = summary.depositFees.txCount === 0 && summary.withdrawalFees.txCount === 0;
+  const noWithdrawals = wit.txCount === 0;
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-vs-text">Cash Flow</h1>
-        <p className="text-sm text-vs-text-3 mt-1">Platform revenue across all streams</p>
+        <p className="text-sm text-vs-text-3 mt-1">Safehaven NGN top-up and withdrawal revenue</p>
       </div>
 
       {/* Bank balance banner */}
       <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-5">
-        <div className="flex flex-wrap items-start gap-6">
-          <div className="flex-1 min-w-[180px]">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Est. Safehaven NGN Balance</p>
-            <p className={`text-3xl font-bold ${(bank.estimatedBalanceNGN ?? 0) >= 0 ? 'text-vs-success' : 'text-vs-danger'}`}>
-              {fmtNGN(bank.estimatedBalanceNGN)}
-            </p>
-            <p className="text-xs text-vs-text-3 mt-1 italic">Net deposits − withdrawals (excl. bank charges on deposits)</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">
+          Estimated Safehaven NGN Balance
+          {bank.withdrawalNGNEstimated > 0 && (
+            <span className="ml-2 normal-case text-vs-warning/80 font-normal italic">
+              (withdrawal NGN partially estimated — see note)
+            </span>
+          )}
+        </p>
+        <p className={`text-4xl font-bold mb-4 ${(bank.estimatedBalanceNGN ?? 0) >= 0 ? 'text-vs-success' : 'text-vs-danger'}`}>
+          {fmtNGN(bank.estimatedBalanceNGN)}
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+          <div className="bg-vs-elevated/60 rounded-lg px-3 py-2">
+            <p className="text-vs-text-3 mb-0.5">Total NGN received</p>
+            <p className="font-semibold text-vs-text text-sm">{fmtNGN(bank.totalDepositNGN)}</p>
           </div>
-          <div className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
-            <div>
-              <p className="text-vs-text-3 mb-0.5">Total NGN received</p>
-              <p className="font-semibold text-vs-text">{fmtNGN(bank.totalDepositNGN)}</p>
-            </div>
-            <div>
-              <p className="text-vs-text-3 mb-0.5">Bank charges on deposits</p>
-              <p className="font-semibold text-vs-danger">−{fmtNGN(bank.bankFeesOnDeposits)}</p>
-            </div>
-            <div>
-              <p className="text-vs-text-3 mb-0.5">Net NGN deposited</p>
-              <p className="font-semibold text-vs-lime">{fmtNGN(bank.netDepositNGN)}</p>
-            </div>
-            <div>
-              <p className="text-vs-text-3 mb-0.5">Total NGN paid out</p>
-              <p className="font-semibold text-vs-warning">−{fmtNGN(bank.totalWithdrawalNGN)}</p>
-            </div>
+          <div className="bg-vs-elevated/60 rounded-lg px-3 py-2">
+            <p className="text-vs-text-3 mb-0.5">Bank charges on deposits</p>
+            <p className="font-semibold text-vs-danger text-sm">−{fmtNGN(bank.bankFeesOnDeposits)}</p>
+          </div>
+          <div className="bg-vs-elevated/60 rounded-lg px-3 py-2">
+            <p className="text-vs-text-3 mb-0.5">Net NGN deposited</p>
+            <p className="font-semibold text-vs-lime text-sm">{fmtNGN(bank.netDepositNGN)}</p>
+          </div>
+          <div className="bg-vs-elevated/60 rounded-lg px-3 py-2">
+            <p className="text-vs-text-3 mb-0.5">Est. NGN paid out</p>
+            <p className="font-semibold text-vs-warning text-sm">−{fmtNGN(bank.estimatedWithdrawalNGN)}</p>
           </div>
         </div>
       </div>
 
       {/* Revenue summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
-        <SummaryCard
-          title="Bet Fee Revenue"
-          value={fmtUSD(summary.betFees.totalUSD)}
-          sub={`${summary.betFees.betCount.toLocaleString()} bets`}
-          sub2="totalFeesDeducted per bet (USD)"
-          accent="text-vs-purple"
-        />
-        <SummaryCard
-          title="Deposit Spread Fees"
-          value={fmtNGN(summary.depositFees.feeNGN)}
-          sub={`${summary.depositFees.txCount.toLocaleString()} top-ups · ${fmtUSD(summary.depositFees.totalUSD)} credited`}
-          sub2={summary.depositFees.avgRateCharged
-            ? `Avg rate: ${fmtRate(summary.depositFees.avgRateCharged)}/USD (mkt ≈ ${fmtRate((summary.depositFees.avgRateCharged) - 100)})`
-            : 'No top-ups detected yet'}
-          accent="text-vs-lime"
-        />
-        <SummaryCard
-          title="Withdrawal Spread Fees"
-          value={fmtNGN(summary.withdrawalFees.feeNGN)}
-          sub={`${summary.withdrawalFees.txCount.toLocaleString()} withdrawals · ${fmtUSD(summary.withdrawalFees.totalUSD)} withdrawn`}
-          sub2={summary.withdrawalFees.avgRateCharged
-            ? `Avg rate paid: ${fmtRate(summary.withdrawalFees.avgRateCharged)}/USD (mkt ≈ ${fmtRate((summary.withdrawalFees.avgRateCharged) + 200)})`
-            : 'No withdrawals detected yet'}
-          accent="text-vs-warning"
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+        {/* Deposit */}
+        <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Deposit Spread Fees</p>
+          <p className="text-3xl font-bold text-vs-lime">{fmtNGN(dep.feeNGN)}</p>
+          <p className="text-xs text-vs-text-3 mt-1">
+            {dep.txCount.toLocaleString()} top-ups · {fmtUSD(dep.totalUSD)} credited · {fmtNGN(dep.totalNGN)} received
+          </p>
+          {dep.avgRateCharged ? (
+            <div className="mt-3 flex gap-4 text-xs">
+              <div>
+                <p className="text-vs-text-3">Platform rate</p>
+                <p className="font-semibold text-vs-lime">{fmtRate(dep.avgRateCharged)}/USD</p>
+              </div>
+              <div>
+                <p className="text-vs-text-3">Est. market rate</p>
+                <p className="font-semibold text-vs-text">{fmtRate(dep.avgRateCharged - 100)}/USD</p>
+              </div>
+              <div>
+                <p className="text-vs-text-3">Spread</p>
+                <p className="font-semibold text-vs-text">+₦100/USD</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-vs-text-3 italic mt-2">No top-ups detected</p>
+          )}
+        </div>
+
+        {/* Withdrawal */}
+        <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Withdrawal Spread Fees</p>
+          <p className="text-3xl font-bold text-vs-warning">{fmtNGN(wit.feeNGN)}</p>
+          <p className="text-xs text-vs-text-3 mt-1">
+            {wit.txCount.toLocaleString()} withdrawals · {fmtUSD(wit.totalUSD)} withdrawn
+          </p>
+          {wit.avgRatePaid ? (
+            <div className="mt-3 flex gap-4 text-xs">
+              <div>
+                <p className="text-vs-text-3">Rate paid to user</p>
+                <p className="font-semibold text-vs-warning">{fmtRate(wit.avgRatePaid)}/USD</p>
+              </div>
+              <div>
+                <p className="text-vs-text-3">Est. market rate</p>
+                <p className="font-semibold text-vs-text">{fmtRate((wit.avgRatePaid ?? 0) + 200)}/USD</p>
+              </div>
+              <div>
+                <p className="text-vs-text-3">Spread</p>
+                <p className="font-semibold text-vs-text">−₦200/USD</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-vs-text-3 italic mt-2">
+              {wit.txCount > 0
+                ? 'No gateway NGN data on withdrawals — fee is USD withdrawn × ₦200'
+                : 'No withdrawals detected — check Transaction Types tab'}
+            </p>
+          )}
+        </div>
       </div>
+
+      {/* Withdrawal detection warning */}
+      {noWithdrawals && (
+        <div className="bg-vs-warning/10 border border-vs-warning/30 rounded-xl p-4 mb-5">
+          <p className="text-xs font-semibold text-vs-warning mb-1">Withdrawal transactions not matched</p>
+          <p className="text-xs text-vs-text-3">
+            Looking for <code className="bg-vs-elevated px-1 rounded">type: DEBIT</code> with description containing <code className="bg-vs-elevated px-1 rounded">withdraw</code>.
+            Check the Transaction Types tab to see the actual description values used for withdrawals.
+          </p>
+          {distinctTypes.length > 0 && (
+            <p className="text-xs text-vs-text-3 mt-1">
+              All DEBIT types found: {distinctTypes.join(', ')}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5">
@@ -210,16 +246,16 @@ export default function CashFlow() {
             </div>
           ) : (
             <div className="bg-vs-card border border-vs-border rounded-xl overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
+              <table className="w-full text-sm min-w-[600px]">
                 <thead>
                   <tr className="border-b border-vs-border">
                     <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Month</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-purple">Bet Fees</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Bets</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-lime">Dep. Fees (₦)</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Top-ups</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Avg Rate</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-warning">With. Fees (₦)</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Avg Rate</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Withdrawals</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Avg Rate Paid</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-vs-border">
@@ -228,19 +264,13 @@ export default function CashFlow() {
                       <td className="px-4 py-3 font-medium text-vs-text whitespace-nowrap">{row.label}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-col items-end gap-1">
-                          <span className="text-vs-purple font-semibold">{fmtUSD(row.betFees)}</span>
-                          <MiniBar value={row.betFees} max={maxBet} accent="bg-vs-purple" />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">{row.betCount}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col items-end gap-1">
                           <span className="text-vs-lime font-semibold">{fmtNGN(row.depFeeNGN)}</span>
                           <MiniBar value={row.depFeeNGN} max={maxDep} accent="bg-vs-lime" />
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">{row.depCount}</td>
                       <td className="px-4 py-3 text-right text-vs-text-3 text-xs hidden lg:table-cell">
-                        {row.depAvgRate ? fmtRate(row.depAvgRate) : '—'}
+                        {fmtRate(row.depAvgRate)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-col items-end gap-1">
@@ -248,8 +278,9 @@ export default function CashFlow() {
                           <MiniBar value={row.witFeeNGN} max={maxWit} accent="bg-vs-warning" />
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">{row.witCount}</td>
                       <td className="px-4 py-3 text-right text-vs-text-3 text-xs hidden lg:table-cell">
-                        {row.witAvgRate ? fmtRate(row.witAvgRate) : '—'}
+                        {fmtRate(row.witAvgRate)}
                       </td>
                     </tr>
                   ))}
@@ -257,26 +288,23 @@ export default function CashFlow() {
                 <tfoot>
                   <tr className="border-t-2 border-vs-border bg-vs-elevated/30">
                     <td className="px-4 py-3 font-bold text-vs-text-2 text-xs uppercase tracking-wider">Totals</td>
-                    <td className="px-4 py-3 text-right font-bold text-vs-purple">{fmtUSD(timeline.reduce((s, r) => s + r.betFees, 0))}</td>
-                    <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">{timeline.reduce((s, r) => s + r.betCount, 0)}</td>
-                    <td className="px-4 py-3 text-right font-bold text-vs-lime">{fmtNGN(timeline.reduce((s, r) => s + r.depFeeNGN, 0))}</td>
+                    <td className="px-4 py-3 text-right font-bold text-vs-lime">
+                      {fmtNGN(timeline.reduce((s, r) => s + r.depFeeNGN, 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">
+                      {timeline.reduce((s, r) => s + r.depCount, 0)}
+                    </td>
                     <td className="px-4 py-3 hidden lg:table-cell" />
-                    <td className="px-4 py-3 text-right font-bold text-vs-warning">{fmtNGN(timeline.reduce((s, r) => s + r.witFeeNGN, 0))}</td>
+                    <td className="px-4 py-3 text-right font-bold text-vs-warning">
+                      {fmtNGN(timeline.reduce((s, r) => s + r.witFeeNGN, 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">
+                      {timeline.reduce((s, r) => s + r.witCount, 0)}
+                    </td>
                     <td className="px-4 py-3 hidden lg:table-cell" />
                   </tr>
                 </tfoot>
               </table>
-            </div>
-          )}
-
-          {/* Warning when Safehaven transactions not found */}
-          {noSafehaven && (
-            <div className="mt-4 bg-vs-warning/10 border border-vs-warning/30 rounded-xl p-4">
-              <p className="text-xs font-semibold text-vs-warning mb-1">Deposit / withdrawal transactions not matched</p>
-              <p className="text-xs text-vs-text-3">
-                The filter looks for <code className="bg-vs-elevated px-1 rounded">type: CREDIT, description: TOP UP</code> with gateway data.
-                Check the Transaction Types tab to see actual type/description combinations and share if the pattern needs adjusting.
-              </p>
             </div>
           )}
         </>
@@ -286,9 +314,10 @@ export default function CashFlow() {
         <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-vs-border">
             <p className="text-xs text-vs-text-3">
-              All type + description combinations in the{' '}
-              <code className="bg-vs-elevated px-1 rounded text-vs-text-2">transactions</code> collection.
-              Deposit top-ups should show <code className="bg-vs-elevated px-1 rounded">CREDIT / TOP UP</code>.
+              All type + description combinations. Deposits should show{' '}
+              <code className="bg-vs-elevated px-1 rounded">CREDIT / TOP UP</code>.
+              Withdrawals should show <code className="bg-vs-elevated px-1 rounded">DEBIT / [description]</code> —
+              if the description doesn't contain "withdraw", share it to fix the filter.
             </p>
           </div>
           {typeBreakdown.length === 0 ? (
@@ -301,21 +330,21 @@ export default function CashFlow() {
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Description</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Count</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Total Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-vs-text-3 w-36 hidden md:table-cell">Distribution</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-vs-text-3 w-36 hidden md:table-cell">Share</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-vs-border">
                 {typeBreakdown.map((row, i) => {
-                  const isDeposit = /^CREDIT$/i.test(row.type) && /^TOP\s*UP$/i.test(row.description);
-                  const isWithdrawal = /^DEBIT$/i.test(row.type) && /withdraw/i.test(row.description);
+                  const isDeposit    = /^CREDIT$/i.test(row.type) && /^TOP\s*UP$/i.test(row.description);
+                  const isWithdrawal = /^DEBIT$/i.test(row.type)  && /withdraw/i.test(row.description);
                   return (
                     <tr key={i} className="hover:bg-vs-elevated/50 transition-colors">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-vs-text-2 bg-vs-elevated px-2 py-0.5 rounded">{row.type || '—'}</span>
-                        {isDeposit && <span className="ml-2 text-xs text-vs-lime font-semibold">deposit fee</span>}
-                        {isWithdrawal && <span className="ml-2 text-xs text-vs-warning font-semibold">withdrawal fee</span>}
+                        <span className="font-mono text-xs bg-vs-elevated px-2 py-0.5 rounded text-vs-text-2">{row.type || '—'}</span>
+                        {isDeposit    && <span className="ml-2 text-xs text-vs-lime font-semibold">deposit</span>}
+                        {isWithdrawal && <span className="ml-2 text-xs text-vs-warning font-semibold">withdrawal</span>}
                       </td>
-                      <td className="px-4 py-3 text-vs-text-3 text-xs">{row.description || '—'}</td>
+                      <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{row.description || '—'}</td>
                       <td className="px-4 py-3 text-right text-vs-text font-medium">{row.count.toLocaleString()}</td>
                       <td className="px-4 py-3 text-right text-vs-text-3">{fmtUSD(row.totalAmount)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">

@@ -4,24 +4,22 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-// Safehaven NGN top-up: type CREDIT, description "TOP UP", gateway amount present
+// Safehaven NGN top-up — gateway data confirmed present on deposits
 const DEPOSIT_FILTER = {
   type: { $regex: /^CREDIT$/i },
   description: { $regex: /^TOP\s*UP$/i },
   'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
 };
 
-// Safehaven NGN withdrawal: type DEBIT, description contains "WITHDRAW"
-// (confirmed pattern once withdrawal doc is seen — using broad match for now)
+// Safehaven NGN withdrawal — do NOT require gateWayResponse.data.amount
+// because withdrawal transactions may have a different gateway structure.
 const WITHDRAWAL_FILTER = {
   type: { $regex: /^DEBIT$/i },
   description: { $regex: /withdraw/i },
-  'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
 };
 
-// Fee per USD credited/withdrawn (expressed in NGN)
-const DEPOSIT_FEE_PER_USD = 100;   // platform adds 100 NGN to rate → fee = usd_credited × 100
-const WITHDRAWAL_FEE_PER_USD = 200; // platform deducts 200 NGN from rate → fee = usd_withdrawn × 200
+const DEPOSIT_FEE_PER_USD   = 100;  // platform adds    100 NGN to rate → fee = USD_credited  × 100
+const WITHDRAWAL_FEE_PER_USD = 200; // platform deducts 200 NGN from rate → fee = USD_withdrawn × 200
 
 // ── GET /api/cashflow/summary ──────────────────────────────────────────────────
 
@@ -29,34 +27,24 @@ router.get('/summary', auth, async (req, res) => {
   try {
     const db = getDb();
 
-    // ── 1. Bet fee revenue ────────────────────────────────────────────────────
-    const betFeeAgg = await db.collection('game_bet').aggregate([
-      { $match: { totalFeesDeducted: { $exists: true, $gt: 0 } } },
-      { $group: { _id: null, totalFees: { $sum: '$totalFeesDeducted' }, betCount: { $sum: 1 } } },
-    ]).toArray();
-
-    const betFeeMonthly = await db.collection('game_bet').aggregate([
-      { $match: { totalFeesDeducted: { $exists: true, $gt: 0 }, createdAt: { $exists: true } } },
-      { $group: {
-        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-        fees: { $sum: '$totalFeesDeducted' },
-        count: { $sum: 1 },
-      }},
-      { $sort: { '_id.year': 1, '_id.month': 1 } },
-    ]).toArray();
-
-    // ── 2. Deposit fee revenue ────────────────────────────────────────────────
-    // fee = amount (USD credited) × 100 NGN  (platform adds 100 NGN to exchange rate)
-    // NGN sent by user = gateWayResponse.data.amount
-    // implied rate = gateWayResponse.data.amount / amount
+    // ── 1. Deposit aggregation ────────────────────────────────────────────────
+    // NGN sent = gateWayResponse.data.amount
+    // USD credited = amount
+    // Platform fee = amount × 100 NGN
+    // Implied rate = gateWayResponse.data.amount / amount
     const depositAgg = await db.collection('transactions').aggregate([
       { $match: DEPOSIT_FILTER },
       { $group: {
         _id: null,
-        count: { $sum: 1 },
-        totalUSD: { $sum: '$amount' },
-        totalNGN: { $sum: '$gateWayResponse.data.amount' },
-        feeNGN: { $sum: { $multiply: ['$amount', DEPOSIT_FEE_PER_USD] } },
+        count:          { $sum: 1 },
+        totalUSD:       { $sum: '$amount' },
+        totalNGN:       { $sum: '$gateWayResponse.data.amount' },
+        feeNGN:         { $sum: { $multiply: ['$amount', DEPOSIT_FEE_PER_USD] } },
+        bankFeesNGN:    { $sum: { $add: [
+          { $ifNull: ['$gateWayResponse.data.fees', 0] },
+          { $ifNull: ['$gateWayResponse.data.vat', 0] },
+          { $ifNull: ['$gateWayResponse.data.stampDuty', 0] },
+        ]}},
         avgRateCharged: { $avg: { $divide: ['$gateWayResponse.data.amount', '$amount'] } },
       }},
     ]).toArray();
@@ -64,113 +52,68 @@ router.get('/summary', auth, async (req, res) => {
     const depositMonthly = await db.collection('transactions').aggregate([
       { $match: { ...DEPOSIT_FILTER, createdAt: { $exists: true } } },
       { $group: {
-        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-        count: { $sum: 1 },
-        totalUSD: { $sum: '$amount' },
-        totalNGN: { $sum: '$gateWayResponse.data.amount' },
-        feeNGN: { $sum: { $multiply: ['$amount', DEPOSIT_FEE_PER_USD] } },
+        _id:            { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+        count:          { $sum: 1 },
+        totalUSD:       { $sum: '$amount' },
+        totalNGN:       { $sum: '$gateWayResponse.data.amount' },
+        feeNGN:         { $sum: { $multiply: ['$amount', DEPOSIT_FEE_PER_USD] } },
         avgRateCharged: { $avg: { $divide: ['$gateWayResponse.data.amount', '$amount'] } },
       }},
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]).toArray();
 
-    // ── 3. Withdrawal fee revenue ─────────────────────────────────────────────
-    // fee = amount (USD withdrawn) × 200 NGN  (platform deducts 200 NGN from exchange rate)
+    // ── 2. Withdrawal aggregation ─────────────────────────────────────────────
+    // USD withdrawn = amount
+    // NGN paid out  = gateWayResponse.data.amount if present, else amount × (avgDepRate - 200)
+    // Platform fee  = amount × 200 NGN (no gateway data needed)
     const withdrawalAgg = await db.collection('transactions').aggregate([
       { $match: WITHDRAWAL_FILTER },
       { $group: {
         _id: null,
-        count: { $sum: 1 },
-        totalUSD: { $sum: '$amount' },
-        totalNGN: { $sum: '$gateWayResponse.data.amount' },
-        feeNGN: { $sum: { $multiply: ['$amount', WITHDRAWAL_FEE_PER_USD] } },
-        avgRateCharged: { $avg: { $divide: ['$gateWayResponse.data.amount', '$amount'] } },
+        count:     { $sum: 1 },
+        totalUSD:  { $sum: '$amount' },
+        // NGN paid out via gateway when available
+        totalNGNGateway: { $sum: { $ifNull: ['$gateWayResponse.data.amount', 0] } },
+        withGatewayCount: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$gateWayResponse.data.amount', 0] }, 0] }, 1, 0] } },
+        feeNGN:    { $sum: { $multiply: ['$amount', WITHDRAWAL_FEE_PER_USD] } },
+        avgRatePaid: {
+          $avg: {
+            $cond: [
+              { $gt: [{ $ifNull: ['$gateWayResponse.data.amount', 0] }, 0] },
+              { $divide: ['$gateWayResponse.data.amount', '$amount'] },
+              null,
+            ],
+          },
+        },
       }},
     ]).toArray();
 
     const withdrawalMonthly = await db.collection('transactions').aggregate([
       { $match: { ...WITHDRAWAL_FILTER, createdAt: { $exists: true } } },
       { $group: {
-        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-        count: { $sum: 1 },
-        totalUSD: { $sum: '$amount' },
-        totalNGN: { $sum: '$gateWayResponse.data.amount' },
-        feeNGN: { $sum: { $multiply: ['$amount', WITHDRAWAL_FEE_PER_USD] } },
-        avgRateCharged: { $avg: { $divide: ['$gateWayResponse.data.amount', '$amount'] } },
+        _id:       { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+        count:     { $sum: 1 },
+        totalUSD:  { $sum: '$amount' },
+        totalNGNGateway: { $sum: { $ifNull: ['$gateWayResponse.data.amount', 0] } },
+        feeNGN:    { $sum: { $multiply: ['$amount', WITHDRAWAL_FEE_PER_USD] } },
+        avgRatePaid: {
+          $avg: {
+            $cond: [
+              { $gt: [{ $ifNull: ['$gateWayResponse.data.amount', 0] }, 0] },
+              { $divide: ['$gateWayResponse.data.amount', '$amount'] },
+              null,
+            ],
+          },
+        },
       }},
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]).toArray();
 
-    // ── 4. NGN bank balance estimate ─────────────────────────────────────────
-    // Balance = Σ NGN received (deposits) − Σ NGN paid out (withdrawals)
-    // gateWayResponse.data.amount = gross NGN on every Safehaven event.
-    // We also sum bank fees (fees + vat) on deposits so the UI can show net received.
-    const bankBalanceAgg = await db.collection('transactions').aggregate([
-      {
-        $match: {
-          'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
-          $or: [
-            { type: { $regex: /^CREDIT$/i }, description: { $regex: /^TOP\s*UP$/i } },
-            { type: { $regex: /^DEBIT$/i },  description: { $regex: /withdraw/i } },
-          ],
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalDepositNGN: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^CREDIT$/i } },
-                '$gateWayResponse.data.amount',
-                0,
-              ],
-            },
-          },
-          totalDepositBankFees: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^CREDIT$/i } },
-                { $add: [
-                  { $ifNull: ['$gateWayResponse.data.fees', 0] },
-                  { $ifNull: ['$gateWayResponse.data.vat', 0] },
-                  { $ifNull: ['$gateWayResponse.data.stampDuty', 0] },
-                ]},
-                0,
-              ],
-            },
-          },
-          totalWithdrawalNGN: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^DEBIT$/i } },
-                '$gateWayResponse.data.amount',
-                0,
-              ],
-            },
-          },
-          totalWithdrawalBankFees: {
-            $sum: {
-              $cond: [
-                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^DEBIT$/i } },
-                { $add: [
-                  { $ifNull: ['$gateWayResponse.data.fees', 0] },
-                  { $ifNull: ['$gateWayResponse.data.vat', 0] },
-                  { $ifNull: ['$gateWayResponse.data.stampDuty', 0] },
-                ]},
-                0,
-              ],
-            },
-          },
-        },
-      },
-    ]).toArray();
-
-    // ── 5. Transaction type breakdown ─────────────────────────────────────────
+    // ── 3. Transaction type breakdown (for diagnostics) ───────────────────────
     const typeBreakdown = await db.collection('transactions').aggregate([
       { $group: {
-        _id: { type: '$type', description: '$description' },
-        count: { $sum: 1 },
+        _id:         { type: '$type', description: '$description' },
+        count:       { $sum: 1 },
         totalAmount: { $sum: '$amount' },
       }},
       { $sort: { count: -1 } },
@@ -179,57 +122,60 @@ router.get('/summary', auth, async (req, res) => {
 
     const distinctTypes = await db.collection('transactions').distinct('type');
 
-    // ── Build response ────────────────────────────────────────────────────────
+    // ── 4. Bank balance estimate ──────────────────────────────────────────────
     const dep = depositAgg[0] || {};
     const wit = withdrawalAgg[0] || {};
-    const bet = betFeeAgg[0] || {};
-    const bank = bankBalanceAgg[0] || {};
 
-    // Bank balance breakdown
-    const totalDepNGN   = bank.totalDepositNGN ?? 0;
-    const totalDepFees  = bank.totalDepositBankFees ?? 0;
-    const totalWitNGN   = bank.totalWithdrawalNGN ?? 0;
-    const totalWitFees  = bank.totalWithdrawalBankFees ?? 0;
-    // Net NGN received = gross deposits minus bank charges on those deposits
-    const netDepNGN     = totalDepNGN - totalDepFees;
-    // NGN paid out = withdrawal amounts (bank charges on withdrawals paid by recipient or platform)
-    const estimatedBankBalanceNGN = netDepNGN - totalWitNGN;
+    const totalDepNGN    = dep.totalNGN ?? 0;
+    const totalDepFees   = dep.bankFeesNGN ?? 0;
+    const netDepNGN      = totalDepNGN - totalDepFees;
+
+    // For NGN paid out: use gateway NGN if available; otherwise estimate using
+    // (avgDepositRate − 200) as a proxy for the withdrawal rate used.
+    const avgDepRate     = dep.avgRateCharged ?? 0;
+    const estimatedWithdrawalRate = Math.max(avgDepRate - WITHDRAWAL_FEE_PER_USD - DEPOSIT_FEE_PER_USD, 0);
+    const witGatewayNGN  = wit.totalNGNGateway ?? 0;
+    const witGatewayCount = wit.withGatewayCount ?? 0;
+    const witTotalCount  = wit.count ?? 0;
+    const witNoGatewayUSD = (witTotalCount - witGatewayCount > 0)
+      ? ((wit.totalUSD ?? 0) * (witTotalCount - witGatewayCount) / Math.max(witTotalCount, 1))
+      : 0;
+    const estimatedWithdrawalNGN = witGatewayNGN + (witNoGatewayUSD * estimatedWithdrawalRate);
+    const estimatedBankBalanceNGN = netDepNGN - estimatedWithdrawalNGN;
 
     res.json({
       summary: {
-        betFees: {
-          totalUSD: bet.totalFees ?? 0,
-          betCount: bet.betCount ?? 0,
-        },
         depositFees: {
-          txCount: dep.count ?? 0,
-          totalUSD: dep.totalUSD ?? 0,
-          totalNGN: dep.totalNGN ?? 0,
-          feeNGN: dep.feeNGN ?? 0,
+          txCount:        dep.count ?? 0,
+          totalUSD:       dep.totalUSD ?? 0,
+          totalNGN:       totalDepNGN,
+          bankFeesNGN:    totalDepFees,
+          netDepNGN,
+          feeNGN:         dep.feeNGN ?? 0,
           avgRateCharged: dep.avgRateCharged ?? null,
-          feePerUSD: DEPOSIT_FEE_PER_USD,
+          feePerUSD:      DEPOSIT_FEE_PER_USD,
         },
         withdrawalFees: {
-          txCount: wit.count ?? 0,
-          totalUSD: wit.totalUSD ?? 0,
-          totalNGN: wit.totalNGN ?? 0,
-          feeNGN: wit.feeNGN ?? 0,
-          avgRateCharged: wit.avgRateCharged ?? null,
-          feePerUSD: WITHDRAWAL_FEE_PER_USD,
+          txCount:         wit.count ?? 0,
+          totalUSD:        wit.totalUSD ?? 0,
+          totalNGNGateway: witGatewayNGN,
+          withGatewayCount: witGatewayCount,
+          feeNGN:          wit.feeNGN ?? 0,
+          avgRatePaid:     wit.avgRatePaid ?? null,
+          feePerUSD:       WITHDRAWAL_FEE_PER_USD,
+          estimatedNGNOut: estimatedWithdrawalNGN,
         },
         bankBalance: {
-          totalDepositNGN:    totalDepNGN,
-          bankFeesOnDeposits: totalDepFees,
-          netDepositNGN:      netDepNGN,
-          totalWithdrawalNGN: totalWitNGN,
-          bankFeesOnWithdrawals: totalWitFees,
-          estimatedBalanceNGN: estimatedBankBalanceNGN,
+          totalDepositNGN:       totalDepNGN,
+          bankFeesOnDeposits:    totalDepFees,
+          netDepositNGN:         netDepNGN,
+          estimatedWithdrawalNGN,
+          estimatedBalanceNGN:   estimatedBankBalanceNGN,
+          withdrawalNGNFromGateway: witGatewayNGN,
+          withdrawalNGNEstimated:   estimatedWithdrawalNGN - witGatewayNGN,
         },
       },
       monthly: {
-        betFees: betFeeMonthly.map((m) => ({
-          year: m._id.year, month: m._id.month, fees: m.fees, count: m.count,
-        })),
         deposits: depositMonthly.map((m) => ({
           year: m._id.year, month: m._id.month,
           count: m.count, totalUSD: m.totalUSD, totalNGN: m.totalNGN,
@@ -237,8 +183,9 @@ router.get('/summary', auth, async (req, res) => {
         })),
         withdrawals: withdrawalMonthly.map((m) => ({
           year: m._id.year, month: m._id.month,
-          count: m.count, totalUSD: m.totalUSD, totalNGN: m.totalNGN,
-          feeNGN: m.feeNGN, avgRateCharged: m.avgRateCharged,
+          count: m.count, totalUSD: m.totalUSD,
+          totalNGNGateway: m.totalNGNGateway,
+          feeNGN: m.feeNGN, avgRatePaid: m.avgRatePaid,
         })),
       },
       typeBreakdown: typeBreakdown.map((t) => ({
