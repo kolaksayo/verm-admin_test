@@ -101,7 +101,72 @@ router.get('/summary', auth, async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]).toArray();
 
-    // ── 4. Transaction type breakdown ─────────────────────────────────────────
+    // ── 4. NGN bank balance estimate ─────────────────────────────────────────
+    // Balance = Σ NGN received (deposits) − Σ NGN paid out (withdrawals)
+    // gateWayResponse.data.amount = gross NGN on every Safehaven event.
+    // We also sum bank fees (fees + vat) on deposits so the UI can show net received.
+    const bankBalanceAgg = await db.collection('transactions').aggregate([
+      {
+        $match: {
+          'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
+          $or: [
+            { type: { $regex: /^CREDIT$/i }, description: { $regex: /^TOP\s*UP$/i } },
+            { type: { $regex: /^DEBIT$/i },  description: { $regex: /withdraw/i } },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalDepositNGN: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^CREDIT$/i } },
+                '$gateWayResponse.data.amount',
+                0,
+              ],
+            },
+          },
+          totalDepositBankFees: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^CREDIT$/i } },
+                { $add: [
+                  { $ifNull: ['$gateWayResponse.data.fees', 0] },
+                  { $ifNull: ['$gateWayResponse.data.vat', 0] },
+                  { $ifNull: ['$gateWayResponse.data.stampDuty', 0] },
+                ]},
+                0,
+              ],
+            },
+          },
+          totalWithdrawalNGN: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^DEBIT$/i } },
+                '$gateWayResponse.data.amount',
+                0,
+              ],
+            },
+          },
+          totalWithdrawalBankFees: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: /^DEBIT$/i } },
+                { $add: [
+                  { $ifNull: ['$gateWayResponse.data.fees', 0] },
+                  { $ifNull: ['$gateWayResponse.data.vat', 0] },
+                  { $ifNull: ['$gateWayResponse.data.stampDuty', 0] },
+                ]},
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]).toArray();
+
+    // ── 5. Transaction type breakdown ─────────────────────────────────────────
     const typeBreakdown = await db.collection('transactions').aggregate([
       { $group: {
         _id: { type: '$type', description: '$description' },
@@ -118,6 +183,17 @@ router.get('/summary', auth, async (req, res) => {
     const dep = depositAgg[0] || {};
     const wit = withdrawalAgg[0] || {};
     const bet = betFeeAgg[0] || {};
+    const bank = bankBalanceAgg[0] || {};
+
+    // Bank balance breakdown
+    const totalDepNGN   = bank.totalDepositNGN ?? 0;
+    const totalDepFees  = bank.totalDepositBankFees ?? 0;
+    const totalWitNGN   = bank.totalWithdrawalNGN ?? 0;
+    const totalWitFees  = bank.totalWithdrawalBankFees ?? 0;
+    // Net NGN received = gross deposits minus bank charges on those deposits
+    const netDepNGN     = totalDepNGN - totalDepFees;
+    // NGN paid out = withdrawal amounts (bank charges on withdrawals paid by recipient or platform)
+    const estimatedBankBalanceNGN = netDepNGN - totalWitNGN;
 
     res.json({
       summary: {
@@ -140,6 +216,14 @@ router.get('/summary', auth, async (req, res) => {
           feeNGN: wit.feeNGN ?? 0,
           avgRateCharged: wit.avgRateCharged ?? null,
           feePerUSD: WITHDRAWAL_FEE_PER_USD,
+        },
+        bankBalance: {
+          totalDepositNGN:    totalDepNGN,
+          bankFeesOnDeposits: totalDepFees,
+          netDepositNGN:      netDepNGN,
+          totalWithdrawalNGN: totalWitNGN,
+          bankFeesOnWithdrawals: totalWitFees,
+          estimatedBalanceNGN: estimatedBankBalanceNGN,
         },
       },
       monthly: {

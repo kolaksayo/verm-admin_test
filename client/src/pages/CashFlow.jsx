@@ -85,6 +85,7 @@ export default function CashFlow() {
   }
 
   const { summary, monthly, typeBreakdown, distinctTypes } = data;
+  const bank = summary.bankBalance || {};
 
   // ── Build unified monthly timeline ──────────────────────────────────────────
   const allKeys = new Set([
@@ -129,67 +130,65 @@ export default function CashFlow() {
         <p className="text-sm text-vs-text-3 mt-1">Platform revenue across all streams</p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      {/* Bank balance banner */}
+      <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-5">
+        <div className="flex flex-wrap items-start gap-6">
+          <div className="flex-1 min-w-[180px]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Est. Safehaven NGN Balance</p>
+            <p className={`text-3xl font-bold ${(bank.estimatedBalanceNGN ?? 0) >= 0 ? 'text-vs-success' : 'text-vs-danger'}`}>
+              {fmtNGN(bank.estimatedBalanceNGN)}
+            </p>
+            <p className="text-xs text-vs-text-3 mt-1 italic">Net deposits − withdrawals (excl. bank charges on deposits)</p>
+          </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
+            <div>
+              <p className="text-vs-text-3 mb-0.5">Total NGN received</p>
+              <p className="font-semibold text-vs-text">{fmtNGN(bank.totalDepositNGN)}</p>
+            </div>
+            <div>
+              <p className="text-vs-text-3 mb-0.5">Bank charges on deposits</p>
+              <p className="font-semibold text-vs-danger">−{fmtNGN(bank.bankFeesOnDeposits)}</p>
+            </div>
+            <div>
+              <p className="text-vs-text-3 mb-0.5">Net NGN deposited</p>
+              <p className="font-semibold text-vs-lime">{fmtNGN(bank.netDepositNGN)}</p>
+            </div>
+            <div>
+              <p className="text-vs-text-3 mb-0.5">Total NGN paid out</p>
+              <p className="font-semibold text-vs-warning">−{fmtNGN(bank.totalWithdrawalNGN)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Revenue summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
         <SummaryCard
           title="Bet Fee Revenue"
           value={fmtUSD(summary.betFees.totalUSD)}
           sub={`${summary.betFees.betCount.toLocaleString()} bets`}
-          sub2="20% cut (totalFeesDeducted) per bet"
+          sub2="totalFeesDeducted per bet (USD)"
           accent="text-vs-purple"
         />
         <SummaryCard
-          title="Deposit Fees"
+          title="Deposit Spread Fees"
           value={fmtNGN(summary.depositFees.feeNGN)}
           sub={`${summary.depositFees.txCount.toLocaleString()} top-ups · ${fmtUSD(summary.depositFees.totalUSD)} credited`}
           sub2={summary.depositFees.avgRateCharged
-            ? `Avg rate charged: ${fmtRate(summary.depositFees.avgRateCharged)}/USD`
+            ? `Avg rate: ${fmtRate(summary.depositFees.avgRateCharged)}/USD (mkt ≈ ${fmtRate((summary.depositFees.avgRateCharged) - 100)})`
             : 'No top-ups detected yet'}
           accent="text-vs-lime"
         />
         <SummaryCard
-          title="Withdrawal Fees"
+          title="Withdrawal Spread Fees"
           value={fmtNGN(summary.withdrawalFees.feeNGN)}
           sub={`${summary.withdrawalFees.txCount.toLocaleString()} withdrawals · ${fmtUSD(summary.withdrawalFees.totalUSD)} withdrawn`}
           sub2={summary.withdrawalFees.avgRateCharged
-            ? `Avg rate paid: ${fmtRate(summary.withdrawalFees.avgRateCharged)}/USD`
+            ? `Avg rate paid: ${fmtRate(summary.withdrawalFees.avgRateCharged)}/USD (mkt ≈ ${fmtRate((summary.withdrawalFees.avgRateCharged) + 200)})`
             : 'No withdrawals detected yet'}
           accent="text-vs-warning"
         />
-        <SummaryCard
-          title="Tx Type Coverage"
-          value={distinctTypes.length}
-          sub="distinct transaction types"
-          sub2="See Transaction Types tab to verify"
-          accent="text-vs-text"
-        />
       </div>
-
-      {/* Rate insight box — shown when we have deposit data */}
-      {summary.depositFees.avgRateCharged && (
-        <div className="bg-vs-elevated/50 border border-vs-border rounded-xl p-4 mb-5 text-xs text-vs-text-3 flex flex-wrap gap-6">
-          <div>
-            <span className="text-vs-text-2 font-semibold">Avg platform rate (deposits)</span>
-            <span className="ml-2 text-vs-lime font-bold text-sm">{fmtRate(summary.depositFees.avgRateCharged)}/USD</span>
-          </div>
-          <div>
-            <span className="text-vs-text-2 font-semibold">Est. market rate</span>
-            <span className="ml-2 font-bold text-sm">{fmtRate((summary.depositFees.avgRateCharged || 0) - 100)}/USD</span>
-          </div>
-          {summary.withdrawalFees.avgRateCharged && (
-            <>
-              <div>
-                <span className="text-vs-text-2 font-semibold">Avg rate paid (withdrawals)</span>
-                <span className="ml-2 text-vs-warning font-bold text-sm">{fmtRate(summary.withdrawalFees.avgRateCharged)}/USD</span>
-              </div>
-              <div>
-                <span className="text-vs-text-2 font-semibold">Est. market rate</span>
-                <span className="ml-2 font-bold text-sm">{fmtRate((summary.withdrawalFees.avgRateCharged || 0) + 200)}/USD</span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5">
