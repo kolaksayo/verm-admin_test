@@ -129,7 +129,7 @@ router.get('/:id', auth, async (req, res) => {
         currency: w.currencyType
           ? (currencyMap[w.currencyType.toString()] || { name: String(w.currencyType) })
           : { name: 'Unknown' },
-        balance: w.balance || 0,
+        balance: w.walletBalance ?? w.balance ?? 0,
         updatedAt: w.updatedAt,
       })),
       transactions: txAgg,

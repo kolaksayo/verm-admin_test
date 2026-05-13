@@ -60,13 +60,13 @@ router.get('/snapshot', auth, async (req, res) => {
       db.collection('walletusers').aggregate([
         { $group: {
           _id: null,
-          totalBalance: { $sum: { $ifNull: ['$balance', 0] } },
+          totalBalance: { $sum: { $ifNull: ['$walletBalance', 0] } },
           count:        { $sum: 1 },
-          countZero:  { $sum: { $cond: [{ $lte: [{ $ifNull: ['$balance', 0] }, 0]     }, 1, 0] } },
-          countTier1: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 0]   }, { $lte: ['$balance', 5]   }] }, 1, 0] } },
-          countTier2: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 5]   }, { $lte: ['$balance', 20]  }] }, 1, 0] } },
-          countTier3: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 20]  }, { $lte: ['$balance', 100] }] }, 1, 0] } },
-          countTier4: { $sum: { $cond: [{ $gt: ['$balance', 100] }, 1, 0] } },
+          countZero:  { $sum: { $cond: [{ $lte: [{ $ifNull: ['$walletBalance', 0] }, 0]        }, 1, 0] } },
+          countTier1: { $sum: { $cond: [{ $and: [{ $gt: ['$walletBalance', 0]   }, { $lte: ['$walletBalance', 5]   }] }, 1, 0] } },
+          countTier2: { $sum: { $cond: [{ $and: [{ $gt: ['$walletBalance', 5]   }, { $lte: ['$walletBalance', 20]  }] }, 1, 0] } },
+          countTier3: { $sum: { $cond: [{ $and: [{ $gt: ['$walletBalance', 20]  }, { $lte: ['$walletBalance', 100] }] }, 1, 0] } },
+          countTier4: { $sum: { $cond: [{ $gt: ['$walletBalance', 100] }, 1, 0] } },
         }},
       ]).toArray(),
 
