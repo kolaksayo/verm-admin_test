@@ -19,6 +19,7 @@ const NAV_GROUPS = [
       { name: 'users', label: 'Users' },
       { name: 'walletusers', label: 'Wallet Users' },
       { name: 'transactions', label: 'Transactions' },
+      { label: 'NGN Deposits', path: '/ngn-deposits' },
       { name: 'referrals', label: 'Referrals' },
       { name: 'contracts', label: 'Contracts' },
     ],

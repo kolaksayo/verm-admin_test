@@ -10,6 +10,7 @@ import Profile from './pages/Profile';
 import CashFlow from './pages/CashFlow';
 import UserSnapshot from './pages/UserSnapshot';
 import UserActivity from './pages/UserActivity';
+import NgnDeposits from './pages/NgnDeposits';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -43,6 +44,7 @@ function AppRoutes() {
         <Route path="cash-flow" element={<CashFlow />} />
         <Route path="user-snapshot" element={<UserSnapshot />} />
         <Route path="user-activity" element={<UserActivity />} />
+        <Route path="ngn-deposits" element={<NgnDeposits />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"
