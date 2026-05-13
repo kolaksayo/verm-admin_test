@@ -28,7 +28,7 @@ function StatCard({ label, value }) {
 
 // ── Transaction list ──────────────────────────────────────────────────────────
 
-function TransactionList({ userId, type }) {
+function TransactionList({ userId, type, description }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,7 +38,10 @@ function TransactionList({ userId, type }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    api.get(`/user-profile/${userId}/transactions`, { params: { type: type || undefined, page, limit: 20 } })
+    const params = { page, limit: 20 };
+    if (type) params.type = type;
+    if (description) params.description = description;
+    api.get(`/user-profile/${userId}/transactions`, { params })
       .then((res) => {
         setDocs(res.data.docs);
         setTotal(res.data.total);
@@ -46,16 +49,16 @@ function TransactionList({ userId, type }) {
       })
       .catch(() => setError('Failed to load transactions'))
       .finally(() => setLoading(false));
-  }, [userId, type, page]);
+  }, [userId, type, description, page]);
 
-  useEffect(() => { setPage(1); }, [type]);
+  useEffect(() => { setPage(1); }, [type, description]);
   useEffect(() => { load(); }, [load]);
 
   const isCredit = (t) => ['credit', 'deposit', 'fund', 'top-up'].includes((t.type || '').toLowerCase());
 
   if (loading) return <div className="py-8 text-center text-sm text-vs-text-3 animate-pulse">Loading…</div>;
   if (error) return <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-3 py-2">{error}</div>;
-  if (docs.length === 0) return <p className="text-sm text-vs-text-3 text-center py-8">No {type || ''} transactions found.</p>;
+  if (docs.length === 0) return <p className="text-sm text-vs-text-3 text-center py-8">No transactions found.</p>;
 
   return (
     <div>
@@ -73,7 +76,7 @@ function TransactionList({ userId, type }) {
               </div>
               {t.description && <p className="text-xs text-vs-text-3 mt-1 truncate">{t.description}</p>}
               {t.reference && <p className="text-xs text-vs-text-3 mt-0.5 font-mono truncate opacity-60">{t.reference}</p>}
-              {t.status && t.status !== 'success' && t.status !== 'completed' && (
+              {t.status && !/^(success|completed|paid)$/i.test(t.status) && (
                 <span className="inline-block mt-1 text-xs px-1.5 py-0.5 rounded bg-vs-warning/10 text-vs-warning capitalize">{t.status}</span>
               )}
               <p className="text-xs text-vs-text-3 mt-1 opacity-60">{formatDate(t.createdAt)}</p>
@@ -115,6 +118,9 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
   const [error, setError] = useState('');
   const [tab, setTab] = useState('Overview');
   const [txSubtab, setTxSubtab] = useState('');
+  const [descFilter, setDescFilter] = useState('');
+  const [descriptions, setDescriptions] = useState([]);
+  const [descLoading, setDescLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -125,17 +131,41 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
       .finally(() => setLoading(false));
   }, [userId]);
 
+  // Fetch distinct descriptions whenever credit/debit subtab is selected
+  useEffect(() => {
+    setDescFilter('');
+    if (!txSubtab) { setDescriptions([]); return; }
+    setDescLoading(true);
+    api.get(`/user-profile/${userId}/transaction-descriptions`, { params: { type: txSubtab } })
+      .then((res) => setDescriptions(res.data))
+      .catch(() => setDescriptions([]))
+      .finally(() => setDescLoading(false));
+  }, [userId, txSubtab]);
+
   const totalTx = (profile?.transactions || []).reduce((s, t) => s + t.total, 0);
-  // Normalize keys to lowercase so CREDIT/credit/Credit all resolve
   const txSummary = {};
   (profile?.transactions || []).forEach((t) => {
     if (t._id) txSummary[(t._id).toLowerCase()] = t;
   });
 
+  const pillCls = (active) =>
+    `px-3 py-1.5 text-xs font-medium rounded-full border transition-colors whitespace-nowrap ${
+      active
+        ? 'bg-vs-purple border-vs-purple text-white'
+        : 'bg-vs-elevated border-vs-border text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
+    }`;
+
+  const descPillCls = (active) =>
+    `px-2.5 py-1 text-xs font-medium rounded-full border transition-colors whitespace-nowrap ${
+      active
+        ? 'bg-vs-purple/20 border-vs-purple text-vs-purple-light'
+        : 'bg-vs-elevated border-vs-border text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
+    }`;
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-vs-card rounded-2xl border border-vs-border shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col"
+        className="bg-vs-card rounded-2xl border border-vs-border shadow-2xl w-full max-w-[45rem] max-h-[88vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -169,32 +199,59 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
           ))}
         </div>
 
-        {/* Transaction subtabs */}
+        {/* Transaction filters */}
         {tab === 'Transactions' && (
-          <div className="flex gap-1 px-6 pt-4 pb-1 flex-shrink-0">
-            {TX_SUBTABS.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setTxSubtab(s.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                  txSubtab === s.key
-                    ? 'bg-vs-purple text-white'
-                    : 'bg-vs-elevated text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
-                }`}
-              >
-                {s.label}
-                {s.key === 'credit' && txSummary.credit && (
-                  <span className="ml-1.5 text-vs-success font-bold">
-                    +{txSummary.credit.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                )}
-                {s.key === 'debit' && txSummary.debit && (
-                  <span className="ml-1.5 text-vs-danger font-bold">
-                    −{txSummary.debit.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="px-6 pt-4 pb-3 space-y-2.5 flex-shrink-0 border-b border-vs-border">
+            {/* Type subtabs */}
+            <div className="flex gap-1.5 flex-wrap">
+              {TX_SUBTABS.map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setTxSubtab(s.key)}
+                  className={pillCls(txSubtab === s.key)}
+                >
+                  {s.label}
+                  {s.key === 'credit' && txSummary.credit && (
+                    <span className="ml-1.5 text-vs-success font-bold">
+                      +{txSummary.credit.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  {s.key === 'debit' && txSummary.debit && (
+                    <span className="ml-1.5 text-vs-danger font-bold">
+                      −{txSummary.debit.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Description sub-filters — only shown when credit or debit is active */}
+            {txSubtab && (
+              <div className="flex gap-1.5 flex-wrap items-center min-h-[28px]">
+                {descLoading ? (
+                  <span className="text-xs text-vs-text-3 animate-pulse">Loading filters…</span>
+                ) : descriptions.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => setDescFilter('')}
+                      className={descPillCls(descFilter === '')}
+                    >
+                      All
+                    </button>
+                    {descriptions.map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDescFilter(descFilter === d ? '' : d)}
+                        className={descPillCls(descFilter === d)}
+                        title={d}
+                      >
+                        {d.length > 30 ? d.slice(0, 28) + '…' : d}
+                      </button>
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            )}
           </div>
         )}
 
@@ -256,7 +313,7 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
 
           {/* Transactions */}
           {!loading && !error && profile && tab === 'Transactions' && (
-            <TransactionList key={txSubtab} userId={userId} type={txSubtab || ''} />
+            <TransactionList key={`${txSubtab}::${descFilter}`} userId={userId} type={txSubtab || ''} description={descFilter} />
           )}
 
           {/* Competitions */}

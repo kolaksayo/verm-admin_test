@@ -142,6 +142,30 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Distinct transaction descriptions for a user (for sub-filter chips)
+router.get('/:id/transaction-descriptions', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    let userId;
+    try { userId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    const userIdStr = req.params.id;
+    const type = req.query.type;
+
+    const matchBase = userQuery(userId, userIdStr);
+    const match = type
+      ? { $and: [matchBase, { type: { $regex: new RegExp(`^${type}$`, 'i') } }] }
+      : matchBase;
+
+    const descriptions = await db.collection('transactions').distinct('description', match);
+    res.json(descriptions.filter(Boolean).sort());
+  } catch (err) {
+    console.error('Transaction descriptions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Paginated individual transactions for a user
 router.get('/:id/transactions', auth, async (req, res) => {
   try {
@@ -152,12 +176,15 @@ router.get('/:id/transactions', auth, async (req, res) => {
     }
     const userIdStr = req.params.id;
     const type = req.query.type; // 'credit' | 'debit' | undefined
+    const description = req.query.description; // exact description filter
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
 
     const matchBase = userQuery(userId, userIdStr);
-    // Case-insensitive match so CREDIT/credit/Credit all work
-    const match = type ? { $and: [matchBase, { type: { $regex: new RegExp(`^${type}$`, 'i') } }] } : matchBase;
+    const conditions = [matchBase];
+    if (type) conditions.push({ type: { $regex: new RegExp(`^${type}$`, 'i') } });
+    if (description) conditions.push({ description: { $regex: new RegExp(`^${description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    const match = conditions.length > 1 ? { $and: conditions } : matchBase;
 
     const total = await db.collection('transactions').countDocuments(match);
     const docs = await db.collection('transactions')
