@@ -66,10 +66,16 @@ router.get('/', auth, async (req, res) => {
         }},
         { $addFields: { tx: { $arrayElemAt: ['$tx', 0] } } },
 
-        // Match transaction.user → users collection (handle ObjectId or string)
+        // Extract user ID from externalReference: "static_v_account_2_<userId>"
+        // Split by "_" and take the last segment
+        { $addFields: {
+          _userId: { $arrayElemAt: [{ $split: ['$request.data.externalReference', '_'] }, -1] },
+        }},
+
+        // Lookup user directly by the extracted ID
         { $lookup: {
           from: 'users',
-          let: { uid: { $ifNull: [{ $toString: '$tx.user' }, ''] } },
+          let: { uid: { $ifNull: ['$_userId', ''] } },
           pipeline: [
             { $match: {
               $expr: {
