@@ -28,13 +28,22 @@ router.get('/summary', auth, async (req, res) => {
   try {
     const db = getDb();
 
+    // Optional date range — default dateFrom to 2026-03-01 (real data start)
+    const dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom + 'T00:00:00.000Z') : new Date('2026-03-01T00:00:00.000Z');
+    const dateTo   = req.query.dateTo   ? new Date(req.query.dateTo   + 'T23:59:59.999Z') : null;
+
+    const dateFilter = { createdAt: { $gte: dateFrom, ...(dateTo ? { $lte: dateTo } : {}) } };
+
+    const depFilter = { ...DEPOSIT_FILTER,    ...dateFilter };
+    const witFilter = { ...WITHDRAWAL_FILTER, ...dateFilter };
+
     // ── 1. Deposit aggregation ────────────────────────────────────────────────
     // NGN sent = gateWayResponse.data.amount
     // USD credited = amount
     // Platform fee = amount × 100 NGN
     // Implied rate = gateWayResponse.data.amount / amount
     const depositAgg = await db.collection('transactions').aggregate([
-      { $match: DEPOSIT_FILTER },
+      { $match: depFilter },
       { $group: {
         _id: null,
         count:          { $sum: 1 },
@@ -51,7 +60,7 @@ router.get('/summary', auth, async (req, res) => {
     ]).toArray();
 
     const depositMonthly = await db.collection('transactions').aggregate([
-      { $match: { ...DEPOSIT_FILTER, createdAt: { $exists: true } } },
+      { $match: depFilter },
       { $group: {
         _id:            { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
         count:          { $sum: 1 },
@@ -68,7 +77,7 @@ router.get('/summary', auth, async (req, res) => {
     // NGN paid out  = gateWayResponse.data.amount if present, else amount × (avgDepRate - 200)
     // Platform fee  = amount × 200 NGN (no gateway data needed)
     const withdrawalAgg = await db.collection('transactions').aggregate([
-      { $match: WITHDRAWAL_FILTER },
+      { $match: witFilter },
       { $group: {
         _id: null,
         count:     { $sum: 1 },
@@ -90,7 +99,7 @@ router.get('/summary', auth, async (req, res) => {
     ]).toArray();
 
     const withdrawalMonthly = await db.collection('transactions').aggregate([
-      { $match: { ...WITHDRAWAL_FILTER, createdAt: { $exists: true } } },
+      { $match: witFilter },
       { $group: {
         _id:       { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
         count:     { $sum: 1 },
@@ -145,6 +154,10 @@ router.get('/summary', auth, async (req, res) => {
     const estimatedBankBalanceNGN = netDepNGN - estimatedWithdrawalNGN;
 
     res.json({
+      dateRange: {
+        from: dateFrom.toISOString().slice(0, 10),
+        to:   dateTo ? dateTo.toISOString().slice(0, 10) : null,
+      },
       summary: {
         depositFees: {
           txCount:        dep.count ?? 0,

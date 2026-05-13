@@ -36,13 +36,19 @@ export default function CashFlow() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('overview');
+  const [dateFrom, setDateFrom] = useState('2026-03-01');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
-    api.get('/cashflow/summary')
+    setLoading(true);
+    setError('');
+    const params = { dateFrom };
+    if (dateTo) params.dateTo = dateTo;
+    api.get('/cashflow/summary', { params })
       .then((res) => setData(res.data))
       .catch(() => setError('Failed to load cash flow data'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [dateFrom, dateTo]);
 
   const pillCls = (active) =>
     `px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
@@ -111,9 +117,39 @@ export default function CashFlow() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-vs-text">Cash Flow</h1>
-        <p className="text-sm text-vs-text-3 mt-1">Safehaven NGN top-up and withdrawal revenue</p>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-vs-text">Cash Flow</h1>
+          <p className="text-sm text-vs-text-3 mt-1">Safehaven NGN top-up and withdrawal revenue</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-vs-text-3 whitespace-nowrap">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-vs-text-3 whitespace-nowrap">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
+            />
+          </div>
+          {dateTo && (
+            <button
+              onClick={() => setDateTo('')}
+              className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1.5 rounded-lg border border-vs-border hover:bg-vs-elevated transition-colors"
+            >
+              Clear end
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Bank balance banner */}
