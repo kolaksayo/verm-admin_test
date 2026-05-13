@@ -15,6 +15,7 @@ const gameBetsRoutes = require('./routes/gameBets');
 const cashflowRoutes = require('./routes/cashflow');
 const userDashboardRoutes = require('./routes/userDashboard');
 const ngnDepositsRoutes = require('./routes/ngnDeposits');
+const ngnWithdrawalsRoutes = require('./routes/ngnWithdrawals');
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/game-bets', gameBetsRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/user-dashboard', userDashboardRoutes);
 app.use('/api/ngn-deposits', ngnDepositsRoutes);
+app.use('/api/ngn-withdrawals', ngnWithdrawalsRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
