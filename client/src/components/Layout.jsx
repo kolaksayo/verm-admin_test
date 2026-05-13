@@ -18,7 +18,6 @@ const NAV_GROUPS = [
     items: [
       { name: 'users', label: 'Users' },
       { name: 'walletusers', label: 'Wallet Users' },
-      { name: 'transactions', label: 'Transactions' },
       { label: 'NGN Deposits', path: '/ngn-deposits' },
       { label: 'NGN Withdrawals', path: '/ngn-withdrawals' },
       { name: 'referrals', label: 'Referrals' },
