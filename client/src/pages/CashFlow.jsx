@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
+} from 'recharts';
 import api from '../api';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -163,6 +167,77 @@ function TimelineTable({ rows, periodLabel }) {
   );
 }
 
+// ── Revenue trend chart ───────────────────────────────────────────────────────
+
+const RevTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-lg px-3 py-2 text-xs shadow-lg min-w-[160px]">
+      <p className="font-semibold text-vs-text mb-1.5">{label}</p>
+      {payload.map((p) => (
+        <div key={p.dataKey} className="flex justify-between gap-4">
+          <span style={{ color: p.color }}>{p.name}</span>
+          <span className="font-medium text-vs-text">
+            {p.dataKey === 'betFeeUSD'
+              ? '$' + Number(p.value).toFixed(2)
+              : '₦' + Number(p.value).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+function RevenueTrendChart({ data, period }) {
+  const rows = buildTimeline(period, data);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-5">
+      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Revenue Trend</p>
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={rows} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #1e293b)" strokeOpacity={0.5} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: 'var(--color-text-3, #64748b)', fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            yAxisId="ngn"
+            orientation="left"
+            tick={{ fill: 'var(--color-text-3, #64748b)', fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v) => v >= 1000 ? `₦${(v / 1000).toFixed(0)}k` : `₦${v}`}
+            width={56}
+          />
+          <YAxis
+            yAxisId="usd"
+            orientation="right"
+            tick={{ fill: 'var(--color-text-3, #64748b)', fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v) => `$${v}`}
+            width={40}
+          />
+          <Tooltip content={<RevTooltip />} />
+          <Legend
+            iconType="circle"
+            iconSize={8}
+            wrapperStyle={{ fontSize: 11, paddingTop: 8, color: 'var(--color-text-3, #64748b)' }}
+          />
+          <Line yAxisId="ngn" type="monotone" dataKey="depFeeNGN"  name="Deposit Fees (₦)"    stroke="#84cc16" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+          <Line yAxisId="ngn" type="monotone" dataKey="witFeeNGN"  name="Withdrawal Fees (₦)" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+          <Line yAxisId="usd" type="monotone" dataKey="betFeeUSD"  name="Bet Fees ($)"         stroke="#a78bfa" strokeWidth={2} dot={false} activeDot={{ r: 4 }} strokeDasharray="4 2" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function CashFlow() {
@@ -278,6 +353,9 @@ export default function CashFlow() {
           ))}
         </div>
       </div>
+
+      {/* Revenue trend chart */}
+      <RevenueTrendChart data={data} period={tab === 'types' ? 'monthly' : tab} />
 
       {/* Revenue summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
