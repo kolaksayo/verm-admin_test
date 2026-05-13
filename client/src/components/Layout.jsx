@@ -22,6 +22,7 @@ const NAV_GROUPS = [
       { label: 'NGN Withdrawals', path: '/ngn-withdrawals' },
       { name: 'referrals', label: 'Referrals' },
       { name: 'contracts', label: 'Contracts' },
+      { name: 'transactions', label: 'Transactions' },
     ],
   },
   {
