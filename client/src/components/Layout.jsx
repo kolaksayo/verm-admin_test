@@ -9,6 +9,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'Dashboard', path: '/' },
       { label: 'Cash Flow', path: '/cash-flow' },
+      { label: 'User Dashboard', path: '/user-dashboard' },
     ],
   },
   {
