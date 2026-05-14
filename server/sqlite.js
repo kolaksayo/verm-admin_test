@@ -34,6 +34,12 @@ function getDb() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_ngn_rate_date ON ngn_rate_snapshots(date);
+
+      CREATE TABLE IF NOT EXISTS admin_settings (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
   }
   return db;

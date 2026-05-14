@@ -5,6 +5,11 @@ const PERIODS = ['morning', 'midday', 'night'];
 const PERIOD_LABELS = { morning: 'Morning', midday: 'Midday', night: 'Night' };
 const PERIOD_TIMES  = { morning: '6 AM – 12 PM', midday: '12 PM – 6 PM', night: '6 PM – 6 AM' };
 const PERIOD_COLORS = { morning: 'text-vs-warning', midday: 'text-vs-lime', night: 'text-vs-purple-light' };
+const PERIOD_BADGE  = {
+  morning: 'bg-vs-warning/15 text-vs-warning',
+  midday:  'bg-vs-lime/15 text-vs-lime',
+  night:   'bg-vs-purple/15 text-vs-purple-light',
+};
 
 function fmtRate(n) {
   if (n == null || isNaN(n)) return '—';
@@ -15,41 +20,21 @@ function fmtDate(d) {
   return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-const PERIOD_BADGE = {
-  morning: 'bg-vs-warning/15 text-vs-warning',
-  midday:  'bg-vs-lime/15 text-vs-lime',
-  night:   'bg-vs-purple/15 text-vs-purple-light',
-};
-
 export default function DollarNairaRate() {
-  const [current, setCurrent] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [page, setPage]       = useState(1);
+  const [current, setCurrent]   = useState(null);
+  const [history, setHistory]   = useState([]);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState('');
-  const [success, setSuccess] = useState('');
+  const [loading, setLoading]   = useState(true);
 
-  // SQLite snapshot state
-  const [sqliteRows, setSqliteRows]   = useState([]);
-  const [sqliteTotal, setSqliteTotal] = useState(0);
-  const [sqlitePage, setSqlitePage]   = useState(1);
+  const [sqliteRows, setSqliteRows]         = useState([]);
+  const [sqliteTotal, setSqliteTotal]       = useState(0);
+  const [sqlitePage, setSqlitePage]         = useState(1);
   const [sqliteTotalPages, setSqliteTotalPages] = useState(1);
-  const [sqliteLoading, setSqliteLoading] = useState(true);
-  const [snapshotting, setSnapshotting]   = useState(false);
-  const [snapshotMsg, setSnapshotMsg]     = useState('');
-
-  // Form state
-  const [formDate, setFormDate]       = useState(today());
-  const [formMorning, setFormMorning] = useState('');
-  const [formMidday, setFormMidday]   = useState('');
-  const [formNight, setFormNight]     = useState('');
+  const [sqliteLoading, setSqliteLoading]   = useState(true);
+  const [snapshotting, setSnapshotting]     = useState(false);
+  const [snapshotMsg, setSnapshotMsg]       = useState('');
 
   const loadCurrent = useCallback(() =>
     api.get('/dollar-naira-rate/current').then((r) => setCurrent(r.data)).catch(() => {}),
@@ -59,18 +44,14 @@ export default function DollarNairaRate() {
     setLoading(true);
     api.get('/dollar-naira-rate', { params: { page, limit: 30 } })
       .then((r) => { setHistory(r.data.docs); setTotal(r.data.total); setTotalPages(r.data.totalPages); })
-      .catch(() => setError('Failed to load rates'))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [page]);
 
   const loadSqlite = useCallback(() => {
     setSqliteLoading(true);
     api.get('/dollar-naira-rate/sqlite', { params: { page: sqlitePage, limit: 30 } })
-      .then((r) => {
-        setSqliteRows(r.data.rows);
-        setSqliteTotal(r.data.total);
-        setSqliteTotalPages(r.data.totalPages);
-      })
+      .then((r) => { setSqliteRows(r.data.rows); setSqliteTotal(r.data.total); setSqliteTotalPages(r.data.totalPages); })
       .catch(() => {})
       .finally(() => setSqliteLoading(false));
   }, [sqlitePage]);
@@ -79,38 +60,11 @@ export default function DollarNairaRate() {
   useEffect(() => { loadHistory(); }, [loadHistory]);
   useEffect(() => { loadSqlite(); }, [loadSqlite]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(''); setSuccess('');
-    if (!formMorning && !formMidday && !formNight) {
-      setError('Enter at least one rate.');
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post('/dollar-naira-rate', {
-        date: formDate,
-        morning: formMorning ? Number(formMorning) : null,
-        midday:  formMidday  ? Number(formMidday)  : null,
-        night:   formNight   ? Number(formNight)   : null,
-      });
-      setSuccess(`Rate saved for ${fmtDate(formDate)}`);
-      setFormMorning(''); setFormMidday(''); setFormNight('');
-      loadCurrent();
-      loadHistory();
-    } catch {
-      setError('Failed to save rate.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSnapshot = async (period) => {
-    setSnapshotting(true);
-    setSnapshotMsg('');
+    setSnapshotting(true); setSnapshotMsg('');
     try {
       const r = await api.post('/dollar-naira-rate/sqlite/snapshot', { period });
-      setSnapshotMsg(`Saved ${period} rate ₦${r.data.rate?.toLocaleString('en-NG')} to SQLite`);
+      setSnapshotMsg(`Saved ${PERIOD_LABELS[period]} rate ${fmtRate(r.data.rate)} to SQLite`);
       loadSqlite();
     } catch (err) {
       setSnapshotMsg(err?.response?.data?.error || 'Snapshot failed');
@@ -119,28 +73,11 @@ export default function DollarNairaRate() {
     }
   };
 
-  const handleDelete = async (date) => {
-    if (!confirm(`Delete rates for ${fmtDate(date)}?`)) return;
-    await api.delete(`/dollar-naira-rate/${date}`);
-    loadHistory();
-    loadCurrent();
-  };
-
-  // Pre-fill form from a history row
-  const prefill = (doc) => {
-    setFormDate(doc.date);
-    setFormMorning(doc.morning ?? '');
-    setFormMidday(doc.midday ?? '');
-    setFormNight(doc.night ?? '');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-vs-text">Dollar / Naira Rate</h1>
-        <p className="text-sm text-vs-text-3 mt-1">Three rates per day — used for exchange calculations based on Nigerian time</p>
+        <p className="text-sm text-vs-text-3 mt-1">Three rates per day — snapshotted from the platform to local SQLite at 6 AM, 12 PM and 6 PM (Nigeria time)</p>
       </div>
 
       {/* Current rate banner */}
@@ -168,54 +105,10 @@ export default function DollarNairaRate() {
         </div>
       )}
 
-      {/* Entry form */}
-      <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Add / Update Rates</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div>
-              <label className="text-xs text-vs-text-3 block mb-1">Date</label>
-              <input
-                type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} required
-                className="px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
-              />
-            </div>
-            {PERIODS.map((p) => (
-              <div key={p}>
-                <label className={`text-xs font-medium block mb-1 ${PERIOD_COLORS[p]}`}>
-                  {PERIOD_LABELS[p]} <span className="text-vs-text-3 font-normal">({PERIOD_TIMES[p]})</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-vs-text-3">₦</span>
-                  <input
-                    type="number" min="1" step="0.01"
-                    placeholder="e.g. 1580"
-                    value={p === 'morning' ? formMorning : p === 'midday' ? formMidday : formNight}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (p === 'morning') setFormMorning(v);
-                      else if (p === 'midday') setFormMidday(v);
-                      else setFormNight(v);
-                    }}
-                    className="pl-7 pr-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text w-36 focus:outline-none focus:ring-2 focus:ring-vs-purple"
-                  />
-                </div>
-              </div>
-            ))}
-            <button type="submit" disabled={saving}
-              className="px-5 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save Rates'}
-            </button>
-          </div>
-          {error   && <p className="text-xs text-vs-danger">{error}</p>}
-          {success && <p className="text-xs text-vs-success">{success}</p>}
-        </form>
-      </div>
-
-      {/* History table */}
-      <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
+      {/* MongoDB history — read-only */}
+      <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden mb-6">
         <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">History</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Platform Rate History</p>
           <p className="text-xs text-vs-text-3">{total} entries</p>
         </div>
         <table className="w-full text-sm">
@@ -226,18 +119,17 @@ export default function DollarNairaRate() {
               <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Midday</th>
               <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-purple-light">Night</th>
               <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Avg</th>
-              <th className="px-5 py-3 w-24" />
             </tr>
           </thead>
           <tbody className="divide-y divide-vs-border">
             {loading ? (
               Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i}>{Array.from({ length: 6 }).map((_, j) => (
+                <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
                   <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
                 ))}</tr>
               ))
             ) : history.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-10 text-vs-text-3 text-sm">No rates saved yet.</td></tr>
+              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No rates on record yet.</td></tr>
             ) : (
               history.map((doc) => {
                 const vals = PERIODS.map((p) => doc[p]).filter(Boolean);
@@ -249,18 +141,6 @@ export default function DollarNairaRate() {
                     <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(doc.midday)}</td>
                     <td className="px-5 py-3 text-right font-mono text-vs-purple-light">{fmtRate(doc.night)}</td>
                     <td className="px-5 py-3 text-right font-mono text-vs-text-3">{fmtRate(avg)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => prefill(doc)}
-                          className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
-                          Edit
-                        </button>
-                        <button onClick={() => handleDelete(doc.date)}
-                          className="text-xs text-vs-danger hover:text-vs-danger/80 px-2 py-1 rounded border border-vs-danger/30 hover:bg-vs-danger/10 transition-colors">
-                          Del
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 );
               })
@@ -279,8 +159,9 @@ export default function DollarNairaRate() {
           </div>
         )}
       </div>
+
       {/* SQLite Snapshots */}
-      <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden mt-6">
+      <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between gap-3 flex-wrap">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">SQLite Snapshots</p>
