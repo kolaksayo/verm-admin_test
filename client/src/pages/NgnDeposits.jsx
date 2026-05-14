@@ -34,7 +34,7 @@ function StatusBadge({ status }) {
   );
 }
 
-export default function NgnDeposits() {
+export default function NgnDeposits({ hideHeader = false }) {
   const [docs, setDocs]         = useState([]);
   const [total, setTotal]       = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -79,17 +79,18 @@ export default function NgnDeposits() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
+      {!hideHeader && (
+        <div className="mb-3">
           <h1 className="text-2xl font-bold text-vs-text">NGN Deposits</h1>
           <p className="text-sm text-vs-text-3 mt-1">
             SafeHaven virtual account funding events
             {!loading && <span className="ml-2 font-medium text-vs-text">{total.toLocaleString()} total</span>}
           </p>
         </div>
+      )}
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
           <input
             ref={searchRef}
             type="text"
@@ -116,7 +117,6 @@ export default function NgnDeposits() {
             </button>
           )}
         </div>
-      </div>
 
       {/* Error */}
       {error && (

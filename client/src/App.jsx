@@ -10,9 +10,9 @@ import Profile from './pages/Profile';
 import CashFlow from './pages/CashFlow';
 import UserSnapshot from './pages/UserSnapshot';
 import UserActivity from './pages/UserActivity';
-import NgnDeposits from './pages/NgnDeposits';
-import NgnWithdrawals from './pages/NgnWithdrawals';
 import DollarNairaRate from './pages/DollarNairaRate';
+import Transactions from './pages/Transactions';
+import FootballData from './pages/FootballData';
 import TelegramSettings from './pages/TelegramSettings';
 
 function PrivateRoute({ children }) {
@@ -47,8 +47,8 @@ function AppRoutes() {
         <Route path="cash-flow" element={<CashFlow />} />
         <Route path="user-snapshot" element={<UserSnapshot />} />
         <Route path="user-activity" element={<UserActivity />} />
-        <Route path="ngn-deposits" element={<NgnDeposits />} />
-        <Route path="ngn-withdrawals" element={<NgnWithdrawals />} />
+        <Route path="transactions" element={<Transactions />} />
+        <Route path="football-data" element={<FootballData />} />
         <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
         <Route path="telegram" element={<TelegramSettings />} />
         <Route path="profile" element={<Profile />} />

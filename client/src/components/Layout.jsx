@@ -18,11 +18,9 @@ const NAV_GROUPS = [
     items: [
       { name: 'users', label: 'Users' },
       { name: 'walletusers', label: 'Wallet Users' },
-      { label: 'NGN Deposits', path: '/ngn-deposits' },
-      { label: 'NGN Withdrawals', path: '/ngn-withdrawals' },
       { name: 'referrals', label: 'Referrals' },
       { name: 'contracts', label: 'Contracts' },
-      { name: 'transactions', label: 'Transactions' },
+      { label: 'Transactions', path: '/transactions' },
     ],
   },
   {
@@ -38,10 +36,7 @@ const NAV_GROUPS = [
     label: 'Football',
     items: [
       { name: 'football_fixtures', label: 'Fixtures' },
-      { name: 'football_leagues', label: 'Leagues' },
-      { name: 'football_seasons', label: 'Seasons' },
-      { name: 'football_teams', label: 'Teams' },
-      { name: 'football_team_players', label: 'Players' },
+      { label: 'Football Data', path: '/football-data' },
       { name: 'football_fixture_stats', label: 'Fixture Stats' },
       { name: 'football_fixture_head_to_head', label: 'Head to Head' },
     ],
@@ -87,6 +82,17 @@ export default function Layout() {
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nav_collapsed') || '{}'); } catch { return {}; }
+  });
+
+  const toggleGroup = (label) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      localStorage.setItem('nav_collapsed', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const handleLogout = () => {
     logout();
@@ -108,39 +114,61 @@ export default function Layout() {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 scrollbar-thin">
           {NAV_GROUPS.map((group) => (
-            <div key={group.label} className="mb-4">
-              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60">
-                {group.label}
-              </p>
-              <ul className="px-2 space-y-0.5">
-                {group.items.map((item) => (
-                  <li key={item.label}>
-                    <NavLink
-                      to={item.path ?? `/collections/${item.name}`}
-                      end={item.path === '/'}
-                      className={linkClass}
-                    >
-                      {item.label}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+            <div key={group.label} className="mb-2">
+              <button
+                onClick={() => toggleGroup(group.label)}
+                className="w-full flex items-center justify-between px-4 py-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60 hover:opacity-100 transition-opacity"
+              >
+                <span>{group.label}</span>
+                <svg
+                  className={`w-3 h-3 transition-transform ${collapsed[group.label] ? '-rotate-90' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {!collapsed[group.label] && (
+                <ul className="px-2 space-y-0.5 mt-1">
+                  {group.items.map((item) => (
+                    <li key={item.label}>
+                      <NavLink
+                        to={item.path ?? `/collections/${item.name}`}
+                        end={item.path === '/'}
+                        className={linkClass}
+                      >
+                        {item.label}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
 
           {/* Admin users — superadmin only */}
           {role === 'superadmin' && (
-            <div className="mb-4">
-              <p className="px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60">
-                Admin
-              </p>
-              <ul className="px-2 space-y-0.5">
-                <li>
-                  <NavLink to="/admin-users" className={linkClass}>
-                    Admin Users
-                  </NavLink>
-                </li>
-              </ul>
+            <div className="mb-2">
+              <button
+                onClick={() => toggleGroup('Admin')}
+                className="w-full flex items-center justify-between px-4 py-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60 hover:opacity-100 transition-opacity"
+              >
+                <span>Admin</span>
+                <svg
+                  className={`w-3 h-3 transition-transform ${collapsed['Admin'] ? '-rotate-90' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {!collapsed['Admin'] && (
+                <ul className="px-2 space-y-0.5 mt-1">
+                  <li>
+                    <NavLink to="/admin-users" className={linkClass}>
+                      Admin Users
+                    </NavLink>
+                  </li>
+                </ul>
+              )}
             </div>
           )}
         </nav>

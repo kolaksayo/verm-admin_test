@@ -17,8 +17,9 @@ function formatName(name) {
 
 const CUSTOM_VIEWS = ['football_fixtures', 'game_bet_leaderboard', 'game_bet_user_rankings'];
 
-export default function Collection() {
-  const { name } = useParams();
+export default function Collection({ collectionName }) {
+  const { name: routeName } = useParams();
+  const name = collectionName ?? routeName;
 
   const [data, setData] = useState({ docs: [], total: 0, page: 1, totalPages: 1, limit: 20 });
   const [loading, setLoading] = useState(true);

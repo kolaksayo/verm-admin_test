@@ -36,7 +36,7 @@ function StatusBadge({ status }) {
   );
 }
 
-export default function NgnWithdrawals() {
+export default function NgnWithdrawals({ hideHeader = false }) {
   const [docs, setDocs]           = useState([]);
   const [total, setTotal]         = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -94,17 +94,18 @@ export default function NgnWithdrawals() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
+      {!hideHeader && (
+        <div className="mb-3">
           <h1 className="text-2xl font-bold text-vs-text">NGN Withdrawals</h1>
           <p className="text-sm text-vs-text-3 mt-1">
             SafeHaven Naira transfer transactions
             {!loading && <span className="ml-2 font-medium text-vs-text">{total.toLocaleString()} total</span>}
           </p>
         </div>
+      )}
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
           <input
             ref={searchRef}
             type="text"
@@ -141,7 +142,6 @@ export default function NgnWithdrawals() {
             </button>
           )}
         </div>
-      </div>
 
       {/* Error */}
       {error && (
