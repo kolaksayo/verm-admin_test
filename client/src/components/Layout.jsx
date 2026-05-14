@@ -18,9 +18,9 @@ const NAV_GROUPS = [
     items: [
       { name: 'users', label: 'Users' },
       { name: 'walletusers', label: 'Wallet Users' },
+      { label: 'Transactions', path: '/transactions' },
       { name: 'referrals', label: 'Referrals' },
       { name: 'contracts', label: 'Contracts' },
-      { label: 'Transactions', path: '/transactions' },
     ],
   },
   {
@@ -44,10 +44,7 @@ const NAV_GROUPS = [
   {
     label: 'Social',
     items: [
-      { name: 'follows', label: 'Follows' },
-      { name: 'likes', label: 'Likes' },
-      { name: 'likedsports', label: 'Liked Sports' },
-      { name: 'comments', label: 'Comments' },
+      { label: 'Social Data', path: '/social-data' },
       { name: 'chatrooms', label: 'Chat Rooms' },
       { name: 'userchatsubscriptions', label: 'Chat Subscriptions' },
     ],
@@ -55,8 +52,7 @@ const NAV_GROUPS = [
   {
     label: 'System',
     items: [
-      { name: 'adminauditlogs', label: 'Audit Logs' },
-      { name: 'hook_logs', label: 'Hook Logs' },
+      { label: 'Logs', path: '/system-logs' },
       { name: 'currencytypes', label: 'Currency Types' },
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
       { label: 'Telegram', path: '/telegram' },

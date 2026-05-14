@@ -75,18 +75,18 @@ router.get('/', auth, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const leagueId   = req.query.leagueId;
-    const leagueName = req.query.leagueName; // human-readable name from the dropdown
+    const leagueName = req.query.leagueName;
     const dateFrom   = req.query.dateFrom;
     const dateTo     = req.query.dateTo;
+    const search     = req.query.search?.trim();
 
     const query = {};
 
-    // League filter — fixtures embed leagues as {id: numericApiId, name: "..."}
-    // We match by name (most reliable) AND by ObjectId reference as fallback.
+    // League filter — fixtures may store league as:
+    //   f.league (embedded obj or ObjectId)  OR  f.gameLeagueId (ObjectId ref, same as game_bet)
     if (leagueId || leagueName) {
       const orClauses = [];
 
-      // Name-based match (covers API-Sports embedded objects like {id:39, name:"Premier League"})
       if (leagueName) {
         const escaped = leagueName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const nameRe  = new RegExp(`^${escaped}$`, 'i');
@@ -94,27 +94,30 @@ router.get('/', auth, async (req, res) => {
         orClauses.push({ 'league.leagueName': nameRe });
       }
 
-      // ObjectId / numeric reference fallback
       if (leagueId) {
         let leagueOid;
         try { leagueOid = new ObjectId(leagueId); } catch {}
 
         if (leagueOid) {
-          orClauses.push({ league: leagueOid });
-          orClauses.push({ 'league._id': leagueOid });
+          // Direct ObjectId field matches (both common field names)
+          orClauses.push({ league:        leagueOid });
+          orClauses.push({ 'league._id':  leagueOid });
+          orClauses.push({ gameLeagueId:  leagueOid });
 
-          // Look up the league doc for its numeric API id
+          // Look up league doc for numeric API id and name
           const leagueDoc = await db.collection('football_leagues').findOne({ _id: leagueOid });
           if (leagueDoc) {
             for (const field of ['id', 'apiId', 'leagueId', 'footballId']) {
-              if (leagueDoc[field] != null) orClauses.push({ 'league.id': leagueDoc[field] });
+              if (leagueDoc[field] != null) {
+                orClauses.push({ 'league.id': leagueDoc[field] });
+                orClauses.push({ leagueId:    leagueDoc[field] });
+              }
             }
-            // Also try name from the doc if no leagueName was sent
             if (!leagueName) {
               const n = leagueDoc.leagueName || leagueDoc.name;
               if (n) {
                 const r = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-                orClauses.push({ 'league.name': r });
+                orClauses.push({ 'league.name':       r });
                 orClauses.push({ 'league.leagueName': r });
               }
             }
@@ -123,6 +126,22 @@ router.get('/', auth, async (req, res) => {
       }
 
       if (orClauses.length) query.$or = orClauses;
+    }
+
+    // Search by team name (embedded) or fixture _id
+    if (search) {
+      const searchClauses = [
+        { 'homeTeam.name': new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { 'awayTeam.name': new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+      ];
+      try { searchClauses.push({ _id: new ObjectId(search) }); } catch {}
+      if (query.$or) {
+        // Combine existing league filter with search using $and
+        query.$and = [{ $or: query.$or }, { $or: searchClauses }];
+        delete query.$or;
+      } else {
+        query.$or = searchClauses;
+      }
     }
 
     // Date filter using firstPeriod (confirmed field name)
@@ -152,7 +171,7 @@ router.get('/', auth, async (req, res) => {
     fixtures.forEach((f) => {
       const ht = extractTeamInfo(f.homeTeam);
       const at = extractTeamInfo(f.awayTeam);
-      const lg = extractLeagueInfo(f.league);
+      const lg = extractLeagueInfo(f.league ?? f.gameLeagueId);
       if (ht && !ht.isEmbedded) refTeamIds.add(ht.id);
       if (at && !at.isEmbedded) refTeamIds.add(at.id);
       if (lg && !lg.isEmbedded) refLeagueIds.add(lg.id);
@@ -181,7 +200,7 @@ router.get('/', auth, async (req, res) => {
     const resolved = fixtures.map((f) => {
       const htInfo = extractTeamInfo(f.homeTeam);
       const atInfo = extractTeamInfo(f.awayTeam);
-      const lgInfo = extractLeagueInfo(f.league);
+      const lgInfo = extractLeagueInfo(f.league ?? f.gameLeagueId);
       const score = extractScore(f);
       const status = extractStatus(f);
 

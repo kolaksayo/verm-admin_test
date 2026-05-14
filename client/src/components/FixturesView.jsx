@@ -95,6 +95,7 @@ export default function FixturesView() {
   const [selectedLeague, setSelectedLeague] = useState({ id: '', name: '' });
   const [dateFilter, setDateFilter] = useState('all');
   const [customDate, setCustomDate] = useState(todayStr);
+  const [search, setSearch] = useState('');
   const [fixtures, setFixtures] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -132,6 +133,7 @@ export default function FixturesView() {
       page, limit: 20,
       leagueId:   selectedLeague.id   || undefined,
       leagueName: selectedLeague.name || undefined,
+      search:     search              || undefined,
       ...dateRange,
     } })
       .then((res) => {
@@ -141,9 +143,9 @@ export default function FixturesView() {
       })
       .catch(() => setError('Failed to load fixtures'))
       .finally(() => setLoading(false));
-  }, [page, selectedLeague.id, selectedLeague.name, dateFilter, customDate]);
+  }, [page, selectedLeague.id, selectedLeague.name, dateFilter, customDate, search]);
 
-  useEffect(() => { setPage(1); }, [selectedLeague.id, dateFilter, customDate]);
+  useEffect(() => { setPage(1); }, [selectedLeague.id, dateFilter, customDate, search]);
   useEffect(() => { fetchFixtures(); }, [fetchFixtures]);
 
   const pillCls = (active) => `px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
@@ -174,6 +176,14 @@ export default function FixturesView() {
             className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
           />
         )}
+
+          <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search team or fixture ID…"
+          className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple w-52"
+        />
 
         {leagues.length > 0 && (
           <select

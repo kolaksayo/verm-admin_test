@@ -14,6 +14,8 @@ import DollarNairaRate from './pages/DollarNairaRate';
 import Transactions from './pages/Transactions';
 import FootballData from './pages/FootballData';
 import TelegramSettings from './pages/TelegramSettings';
+import SocialData from './pages/SocialData';
+import SystemLogs from './pages/SystemLogs';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -51,6 +53,8 @@ function AppRoutes() {
         <Route path="football-data" element={<FootballData />} />
         <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
         <Route path="telegram" element={<TelegramSettings />} />
+        <Route path="social-data" element={<SocialData />} />
+        <Route path="system-logs" element={<SystemLogs />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"
