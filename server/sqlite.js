@@ -49,6 +49,13 @@ function getDb() {
         error       TEXT,
         created_at  TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS telegram_templates (
+        trigger     TEXT PRIMARY KEY,
+        template    TEXT NOT NULL,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
   }
   return db;

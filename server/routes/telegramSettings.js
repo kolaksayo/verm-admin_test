@@ -1,7 +1,18 @@
 const express = require('express');
 const { sendMessage, isConfigured, getConfig } = require('../telegram');
+const { DEFAULT_TEMPLATE, GAME_BET_MACROS } = require('../gameBetWatcher');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
+
+const TRIGGERS = [
+  {
+    trigger:     'game_bet',
+    label:       'New Challenge (Game Bet)',
+    description: 'Fired when a new game_bet challenge is created',
+    macros:      GAME_BET_MACROS,
+    default:     DEFAULT_TEMPLATE,
+  },
+];
 
 const router = express.Router();
 
@@ -67,6 +78,52 @@ router.get('/logs', auth, (req, res) => {
     res.json({ rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/telegram/templates — list all trigger templates
+router.get('/templates', auth, (req, res) => {
+  try {
+    const sqlite = getSQLite();
+    const rows   = sqlite.prepare('SELECT * FROM telegram_templates').all();
+    const byKey  = {};
+    rows.forEach((r) => { byKey[r.trigger] = r; });
+
+    const result = TRIGGERS.map((t) => ({
+      trigger:     t.trigger,
+      label:       t.label,
+      description: t.description,
+      macros:      t.macros,
+      template:    byKey[t.trigger]?.template ?? t.default,
+      enabled:     byKey[t.trigger] ? !!byKey[t.trigger].enabled : true,
+      updated_at:  byKey[t.trigger]?.updated_at || null,
+    }));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/telegram/templates/:trigger — save template
+router.post('/templates/:trigger', auth, (req, res) => {
+  const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
+  if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
+
+  const { template, enabled } = req.body;
+  if (template === undefined) return res.status(400).json({ ok: false, error: 'template is required' });
+
+  try {
+    getSQLite().prepare(`
+      INSERT INTO telegram_templates (trigger, template, enabled, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(trigger) DO UPDATE SET
+        template   = excluded.template,
+        enabled    = excluded.enabled,
+        updated_at = excluded.updated_at
+    `).run(req.params.trigger, template, enabled === false ? 0 : 1);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

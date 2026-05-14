@@ -1,13 +1,106 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
 
-const TABS = ['Settings', 'Logs'];
+const TABS = ['Settings', 'Messages', 'Logs'];
 
 const TRIGGER_LABELS = {
   game_bet: 'Game Bet',
   test:     'Test',
   manual:   'Manual',
 };
+
+// ── Messages tab ─────────────────────────────────────────────────────────────
+
+function TemplateEditor({ tpl, onSaved }) {
+  const [text, setText]       = useState(tpl.template);
+  const [enabled, setEnabled] = useState(tpl.enabled);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState('');
+  const textareaRef           = useRef(null);
+
+  const insertMacro = (macro) => {
+    const el  = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end   = el.selectionEnd;
+    const next  = text.slice(0, start) + macro + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + macro.length;
+      el.focus();
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setMsg('');
+    try {
+      await api.post(`/telegram/templates/${tpl.trigger}`, { template: text, enabled });
+      setMsg('Saved');
+      onSaved?.();
+    } catch (e) {
+      setMsg(e.response?.data?.error || 'Failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => { setText(tpl.default || tpl.template); setMsg(''); };
+
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <p className="text-sm font-semibold text-vs-text">{tpl.label}</p>
+          <p className="text-xs text-vs-text-3 mt-0.5">{tpl.description}</p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+          <span className="text-xs text-vs-text-3">Enabled</span>
+          <button
+            onClick={() => setEnabled((v) => !v)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </label>
+      </div>
+
+      {/* Macro chips */}
+      <div className="mb-3">
+        <p className="text-xs text-vs-text-3 mb-2">Available macros — click to insert at cursor:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {tpl.macros?.map((m) => (
+            <button key={m.key} onClick={() => insertMacro(m.key)}
+              title={m.desc}
+              className="px-2 py-0.5 text-xs font-mono rounded bg-vs-elevated border border-vs-border text-vs-purple-light hover:bg-vs-purple/15 transition-colors">
+              {m.key}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <textarea
+        ref={textareaRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={10}
+        className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
+      />
+
+      <div className="flex items-center gap-3 mt-3">
+        <button onClick={handleSave} disabled={saving}
+          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save Template'}
+        </button>
+        <button onClick={handleReset}
+          className="px-3 py-2 text-xs text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors">
+          Reset to Default
+        </button>
+        {msg && <p className={`text-xs ${msg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function TelegramSettings() {
   const [tab, setTab] = useState('Settings');
@@ -24,11 +117,22 @@ export default function TelegramSettings() {
   const [saving, setSaving]     = useState(false);
   const [saveMsg, setSaveMsg]   = useState('');
 
-  const [logs, setLogs]           = useState([]);
+  const [templates, setTemplates]       = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
+  const [logs, setLogs]               = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
   const loadStatus = () =>
     api.get('/telegram/status').then((r) => setStatus(r.data)).catch(() => {});
+
+  const loadTemplates = useCallback(() => {
+    setTemplatesLoading(true);
+    api.get('/telegram/templates')
+      .then((r) => setTemplates(r.data))
+      .catch(() => {})
+      .finally(() => setTemplatesLoading(false));
+  }, []);
 
   const loadLogs = useCallback(() => {
     setLogsLoading(true);
@@ -39,6 +143,7 @@ export default function TelegramSettings() {
   }, []);
 
   useEffect(() => { loadStatus(); }, []);
+  useEffect(() => { if (tab === 'Messages') loadTemplates(); }, [tab, loadTemplates]);
   useEffect(() => { if (tab === 'Logs') loadLogs(); }, [tab, loadLogs]);
 
   const handleSaveConfig = async (e) => {
@@ -61,7 +166,7 @@ export default function TelegramSettings() {
     setTesting(true); setTestResult(null);
     try {
       const r = await api.post('/telegram/test');
-      setTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent successfully!' : (r.data.description || 'Failed') });
+      setTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.description || 'Failed') });
     } catch (e) {
       setTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
     } finally {
@@ -101,9 +206,9 @@ export default function TelegramSettings() {
         ))}
       </div>
 
+      {/* ── Settings tab ── */}
       {tab === 'Settings' && (
         <>
-          {/* Config form */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Bot Configuration</p>
             <p className="text-xs text-vs-text-3 mb-4">Saved to local storage — no server restart needed.</p>
@@ -111,23 +216,15 @@ export default function TelegramSettings() {
               <div className="flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[220px]">
                   <label className="text-xs text-vs-text-3 block mb-1">Bot Token</label>
-                  <input
-                    type="password"
-                    value={botToken}
-                    onChange={(e) => setBotToken(e.target.value)}
+                  <input type="password" value={botToken} onChange={(e) => setBotToken(e.target.value)}
                     placeholder={status?.botTokenSet ? 'Already set — paste new to update' : '123456:ABCdef…'}
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
-                  />
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                 </div>
                 <div className="flex-1 min-w-[180px]">
                   <label className="text-xs text-vs-text-3 block mb-1">Chat ID</label>
-                  <input
-                    type="text"
-                    value={chatId}
-                    onChange={(e) => setChatId(e.target.value)}
+                  <input type="text" value={chatId} onChange={(e) => setChatId(e.target.value)}
                     placeholder={status?.chatId || '-1001234567890'}
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
-                  />
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -135,14 +232,11 @@ export default function TelegramSettings() {
                   className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                   {saving ? 'Saving…' : 'Save'}
                 </button>
-                {saveMsg && (
-                  <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>
-                )}
+                {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
               </div>
             </form>
           </div>
 
-          {/* Status + test */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Connection Status</p>
             {status ? (
@@ -175,60 +269,43 @@ export default function TelegramSettings() {
                       className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                       {testing ? 'Sending…' : 'Send Test Message'}
                     </button>
-                    {testResult && (
-                      <p className={`text-xs ${testResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{testResult.msg}</p>
-                    )}
+                    {testResult && <p className={`text-xs ${testResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{testResult.msg}</p>}
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="h-16 animate-pulse bg-vs-elevated rounded-lg" />
-            )}
+            ) : <div className="h-16 animate-pulse bg-vs-elevated rounded-lg" />}
           </div>
 
-          {/* Setup instructions */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">How to get your credentials</p>
             <ol className="space-y-3 text-sm text-vs-text-2">
-              <li className="flex gap-3">
-                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">1</span>
-                <span>Message <span className="font-mono text-vs-purple-light">@BotFather</span> on Telegram → send <span className="font-mono">/newbot</span> → follow the steps to receive your <strong>bot token</strong>.</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">2</span>
-                <span>Add your bot to your Telegram group as an <strong>administrator</strong>.</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">3</span>
-                <span>Get the group <strong>Chat ID</strong>: forward any group message to <span className="font-mono text-vs-purple-light">@userinfobot</span>. Group IDs are negative numbers like <span className="font-mono">-1001234567890</span>.</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">4</span>
-                <span>Paste both values into the form above and click <strong>Save</strong>.</span>
-              </li>
+              {[
+                <>Message <span className="font-mono text-vs-purple-light">@BotFather</span> on Telegram → send <span className="font-mono">/newbot</span> → follow the steps to receive your <strong>bot token</strong>.</>,
+                <>Add your bot to your Telegram group as an <strong>administrator</strong>.</>,
+                <>Get the group <strong>Chat ID</strong>: forward any group message to <span className="font-mono text-vs-purple-light">@userinfobot</span>. Group IDs are negative numbers like <span className="font-mono">-1001234567890</span>.</>,
+                <>Paste both values into the form above and click <strong>Save</strong>.</>,
+              ].map((step, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
             </ol>
           </div>
 
-          {/* Manual message sender */}
           {status?.configured && (
             <div className="bg-vs-card border border-vs-border rounded-xl p-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Send Manual Message</p>
               <form onSubmit={handleSend} className="space-y-3">
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type a message to send to the Telegram group…"
-                  rows={3}
-                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none"
-                />
+                <textarea value={message} onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Type a message to send to the Telegram group…" rows={3}
+                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none" />
                 <div className="flex items-center gap-3">
                   <button type="submit" disabled={sending || !message.trim()}
                     className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                     {sending ? 'Sending…' : 'Send'}
                   </button>
-                  {sendResult && (
-                    <p className={`text-xs ${sendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{sendResult.msg}</p>
-                  )}
+                  {sendResult && <p className={`text-xs ${sendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{sendResult.msg}</p>}
                 </div>
               </form>
             </div>
@@ -236,11 +313,30 @@ export default function TelegramSettings() {
         </>
       )}
 
+      {/* ── Messages tab ── */}
+      {tab === 'Messages' && (
+        <div>
+          <p className="text-xs text-vs-text-3 mb-5">
+            Edit the message sent to Telegram for each trigger. Click a macro chip to insert it at the cursor position.
+            Use plain text — HTML tags like <span className="font-mono text-xs bg-vs-elevated px-1 rounded">&lt;b&gt;</span> are also supported for bold.
+          </p>
+          {templatesLoading ? (
+            <div className="h-40 bg-vs-card border border-vs-border rounded-xl animate-pulse" />
+          ) : (
+            templates.map((tpl) => (
+              <TemplateEditor key={tpl.trigger} tpl={tpl} onSaved={loadTemplates} />
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ── Logs tab ── */}
       {tab === 'Logs' && (
         <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Send Log</p>
-            <button onClick={loadLogs} className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
+            <button onClick={loadLogs}
+              className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
               Refresh
             </button>
           </div>
