@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import api from '../api';
 
 const NAV_GROUPS = [
   {
@@ -18,7 +19,7 @@ const NAV_GROUPS = [
     items: [
       { name: 'users', label: 'Users' },
       { name: 'walletusers', label: 'Wallet Users' },
-      { label: 'Transactions', path: '/transactions' },
+      { label: 'Transactions', path: '/transactions', badgeKey: 'transactions' },
       { name: 'referrals', label: 'Referrals' },
       { name: 'contracts', label: 'Contracts' },
     ],
@@ -67,10 +68,10 @@ const ROLE_COLORS = {
 };
 
 const linkClass = ({ isActive }) =>
-  `block px-3 py-1.5 rounded-lg text-sm transition-colors ${
+  `flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-colors ${
     isActive
       ? 'bg-vs-purple text-white font-medium'
-      : 'text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text'
+      : 'text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
   }`;
 
 export default function Layout() {
@@ -81,6 +82,16 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nav_collapsed') || '{}'); } catch { return {}; }
   });
+  const [badges, setBadges] = useState({});
+
+  useEffect(() => {
+    const fetchBadges = () => {
+      api.get('/nav-badges').then((res) => setBadges(res.data)).catch(() => {});
+    };
+    fetchBadges();
+    const id = setInterval(fetchBadges, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const toggleGroup = (label) => {
     setCollapsed((prev) => {
@@ -108,16 +119,16 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3 scrollbar-thin">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.label} className="mb-2">
+        <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={group.label} className={`${gi > 0 ? 'mt-4' : ''} mb-1`}>
               <button
                 onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-4 py-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60 hover:opacity-100 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
               >
                 <span>{group.label}</span>
                 <svg
-                  className={`w-3 h-3 transition-transform ${collapsed[group.label] ? '-rotate-90' : ''}`}
+                  className={`w-2.5 h-2.5 transition-transform ${collapsed[group.label] ? '-rotate-90' : ''}`}
                   fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -125,17 +136,25 @@ export default function Layout() {
               </button>
               {!collapsed[group.label] && (
                 <ul className="px-2 space-y-0.5 mt-1">
-                  {group.items.map((item) => (
-                    <li key={item.label}>
-                      <NavLink
-                        to={item.path ?? `/collections/${item.name}`}
-                        end={item.path === '/'}
-                        className={linkClass}
-                      >
-                        {item.label}
-                      </NavLink>
-                    </li>
-                  ))}
+                  {group.items.map((item) => {
+                    const badgeCount = item.badgeKey ? (badges[item.badgeKey] || 0) : 0;
+                    return (
+                      <li key={item.label}>
+                        <NavLink
+                          to={item.path ?? `/collections/${item.name}`}
+                          end={item.path === '/'}
+                          className={linkClass}
+                        >
+                          <span>{item.label}</span>
+                          {badgeCount > 0 && (
+                            <span className="ml-auto text-[10px] font-semibold bg-vs-purple/20 text-vs-purple-light px-1.5 py-0.5 rounded-full leading-none">
+                              {badgeCount > 99 ? '99+' : badgeCount}
+                            </span>
+                          )}
+                        </NavLink>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -143,14 +162,14 @@ export default function Layout() {
 
           {/* Admin users — superadmin only */}
           {role === 'superadmin' && (
-            <div className="mb-2">
+            <div className="mt-4 mb-1">
               <button
                 onClick={() => toggleGroup('Admin')}
-                className="w-full flex items-center justify-between px-4 py-1 text-xs font-semibold uppercase tracking-wider text-vs-text-3 opacity-60 hover:opacity-100 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
               >
                 <span>Admin</span>
                 <svg
-                  className={`w-3 h-3 transition-transform ${collapsed['Admin'] ? '-rotate-90' : ''}`}
+                  className={`w-2.5 h-2.5 transition-transform ${collapsed['Admin'] ? '-rotate-90' : ''}`}
                   fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

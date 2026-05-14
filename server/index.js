@@ -19,6 +19,7 @@ const ngnDepositsRoutes = require('./routes/ngnDeposits');
 const ngnWithdrawalsRoutes = require('./routes/ngnWithdrawals');
 const dollarNairaRateRoutes = require('./routes/dollarNairaRate');
 const telegramSettingsRoutes = require('./routes/telegramSettings');
+const navBadgesRoutes = require('./routes/navBadges');
 
 const { startWatcher } = require('./gameBetWatcher');
 const { startSnapshotScheduler } = require('./rateSnapshotJob');
@@ -43,6 +44,7 @@ app.use('/api/ngn-deposits', ngnDepositsRoutes);
 app.use('/api/ngn-withdrawals', ngnWithdrawalsRoutes);
 app.use('/api/dollar-naira-rate', dollarNairaRateRoutes);
 app.use('/api/telegram', telegramSettingsRoutes);
+app.use('/api/nav-badges', navBadgesRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
