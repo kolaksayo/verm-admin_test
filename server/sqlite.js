@@ -56,6 +56,15 @@ function getDb() {
         enabled     INTEGER NOT NULL DEFAULT 1,
         updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS telegram_notified (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        bet_id      TEXT NOT NULL,
+        trigger_key TEXT NOT NULL,
+        notified_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(bet_id, trigger_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tg_notified ON telegram_notified(bet_id);
     `);
   }
   return db;
