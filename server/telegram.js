@@ -16,9 +16,23 @@ function getConfig() {
   }
 }
 
-async function sendMessage(text) {
+function logSend(trigger, preview, ok, error = null) {
+  try {
+    getSQLite().prepare(`
+      INSERT INTO telegram_logs (trigger, preview, ok, error)
+      VALUES (?, ?, ?, ?)
+    `).run(trigger, preview.slice(0, 200), ok ? 1 : 0, error);
+  } catch { /* non-fatal */ }
+}
+
+async function sendMessage(text, trigger = 'manual') {
   const { token, chatId } = getConfig();
-  if (!token || !chatId) return { ok: false, reason: 'not_configured' };
+  const preview = text.replace(/<[^>]+>/g, '').slice(0, 120);
+
+  if (!token || !chatId) {
+    logSend(trigger, preview, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${token}/sendMessage`,
@@ -28,8 +42,11 @@ async function sendMessage(text) {
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
       },
     );
-    return await res.json();
+    const json = await res.json();
+    logSend(trigger, preview, json.ok, json.ok ? null : (json.description || 'api_error'));
+    return json;
   } catch (err) {
+    logSend(trigger, preview, false, err.message);
     console.error('[Telegram] send error:', err.message);
     return { ok: false, reason: err.message };
   }

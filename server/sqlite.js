@@ -40,6 +40,15 @@ function getDb() {
         value      TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS telegram_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger     TEXT NOT NULL,
+        preview     TEXT NOT NULL,
+        ok          INTEGER NOT NULL DEFAULT 0,
+        error       TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
   }
   return db;

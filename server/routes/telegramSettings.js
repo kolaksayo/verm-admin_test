@@ -56,6 +56,20 @@ router.post('/test', auth, async (req, res) => {
   res.json(result);
 });
 
+// GET /api/telegram/logs — recent send log from SQLite
+router.get('/logs', auth, (req, res) => {
+  try {
+    const sqlite = getSQLite();
+    const limit  = Math.min(200, parseInt(req.query.limit) || 100);
+    const rows   = sqlite.prepare(
+      'SELECT * FROM telegram_logs ORDER BY id DESC LIMIT ?'
+    ).all(limit);
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/telegram/send — manual message from admin
 router.post('/send', auth, async (req, res) => {
   const { text } = req.body;

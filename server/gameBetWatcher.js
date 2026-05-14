@@ -1,7 +1,7 @@
 const { getDb } = require('./db');
 const { sendMessage, isConfigured } = require('./telegram');
 
-const POLL_INTERVAL_MS = 2 * 60 * 1000; // every 2 minutes
+const POLL_INTERVAL_MS = 2 * 60 * 1000;
 
 function formatChallenge(bet) {
   const code    = bet.bookingCode || bet.title || bet.name || bet._id.toString();
@@ -40,19 +40,20 @@ async function resolveCreator(db, bet) {
 }
 
 function startWatcher() {
-  if (!isConfigured()) {
-    console.log('[GameBetWatcher] Telegram not configured — watcher inactive. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to enable.');
-    return;
-  }
-
   let lastChecked = new Date();
   console.log(`[GameBetWatcher] Started. Polling every ${POLL_INTERVAL_MS / 1000}s.`);
 
   setInterval(async () => {
+    // Check config each tick — works even if Telegram was configured after startup
+    if (!isConfigured()) {
+      console.log('[GameBetWatcher] Telegram not configured — skipping poll.');
+      return;
+    }
+
     try {
-      const db      = getDb();
-      const since   = lastChecked;
-      lastChecked   = new Date();
+      const db    = getDb();
+      const since = lastChecked;
+      lastChecked = new Date();
 
       const newBets = await db.collection('game_bet')
         .find({ createdAt: { $gt: since } })
@@ -62,7 +63,7 @@ function startWatcher() {
       for (const bet of newBets) {
         const creatorName = await resolveCreator(db, bet);
         const message     = formatChallenge({ ...bet, createdByUsername: creatorName });
-        const result      = await sendMessage(message);
+        const result      = await sendMessage(message, 'game_bet');
         if (result.ok) {
           console.log(`[GameBetWatcher] Notified: ${bet.bookingCode || bet._id}`);
         } else {

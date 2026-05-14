@@ -23,12 +23,12 @@ async function snapshot(period, source = 'scheduled') {
   const sqlite = getSQLite();
   const mongo  = getMongo();
 
-  // Fetch from MongoDB admin rate entry
-  const doc  = await mongo.collection('dollar_naira_rates').findOne({ date });
-  const rate = doc?.[period];
+  // Platform stores a single document with the current rate as a string
+  const doc  = await mongo.collection('dollar_naira_rate').findOne({});
+  const rate = doc?.rate ? Number(doc.rate) : null;
 
   if (!rate || rate <= 0) {
-    console.log(`[RateSnapshot] No ${period} rate for ${date} in MongoDB — skipping`);
+    console.log(`[RateSnapshot] No rate found in dollar_naira_rate — skipping ${period}`);
     return null;
   }
 
