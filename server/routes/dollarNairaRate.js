@@ -23,47 +23,49 @@ function todayNigeria() {
 router.get('/current', async (req, res) => {
   try {
     const db     = getDb();
+    const sqlite = getSQLite();
     const period = getNigeriaPeriod();
     const today  = todayNigeria();
 
-    // Try today, fall back to the most recent day that has the needed field
-    let doc = await db.collection('dollar_naira_rates').findOne(
-      { date: today, [period]: { $exists: true, $gt: 0 } },
-    );
-    if (!doc) {
-      doc = await db.collection('dollar_naira_rates').findOne(
-        { [period]: { $exists: true, $gt: 0 } },
-        { sort: { date: -1 } },
-      );
-    }
+    // Live rate from the single platform document (dollar_naira_rate, singular)
+    const doc      = await db.collection('dollar_naira_rate').findOne({});
+    const liveRate = doc?.rate ? Number(doc.rate) : null;
 
-    res.json({
-      period,
-      date:  doc?.date  || today,
-      rate:  doc?.[period] || null,
-      today: { morning: doc?.morning || null, midday: doc?.midday || null, night: doc?.night || null },
-    });
+    // Today's snapshots from SQLite for the three period cards
+    const rows = sqlite.prepare(
+      'SELECT period, rate FROM ngn_rate_snapshots WHERE date = ?'
+    ).all(today);
+    const todayRates = { morning: null, midday: null, night: null };
+    rows.forEach((r) => { todayRates[r.period] = r.rate; });
+
+    res.json({ period, date: today, rate: liveRate, today: todayRates });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/dollar-naira-rate?page=&limit=
-router.get('/', auth, async (req, res) => {
+// GET /api/dollar-naira-rate?page=&limit= — SQLite snapshot history grouped by date
+router.get('/', auth, (req, res) => {
   try {
-    const db    = getDb();
-    const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
+    const sqlite = getSQLite();
+    const page   = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
+    const offset = (page - 1) * limit;
 
-    const [total, docs] = await Promise.all([
-      db.collection('dollar_naira_rates').countDocuments(),
-      db.collection('dollar_naira_rates')
-        .find()
-        .sort({ date: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .toArray(),
-    ]);
+    const total = sqlite.prepare(
+      'SELECT COUNT(DISTINCT date) AS n FROM ngn_rate_snapshots'
+    ).get().n;
+
+    const docs = sqlite.prepare(`
+      SELECT date,
+        MAX(CASE WHEN period = 'morning' THEN rate END) AS morning,
+        MAX(CASE WHEN period = 'midday'  THEN rate END) AS midday,
+        MAX(CASE WHEN period = 'night'   THEN rate END) AS night
+      FROM ngn_rate_snapshots
+      GROUP BY date
+      ORDER BY date DESC
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
 
     res.json({ docs, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch (err) {
@@ -71,50 +73,6 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/dollar-naira-rate  — upsert by date
-router.post('/', auth, async (req, res) => {
-  try {
-    const db = getDb();
-    const { date, morning, midday, night } = req.body;
-
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'date is required (YYYY-MM-DD)' });
-    }
-    const update = { updatedAt: new Date() };
-    if (morning != null && morning > 0) update.morning = Number(morning);
-    if (midday  != null && midday  > 0) update.midday  = Number(midday);
-    if (night   != null && night   > 0) update.night   = Number(night);
-
-    if (!Object.keys(update).some((k) => k !== 'updatedAt')) {
-      return res.status(400).json({ error: 'At least one rate (morning/midday/night) is required' });
-    }
-
-    await db.collection('dollar_naira_rates').updateOne(
-      { date },
-      {
-        $set: update,
-        $setOnInsert: { date, createdAt: new Date() },
-      },
-      { upsert: true },
-    );
-
-    const saved = await db.collection('dollar_naira_rates').findOne({ date });
-    res.json(saved);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/dollar-naira-rate/:date
-router.delete('/:date', auth, async (req, res) => {
-  try {
-    const db = getDb();
-    await db.collection('dollar_naira_rates').deleteOne({ date: req.params.date });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ── SQLite snapshot endpoints ─────────────────────────────────────────────────
 

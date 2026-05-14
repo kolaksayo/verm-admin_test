@@ -65,6 +65,8 @@ export default function DollarNairaRate() {
     try {
       const r = await api.post('/dollar-naira-rate/sqlite/snapshot', { period });
       setSnapshotMsg(`Saved ${PERIOD_LABELS[period]} rate ${fmtRate(r.data.rate)} to SQLite`);
+      loadCurrent();
+      loadHistory();
       loadSqlite();
     } catch (err) {
       setSnapshotMsg(err?.response?.data?.error || 'Snapshot failed');
@@ -72,6 +74,11 @@ export default function DollarNairaRate() {
       setSnapshotting(false);
     }
   };
+
+  // Disable snap buttons for periods that haven't started yet today
+  const PERIOD_ORDER = ['morning', 'midday', 'night'];
+  const currentPeriodIdx = current ? PERIOD_ORDER.indexOf(current.period) : -1;
+  const isPeriodFuture = (p) => currentPeriodIdx >= 0 && PERIOD_ORDER.indexOf(p) > currentPeriodIdx;
 
   return (
     <div>
@@ -108,7 +115,7 @@ export default function DollarNairaRate() {
       {/* MongoDB history — read-only */}
       <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden mb-6">
         <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Platform Rate History</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Rate History by Day</p>
           <p className="text-xs text-vs-text-3">{total} entries</p>
         </div>
         <table className="w-full text-sm">
@@ -129,7 +136,7 @@ export default function DollarNairaRate() {
                 ))}</tr>
               ))
             ) : history.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No rates on record yet.</td></tr>
+              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots recorded yet.</td></tr>
             ) : (
               history.map((doc) => {
                 const vals = PERIODS.map((p) => doc[p]).filter(Boolean);
@@ -168,12 +175,17 @@ export default function DollarNairaRate() {
             <p className="text-xs text-vs-text-3 mt-0.5">{sqliteTotal} entries · auto-saved 3×/day from MongoDB</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {PERIODS.map((p) => (
-              <button key={p} onClick={() => handleSnapshot(p)} disabled={snapshotting}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${PERIOD_BADGE[p]} border-current/30 hover:opacity-80`}>
-                {snapshotting ? '…' : `Snap ${PERIOD_LABELS[p]}`}
-              </button>
-            ))}
+            {PERIODS.map((p) => {
+              const future = isPeriodFuture(p);
+              return (
+                <button key={p} onClick={() => handleSnapshot(p)}
+                  disabled={snapshotting || future}
+                  title={future ? `${PERIOD_LABELS[p]} hasn't started yet` : undefined}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${PERIOD_BADGE[p]} border-current/30 ${snapshotting || future ? 'opacity-30 cursor-not-allowed' : 'hover:opacity-80'}`}>
+                  {snapshotting ? '…' : `Snap ${PERIOD_LABELS[p]}`}
+                </button>
+              );
+            })}
           </div>
         </div>
         {snapshotMsg && (
