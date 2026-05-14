@@ -4,9 +4,31 @@ import api from '../api';
 const TABS = ['Settings', 'Messages', 'Logs'];
 
 const TRIGGER_LABELS = {
-  game_bet: 'Game Bet',
-  test:     'Test',
-  manual:   'Manual',
+  game_bet:               'Single Bet',
+  game_bet_multi_created: 'Multi Created',
+  game_bet_multi_half:    '60% Full',
+  game_bet_multi_almost_3:'3 Slots Left',
+  game_bet_multi_almost_1:'Last Slot',
+  game_bet_match_1hr:     '1hr Countdown',
+  game_bet_match_30min:   '30min Countdown',
+  game_bet_match_15min:   '15min Countdown',
+  game_bet_large_stake:   'Large Stake',
+  test:                   'Test',
+  manual:                 'Manual',
+};
+
+const TRIGGER_COLORS = {
+  game_bet:               'bg-vs-purple/15 text-vs-purple-light',
+  game_bet_multi_created: 'bg-vs-purple/15 text-vs-purple-light',
+  game_bet_multi_half:    'bg-vs-warning/15 text-vs-warning',
+  game_bet_multi_almost_3:'bg-vs-warning/15 text-vs-warning',
+  game_bet_multi_almost_1:'bg-vs-danger/15 text-vs-danger',
+  game_bet_match_1hr:     'bg-vs-lime/15 text-vs-lime',
+  game_bet_match_30min:   'bg-vs-lime/15 text-vs-lime',
+  game_bet_match_15min:   'bg-vs-lime/15 text-vs-lime',
+  game_bet_large_stake:   'bg-vs-warning/15 text-vs-warning',
+  test:                   'bg-vs-success/15 text-vs-success',
+  manual:                 'bg-vs-elevated text-vs-text-3',
 };
 
 // ── Messages tab ─────────────────────────────────────────────────────────────
@@ -16,6 +38,8 @@ function TemplateEditor({ tpl, onSaved }) {
   const [enabled, setEnabled] = useState(tpl.enabled);
   const [saving, setSaving]   = useState(false);
   const [msg, setMsg]         = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState('');
   const textareaRef           = useRef(null);
 
   const insertMacro = (macro) => {
@@ -45,6 +69,18 @@ function TemplateEditor({ tpl, onSaved }) {
   };
 
   const handleReset = () => { setText(tpl.default || tpl.template); setMsg(''); };
+
+  const handleTest = async () => {
+    setTesting(true); setTestMsg('');
+    try {
+      const r = await api.post(`/telegram/templates/${tpl.trigger}/test`);
+      setTestMsg(r.data.ok ? 'Test sent!' : (r.data.description || 'Failed'));
+    } catch (e) {
+      setTestMsg(e.response?.data?.error || 'Failed');
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
     <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-4">
@@ -90,11 +126,16 @@ function TemplateEditor({ tpl, onSaved }) {
           className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
           {saving ? 'Saving…' : 'Save Template'}
         </button>
+        <button onClick={handleTest} disabled={testing || saving}
+          className="px-3 py-2 text-xs text-vs-purple-light border border-vs-purple/30 rounded-lg hover:bg-vs-purple/10 transition-colors disabled:opacity-50">
+          {testing ? 'Sending…' : '▶ Test'}
+        </button>
         <button onClick={handleReset}
           className="px-3 py-2 text-xs text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors">
           Reset to Default
         </button>
         {msg && <p className={`text-xs ${msg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</p>}
+        {testMsg && <p className={`text-xs ${testMsg === 'Test sent!' ? 'text-vs-success' : 'text-vs-danger'}`}>{testMsg}</p>}
       </div>
     </div>
   );
@@ -117,7 +158,11 @@ export default function TelegramSettings() {
   const [saving, setSaving]     = useState(false);
   const [saveMsg, setSaveMsg]   = useState('');
 
-  const [templates, setTemplates]       = useState([]);
+  const [threshold, setThreshold]           = useState('7');
+  const [savingThreshold, setSavingThreshold] = useState(false);
+  const [thresholdMsg, setThresholdMsg]     = useState('');
+
+  const [templates, setTemplates]             = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
   const [logs, setLogs]               = useState([]);
@@ -146,6 +191,15 @@ export default function TelegramSettings() {
   useEffect(() => { if (tab === 'Messages') loadTemplates(); }, [tab, loadTemplates]);
   useEffect(() => { if (tab === 'Logs') loadLogs(); }, [tab, loadLogs]);
 
+  // Load threshold when Settings tab is active
+  useEffect(() => {
+    if (tab === 'Settings') {
+      api.get('/telegram/config').then((r) => {
+        if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
+      }).catch(() => {});
+    }
+  }, [tab]);
+
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     setSaving(true); setSaveMsg('');
@@ -159,6 +213,19 @@ export default function TelegramSettings() {
       setSaveMsg(err.response?.data?.error || 'Failed to save');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveThreshold = async (e) => {
+    e.preventDefault();
+    setSavingThreshold(true); setThresholdMsg('');
+    try {
+      await api.post('/telegram/config', { largeStakeThreshold: Number(threshold) });
+      setThresholdMsg('Saved');
+    } catch (err) {
+      setThresholdMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setSavingThreshold(false);
     }
   };
 
@@ -233,6 +300,27 @@ export default function TelegramSettings() {
                   {saving ? 'Saving…' : 'Save'}
                 </button>
                 {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+              </div>
+            </form>
+          </div>
+
+          {/* Alert Settings */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>
+            <p className="text-xs text-vs-text-3 mb-4">Configure thresholds for cross-cutting alert triggers.</p>
+            <form onSubmit={handleSaveThreshold} className="flex items-end gap-4">
+              <div>
+                <label className="text-xs text-vs-text-3 block mb-1">Large Stake Threshold ($)</label>
+                <input type="number" min="0.01" step="0.01" value={threshold} onChange={(e) => setThreshold(e.target.value)}
+                  className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                <p className="text-xs text-vs-text-3 mt-1">Fire "Large Stake Alert" when bet amount exceeds this value</p>
+              </div>
+              <div className="flex items-center gap-3 mb-[26px]">
+                <button type="submit" disabled={savingThreshold}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {savingThreshold ? 'Saving…' : 'Save'}
+                </button>
+                {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
               </div>
             </form>
           </div>
@@ -365,9 +453,7 @@ export default function TelegramSettings() {
                     <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        row.trigger === 'game_bet' ? 'bg-vs-purple/15 text-vs-purple-light' :
-                        row.trigger === 'test'     ? 'bg-vs-lime/15 text-vs-lime' :
-                                                     'bg-vs-elevated text-vs-text-3'
+                        TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
                       }`}>
                         {TRIGGER_LABELS[row.trigger] || row.trigger}
                       </span>
