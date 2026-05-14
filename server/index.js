@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const { connect } = require('./db');
 
@@ -24,6 +25,7 @@ const { startSnapshotScheduler } = require('./rateSnapshotJob');
 
 const app = express();
 
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 
