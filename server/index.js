@@ -16,6 +16,10 @@ const cashflowRoutes = require('./routes/cashflow');
 const userDashboardRoutes = require('./routes/userDashboard');
 const ngnDepositsRoutes = require('./routes/ngnDeposits');
 const ngnWithdrawalsRoutes = require('./routes/ngnWithdrawals');
+const dollarNairaRateRoutes = require('./routes/dollarNairaRate');
+const telegramSettingsRoutes = require('./routes/telegramSettings');
+
+const { startWatcher } = require('./gameBetWatcher');
 
 const app = express();
 
@@ -34,6 +38,8 @@ app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/user-dashboard', userDashboardRoutes);
 app.use('/api/ngn-deposits', ngnDepositsRoutes);
 app.use('/api/ngn-withdrawals', ngnWithdrawalsRoutes);
+app.use('/api/dollar-naira-rate', dollarNairaRateRoutes);
+app.use('/api/telegram', telegramSettingsRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -48,6 +54,7 @@ connect()
     app.listen(PORT, () => {
       console.log(`Verm Admin running on port ${PORT}`);
     });
+    startWatcher();
   })
   .catch((err) => {
     console.error('Failed to connect to MongoDB:', err);

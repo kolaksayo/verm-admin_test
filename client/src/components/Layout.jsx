@@ -63,7 +63,8 @@ const NAV_GROUPS = [
       { name: 'adminauditlogs', label: 'Audit Logs' },
       { name: 'hook_logs', label: 'Hook Logs' },
       { name: 'currencytypes', label: 'Currency Types' },
-      { name: 'dollar_naira_rate', label: 'Dollar/Naira Rate' },
+      { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
+      { label: 'Telegram', path: '/telegram' },
     ],
   },
 ];

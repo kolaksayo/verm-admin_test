@@ -12,6 +12,8 @@ import UserSnapshot from './pages/UserSnapshot';
 import UserActivity from './pages/UserActivity';
 import NgnDeposits from './pages/NgnDeposits';
 import NgnWithdrawals from './pages/NgnWithdrawals';
+import DollarNairaRate from './pages/DollarNairaRate';
+import TelegramSettings from './pages/TelegramSettings';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -47,6 +49,8 @@ function AppRoutes() {
         <Route path="user-activity" element={<UserActivity />} />
         <Route path="ngn-deposits" element={<NgnDeposits />} />
         <Route path="ngn-withdrawals" element={<NgnWithdrawals />} />
+        <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
+        <Route path="telegram" element={<TelegramSettings />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"
