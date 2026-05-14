@@ -19,6 +19,12 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const PERIOD_BADGE = {
+  morning: 'bg-vs-warning/15 text-vs-warning',
+  midday:  'bg-vs-lime/15 text-vs-lime',
+  night:   'bg-vs-purple/15 text-vs-purple-light',
+};
+
 export default function DollarNairaRate() {
   const [current, setCurrent] = useState(null);
   const [history, setHistory] = useState([]);
@@ -29,6 +35,15 @@ export default function DollarNairaRate() {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
+
+  // SQLite snapshot state
+  const [sqliteRows, setSqliteRows]   = useState([]);
+  const [sqliteTotal, setSqliteTotal] = useState(0);
+  const [sqlitePage, setSqlitePage]   = useState(1);
+  const [sqliteTotalPages, setSqliteTotalPages] = useState(1);
+  const [sqliteLoading, setSqliteLoading] = useState(true);
+  const [snapshotting, setSnapshotting]   = useState(false);
+  const [snapshotMsg, setSnapshotMsg]     = useState('');
 
   // Form state
   const [formDate, setFormDate]       = useState(today());
@@ -48,8 +63,21 @@ export default function DollarNairaRate() {
       .finally(() => setLoading(false));
   }, [page]);
 
+  const loadSqlite = useCallback(() => {
+    setSqliteLoading(true);
+    api.get('/dollar-naira-rate/sqlite', { params: { page: sqlitePage, limit: 30 } })
+      .then((r) => {
+        setSqliteRows(r.data.rows);
+        setSqliteTotal(r.data.total);
+        setSqliteTotalPages(r.data.totalPages);
+      })
+      .catch(() => {})
+      .finally(() => setSqliteLoading(false));
+  }, [sqlitePage]);
+
   useEffect(() => { loadCurrent(); }, [loadCurrent]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => { loadSqlite(); }, [loadSqlite]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -74,6 +102,20 @@ export default function DollarNairaRate() {
       setError('Failed to save rate.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSnapshot = async (period) => {
+    setSnapshotting(true);
+    setSnapshotMsg('');
+    try {
+      const r = await api.post('/dollar-naira-rate/sqlite/snapshot', { period });
+      setSnapshotMsg(`Saved ${period} rate ₦${r.data.rate?.toLocaleString('en-NG')} to SQLite`);
+      loadSqlite();
+    } catch (err) {
+      setSnapshotMsg(err?.response?.data?.error || 'Snapshot failed');
+    } finally {
+      setSnapshotting(false);
     }
   };
 
@@ -232,6 +274,73 @@ export default function DollarNairaRate() {
               <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
                 className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-elevated">‹</button>
               <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-elevated">›</button>
+            </div>
+          </div>
+        )}
+      </div>
+      {/* SQLite Snapshots */}
+      <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden mt-6">
+        <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">SQLite Snapshots</p>
+            <p className="text-xs text-vs-text-3 mt-0.5">{sqliteTotal} entries · auto-saved 3×/day from MongoDB</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {PERIODS.map((p) => (
+              <button key={p} onClick={() => handleSnapshot(p)} disabled={snapshotting}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${PERIOD_BADGE[p]} border-current/30 hover:opacity-80`}>
+                {snapshotting ? '…' : `Snap ${PERIOD_LABELS[p]}`}
+              </button>
+            ))}
+          </div>
+        </div>
+        {snapshotMsg && (
+          <div className="px-5 py-2 border-b border-vs-border text-xs text-vs-text-3">{snapshotMsg}</div>
+        )}
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-vs-border bg-vs-elevated/40">
+              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Date</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Period</th>
+              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Rate</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Source</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Captured</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-vs-border">
+            {sqliteLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                  <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
+                ))}</tr>
+              ))
+            ) : sqliteRows.length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots yet — rates are auto-saved at 6 AM, 12 PM and 6 PM (Nigeria time).</td></tr>
+            ) : (
+              sqliteRows.map((row) => (
+                <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
+                  <td className="px-5 py-3 font-medium text-vs-text">{fmtDate(row.date)}</td>
+                  <td className="px-5 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${PERIOD_BADGE[row.period]}`}>
+                      {PERIOD_LABELS[row.period]}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(row.rate)}</td>
+                  <td className="px-5 py-3 text-vs-text-3 capitalize">{row.source}</td>
+                  <td className="px-5 py-3 text-vs-text-3 text-xs">{row.captured_at}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        {sqliteTotalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-vs-border">
+            <span className="text-xs text-vs-text-3">Page {sqlitePage} of {sqliteTotalPages}</span>
+            <div className="flex gap-1">
+              <button onClick={() => setSqlitePage((p) => Math.max(1, p - 1))} disabled={sqlitePage === 1}
+                className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-elevated">‹</button>
+              <button onClick={() => setSqlitePage((p) => Math.min(sqliteTotalPages, p + 1))} disabled={sqlitePage >= sqliteTotalPages}
                 className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-elevated">›</button>
             </div>
           </div>

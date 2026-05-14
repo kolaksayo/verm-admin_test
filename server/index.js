@@ -20,6 +20,7 @@ const dollarNairaRateRoutes = require('./routes/dollarNairaRate');
 const telegramSettingsRoutes = require('./routes/telegramSettings');
 
 const { startWatcher } = require('./gameBetWatcher');
+const { startSnapshotScheduler } = require('./rateSnapshotJob');
 
 const app = express();
 
@@ -55,6 +56,7 @@ connect()
       console.log(`Verm Admin running on port ${PORT}`);
     });
     startWatcher();
+    startSnapshotScheduler();
   })
   .catch((err) => {
     console.error('Failed to connect to MongoDB:', err);

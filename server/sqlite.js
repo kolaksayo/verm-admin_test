@@ -22,6 +22,18 @@ function getDb() {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS ngn_rate_snapshots (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        date       TEXT    NOT NULL,
+        period     TEXT    NOT NULL CHECK(period IN ('morning','midday','night')),
+        rate       REAL    NOT NULL,
+        source     TEXT    NOT NULL DEFAULT 'scheduled',
+        captured_at TEXT   NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(date, period)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ngn_rate_date ON ngn_rate_snapshots(date);
     `);
   }
   return db;
