@@ -40,8 +40,30 @@ function extractStatus(f) {
   };
 }
 
-// ── GET /api/fixtures/leagues ─────────────────────────────────────────────────
-// Only leagues that have allowFixture: true
+// GET /api/fixtures/debug-sample — returns raw fields of first 3 fixtures (admin only)
+router.get('/debug-sample', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    const docs = await db.collection('football_fixtures').find({}).limit(3).toArray();
+    // Return only the top-level keys + league/team field values so we can see the structure
+    const summary = docs.map((d) => {
+      const keys = Object.keys(d);
+      const pick = (k) => {
+        const v = d[k];
+        if (v instanceof ObjectId) return `ObjectId(${v})`;
+        if (v && typeof v === 'object' && !Array.isArray(v)) return `{${Object.keys(v).join(', ')}}`;
+        if (Array.isArray(v)) return `Array(${v.length})`;
+        return v;
+      };
+      return Object.fromEntries(keys.map((k) => [k, pick(k)]));
+    });
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/fixtures/leagues
 
 router.get('/leagues', auth, async (req, res) => {
   try {
