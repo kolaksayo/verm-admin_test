@@ -40,8 +40,8 @@ function extractStatus(f) {
   };
 }
 
-// GET /api/fixtures/debug-sample — returns raw fields of first 3 fixtures (admin only)
-router.get('/debug-sample', auth, async (req, res) => {
+// GET /api/fixtures/debug-sample — returns raw fields of first 3 fixtures (no auth for debugging)
+router.get('/debug-sample', async (req, res) => {
   try {
     const db = getDb();
     const docs = await db.collection('football_fixtures').find({}).limit(3).toArray();
