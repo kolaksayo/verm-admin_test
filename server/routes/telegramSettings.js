@@ -7,6 +7,7 @@ const {
   MULTI_BASE_MACROS,
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
+  SINGLE_COUNTDOWN_MACROS,
   renderTemplate,
   getTemplate,
 } = require('../gameBetWatcher');
@@ -15,15 +16,43 @@ const { getDb } = require('../db');
 const auth = require('../middleware/auth');
 
 const TRIGGERS = [
+  // ── Single bet mode ──────────────────────────────────────────────────────────
   {
     trigger:     'game_bet',
+    group:       'single',
     label:       'New Challenge — Single',
-    description: 'Fired when a new single-player game_bet challenge is created',
+    description: 'Fired when a new single-mode challenge is created',
     macros:      GAME_BET_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet,
   },
   {
+    trigger:     'game_bet_single_1hr',
+    group:       'single',
+    label:       'Match Countdown — 1 Hour',
+    description: 'Fired 1 hour before match kickoff for single-mode bets',
+    macros:      SINGLE_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_single_1hr,
+  },
+  {
+    trigger:     'game_bet_single_30min',
+    group:       'single',
+    label:       'Match Countdown — 30 Minutes',
+    description: 'Fired 30 minutes before match kickoff for single-mode bets',
+    macros:      SINGLE_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_single_30min,
+  },
+  {
+    trigger:     'game_bet_single_15min',
+    group:       'single',
+    label:       'Match Countdown — 15 Minutes',
+    description: 'Fired 15 minutes before match kickoff for single-mode bets',
+    macros:      SINGLE_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_single_15min,
+  },
+  // ── Multiplayer bet mode ─────────────────────────────────────────────────────
+  {
     trigger:     'game_bet_multi_created',
+    group:       'multi',
     label:       'New Challenge — Multiplayer',
     description: 'Fired when a new multiplayer challenge is created',
     macros:      MULTI_BASE_MACROS,
@@ -31,48 +60,55 @@ const TRIGGERS = [
   },
   {
     trigger:     'game_bet_multi_half',
+    group:       'multi',
     label:       'Challenge 60% Full',
-    description: 'Fired when a multiplayer challenge reaches 60% capacity',
+    description: 'Fired once when a multiplayer challenge reaches 60% capacity',
     macros:      MULTI_BASE_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_multi_half,
   },
   {
     trigger:     'game_bet_multi_almost_3',
+    group:       'multi',
     label:       'Challenge — 3 Slots Remaining',
-    description: 'Fired when only 3 slots remain in a multiplayer challenge',
+    description: 'Fired once when only 3 slots remain in a multiplayer challenge',
     macros:      MULTI_BASE_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_multi_almost_3,
   },
   {
     trigger:     'game_bet_multi_almost_1',
+    group:       'multi',
     label:       'Challenge — Last Slot',
-    description: 'Fired when only the last slot remains in a multiplayer challenge',
+    description: 'Fired once when only the last slot remains in a multiplayer challenge',
     macros:      MULTI_BASE_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_multi_almost_1,
   },
   {
     trigger:     'game_bet_match_1hr',
+    group:       'multi',
     label:       'Match Countdown — 1 Hour',
-    description: 'Fired 1 hour before match kickoff for active challenges',
+    description: 'Fired 1 hour before kickoff for multiplayer challenges with 2+ players',
     macros:      COUNTDOWN_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_match_1hr,
   },
   {
     trigger:     'game_bet_match_30min',
+    group:       'multi',
     label:       'Match Countdown — 30 Minutes',
-    description: 'Fired 30 minutes before match kickoff for active challenges',
+    description: 'Fired 30 minutes before kickoff for multiplayer challenges with 2+ players',
     macros:      COUNTDOWN_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_match_30min,
   },
   {
     trigger:     'game_bet_match_15min',
+    group:       'multi',
     label:       'Match Countdown — 15 Minutes',
-    description: 'Fired 15 minutes before match kickoff for active challenges',
+    description: 'Fired 15 minutes before kickoff for multiplayer challenges with 2+ players',
     macros:      COUNTDOWN_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_match_15min,
   },
   {
     trigger:     'game_bet_large_stake',
+    group:       'multi',
     label:       'Large Stake Alert',
     description: 'Fired when a multiplayer bet stake exceeds the configured threshold',
     macros:      LARGE_STAKE_MACROS,
@@ -186,6 +222,7 @@ router.get('/templates', auth, (req, res) => {
 
     const result = TRIGGERS.map((t) => ({
       trigger:     t.trigger,
+      group:       t.group,
       label:       t.label,
       description: t.description,
       macros:      t.macros,

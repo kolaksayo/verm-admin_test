@@ -141,6 +141,45 @@ function TemplateEditor({ tpl, onSaved }) {
   );
 }
 
+// ── Messages sub-tab ──────────────────────────────────────────────────────────
+
+function MessagesTab({ templates, loading, onSaved }) {
+  const [mode, setMode] = useState('single');
+
+  const subTabCls = (active) =>
+    `px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+      active ? 'bg-vs-card text-vs-text shadow-sm' : 'text-vs-text-3 hover:text-vs-text'
+    }`;
+
+  const displayed = loading ? [] : templates.filter((t) => t.group === mode);
+
+  return (
+    <div>
+      <p className="text-xs text-vs-text-3 mb-4">
+        Edit the message sent to Telegram for each trigger. Click a macro chip to insert it at the cursor.
+        HTML tags like <span className="font-mono text-xs bg-vs-elevated px-1 rounded">&lt;b&gt;</span> are supported for bold.
+      </p>
+
+      <div className="flex gap-1 mb-5 bg-vs-elevated rounded-lg p-1 w-fit">
+        <button onClick={() => setMode('single')} className={subTabCls(mode === 'single')}>Single Bet</button>
+        <button onClick={() => setMode('multi')}  className={subTabCls(mode === 'multi')}>Multiplayer</button>
+      </div>
+
+      {loading ? (
+        <div className="h-40 bg-vs-card border border-vs-border rounded-xl animate-pulse" />
+      ) : displayed.length === 0 ? (
+        <div className="bg-vs-card border border-vs-border rounded-xl p-8 text-center text-vs-text-3 text-sm">
+          No templates found.
+        </div>
+      ) : (
+        displayed.map((tpl) => (
+          <TemplateEditor key={tpl.trigger} tpl={tpl} onSaved={onSaved} />
+        ))
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function TelegramSettings() {
@@ -403,19 +442,7 @@ export default function TelegramSettings() {
 
       {/* ── Messages tab ── */}
       {tab === 'Messages' && (
-        <div>
-          <p className="text-xs text-vs-text-3 mb-5">
-            Edit the message sent to Telegram for each trigger. Click a macro chip to insert it at the cursor position.
-            Use plain text — HTML tags like <span className="font-mono text-xs bg-vs-elevated px-1 rounded">&lt;b&gt;</span> are also supported for bold.
-          </p>
-          {templatesLoading ? (
-            <div className="h-40 bg-vs-card border border-vs-border rounded-xl animate-pulse" />
-          ) : (
-            templates.map((tpl) => (
-              <TemplateEditor key={tpl.trigger} tpl={tpl} onSaved={loadTemplates} />
-            ))
-          )}
-        </div>
+        <MessagesTab templates={templates} loading={templatesLoading} onSaved={loadTemplates} />
       )}
 
       {/* ── Logs tab ── */}

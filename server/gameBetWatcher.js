@@ -20,6 +20,30 @@ Slots: {{slots}}
 
 Open the VermoSports app to join!`,
 
+  game_bet_single_1hr: `⏰ Your Match is in 1 Hour!
+
+⚽ {{home_team}} vs {{away_team}}
+🏆 {{league}}
+
+Kickoff: {{kickoff_time}}
+Stake: {{stake}} | Code: {{code}}`,
+
+  game_bet_single_30min: `⏰ Match Kicks Off in 30 Minutes!
+
+⚽ {{home_team}} vs {{away_team}}
+🏆 {{league}}
+
+Kickoff: {{kickoff_time}}
+Stake: {{stake}} | Code: {{code}}`,
+
+  game_bet_single_15min: `🚀 Your Match Starts in 15 Minutes!
+
+⚽ {{home_team}} vs {{away_team}}
+🏆 {{league}}
+
+Kickoff: {{kickoff_time}}
+Stake: {{stake}} | Code: {{code}}`,
+
   game_bet_multi_created: `🎯 New Multiplayer Challenge!
 
 ⚽ {{home_team}} vs {{away_team}}
@@ -124,6 +148,17 @@ const COUNTDOWN_MACROS = [
 const LARGE_STAKE_MACROS = [
   ...MULTI_BASE_MACROS,
   { key: '{{mode}}', desc: 'Bet mode (e.g. Multiplayer)' },
+];
+
+const SINGLE_COUNTDOWN_MACROS = [
+  { key: '{{home_team}}',           desc: 'Home team name' },
+  { key: '{{away_team}}',           desc: 'Away team name' },
+  { key: '{{league}}',              desc: 'League name' },
+  { key: '{{stake}}',               desc: 'Bet stake amount' },
+  { key: '{{code}}',                desc: 'Challenge booking code' },
+  { key: '{{creator}}',             desc: 'Creator username' },
+  { key: '{{kickoff_time}}',        desc: 'Formatted kickoff time (e.g. 20:00)' },
+  { key: '{{minutes_until_match}}', desc: 'Minutes until kickoff' },
 ];
 
 // ── Template helpers ───────────────────────────────────────────────────────────
@@ -433,6 +468,10 @@ async function pollMatchCountdowns(db) {
   for (const bet of bets) {
     if (!isMultiplayer(bet)) continue;
 
+    // For multiplayer, require at least 2 players before sending countdown
+    const currentPlayers = getCurrentPlayers(bet);
+    if (currentPlayers < 2) continue;
+
     const fixture = await resolveFixture(db, bet);
     if (!fixture.kickoff) continue;
 
@@ -442,8 +481,7 @@ async function pollMatchCountdowns(db) {
     const minutesAway = (kickoffMs - Date.now()) / 60000;
     const betId       = bet._id.toString();
 
-    const currentPlayers = getCurrentPlayers(bet);
-    const creatorName    = await resolveCreator(db, bet);
+    const creatorName = await resolveCreator(db, bet);
     const kickoffTime    = new Date(kickoffMs).toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
     });
@@ -491,6 +529,63 @@ async function pollMatchCountdowns(db) {
   }
 }
 
+async function pollSingleCountdowns(db) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const bets = await db.collection('game_bet').find({
+    createdAt: { $gt: thirtyDaysAgo },
+    status: { $nin: ['settled', 'completed', 'cancelled', 'closed', 'expired'] },
+    gameFixtureId: { $exists: true },
+  }).toArray();
+
+  for (const bet of bets) {
+    if (isMultiplayer(bet)) continue; // multiplayer handled by pollMatchCountdowns
+
+    const fixture = await resolveFixture(db, bet);
+    if (!fixture.kickoff) continue;
+
+    const kickoffMs = new Date(fixture.kickoff).getTime();
+    if (isNaN(kickoffMs)) continue;
+
+    const minutesAway = (kickoffMs - Date.now()) / 60000;
+    const betId       = bet._id.toString();
+    const creatorName = await resolveCreator(db, bet);
+    const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+    });
+    const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+
+    const vars = {
+      home_team:           fixture.homeTeam || '—',
+      away_team:           fixture.awayTeam || '—',
+      league:              fixture.league   || '—',
+      stake:               stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
+      code:                bet.bookingCode || bet.title || bet.name || bet._id.toString(),
+      creator:             creatorName || '—',
+      kickoff_time:        kickoffTime,
+      minutes_until_match: Math.round(minutesAway),
+    };
+
+    const checkpoints = [
+      { key: '1hr',   trigger: 'game_bet_single_1hr',   min: 55, max: 65 },
+      { key: '30min', trigger: 'game_bet_single_30min',  min: 25, max: 35 },
+      { key: '15min', trigger: 'game_bet_single_15min',  min: 10, max: 20 },
+    ];
+
+    for (const cp of checkpoints) {
+      if (minutesAway >= cp.min && minutesAway <= cp.max && !hasNotified(betId, cp.key)) {
+        const template = getTemplate(cp.trigger);
+        if (template) {
+          const result = await sendMessage(renderTemplate(template, vars), cp.trigger);
+          if (result.ok) {
+            markNotified(betId, cp.key);
+            console.log(`[GameBetWatcher] Single ${cp.key} countdown: ${vars.code}`);
+          }
+        }
+      }
+    }
+  }
+}
+
 // ── Watcher entry point ────────────────────────────────────────────────────────
 
 function startWatcher() {
@@ -511,6 +606,7 @@ function startWatcher() {
       await Promise.allSettled([
         pollNewBets(db, since),
         pollFillProgress(db),
+        pollSingleCountdowns(db),
         pollMatchCountdowns(db),
       ]);
     } catch (err) {
@@ -529,6 +625,7 @@ module.exports = {
   MULTI_BASE_MACROS,
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
+  SINGLE_COUNTDOWN_MACROS,
   renderTemplate,
   getTemplate,
   resolveTeamName,
