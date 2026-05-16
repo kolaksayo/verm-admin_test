@@ -431,8 +431,7 @@ async function pollMatchCountdowns(db) {
     .toArray();
 
   for (const bet of bets) {
-    const currentPlayers = getCurrentPlayers(bet);
-    if (currentPlayers < 2) continue;
+    if (!isMultiplayer(bet)) continue;
 
     const fixture = await resolveFixture(db, bet);
     if (!fixture.kickoff) continue;
@@ -443,8 +442,9 @@ async function pollMatchCountdowns(db) {
     const minutesAway = (kickoffMs - Date.now()) / 60000;
     const betId       = bet._id.toString();
 
-    const creatorName = await resolveCreator(db, bet);
-    const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+    const currentPlayers = getCurrentPlayers(bet);
+    const creatorName    = await resolveCreator(db, bet);
+    const kickoffTime    = new Date(kickoffMs).toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
     });
     const vars = {
