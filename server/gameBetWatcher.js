@@ -197,10 +197,11 @@ async function resolveTeamName(db, val) {
 }
 
 async function resolveFixture(db, bet) {
-  if (!bet.gameFixtureId) return { homeTeam: null, awayTeam: null, league: null, kickoff: null };
+  const fallbackKickoff = bet.possibleStartPeriod || null;
+  if (!bet.gameFixtureId) return { homeTeam: null, awayTeam: null, league: null, kickoff: fallbackKickoff };
   try {
     const fx = await db.collection('football_fixtures').findOne({ _id: toOid(bet.gameFixtureId) });
-    if (!fx) return { homeTeam: null, awayTeam: null, league: null, kickoff: null };
+    if (!fx) return { homeTeam: null, awayTeam: null, league: null, kickoff: fallbackKickoff };
     const [homeTeam, awayTeam] = await Promise.all([
       resolveTeamName(db, fx.homeTeam),
       resolveTeamName(db, fx.awayTeam),
@@ -212,7 +213,7 @@ async function resolveFixture(db, bet) {
       );
       league = lg ? (lg.leagueName || lg.name) : null;
     }
-    const kickoff = fx.firstPeriod || fx.date || fx.fixture?.date || null;
+    const kickoff = fx.firstPeriod || fx.date || fx.fixture?.date || fallbackKickoff;
     return { homeTeam, awayTeam, league, kickoff };
   } catch {
     return { homeTeam: null, awayTeam: null, league: null, kickoff: null };
@@ -243,11 +244,10 @@ function formatMode(bet) {
 }
 
 function isMultiplayer(bet) {
-  const mode = bet.betMode ? String(bet.betMode).toLowerCase() : null;
-  if (mode && mode !== 'single') return true;
-  const slots = Number(bet.capacity || bet.maxParticipants);
-  if (slots > 1) return true;
-  return false;
+  // betMode is authoritative — never override it with capacity
+  if (bet.betMode) return String(bet.betMode).toUpperCase() !== 'SINGLE';
+  // No betMode: infer from capacity (single = 2 slots, multi = 3+)
+  return Number(bet.capacity || bet.maxParticipants) > 2;
 }
 
 function getCurrentPlayers(bet) {
@@ -396,7 +396,7 @@ async function pollFillProgress(db) {
   const bets = await db.collection('game_bet')
     .find({
       createdAt: { $gt: thirtyDaysAgo },
-      status: { $nin: ['settled', 'completed', 'cancelled', 'closed', 'expired'] },
+      status: { $not: { $regex: /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED|finished|settled|completed|cancelled|canceled|closed|expired|deleted)$/ } },
     })
     .toArray();
 
@@ -460,7 +460,7 @@ async function pollMatchCountdowns(db) {
   const bets = await db.collection('game_bet')
     .find({
       createdAt: { $gt: thirtyDaysAgo },
-      status: { $nin: ['settled', 'completed', 'cancelled', 'closed', 'expired'] },
+      status: { $not: { $regex: /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED|finished|settled|completed|cancelled|canceled|closed|expired|deleted)$/ } },
       gameFixtureId: { $exists: true },
     })
     .toArray();
