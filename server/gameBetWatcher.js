@@ -236,7 +236,7 @@ async function resolveCreator(db, bet) {
 function formatMode(bet) {
   const mode = bet.betMode;
   if (mode) return String(mode);
-  const slots = Number(bet.maxParticipants);
+  const slots = Number(bet.capacity || bet.maxParticipants);
   if (slots === 2) return 'Head-to-Head';
   if (slots > 2)  return 'Multiplayer';
   return 'Single';
@@ -245,7 +245,7 @@ function formatMode(bet) {
 function isMultiplayer(bet) {
   const mode = bet.betMode ? String(bet.betMode).toLowerCase() : null;
   if (mode && mode !== 'single') return true;
-  const slots = Number(bet.maxParticipants);
+  const slots = Number(bet.capacity || bet.maxParticipants);
   if (slots > 1) return true;
   return false;
 }
@@ -297,7 +297,7 @@ function getLargeStakeThreshold() {
 // ── Vars builder ───────────────────────────────────────────────────────────────
 
 function buildMultiVars(bet, fixture, creator, currentPlayers) {
-  const maxPlayers     = Number(bet.maxParticipants) || 0;
+  const maxPlayers     = Number(bet.capacity || bet.maxParticipants) || 0;
   const slotsRemaining = Math.max(0, maxPlayers - currentPlayers);
   const fillPercent    = maxPlayers > 0
     ? `${Math.round((currentPlayers / maxPlayers) * 100)}%`
@@ -358,7 +358,7 @@ async function pollNewBets(db, since) {
           home_team: fixture.homeTeam || '—',
           away_team: fixture.awayTeam || '—',
           mode:      formatMode(bet),
-          slots:     bet.maxParticipants ?? '—',
+          slots:     bet.capacity ?? bet.maxParticipants ?? '—',
           league:    fixture.league || '—',
         };
       }
@@ -403,7 +403,7 @@ async function pollFillProgress(db) {
   for (const bet of bets) {
     if (!isMultiplayer(bet)) continue;
 
-    const max = Number(bet.maxParticipants);
+    const max = Number(bet.capacity || bet.maxParticipants);
     if (!max || max < 3) continue;
 
     const currentPlayers = getCurrentPlayers(bet);
