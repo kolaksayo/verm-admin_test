@@ -112,12 +112,14 @@ Creator: {{creator}}`,
   game_bet_settled: `🏆 Challenge Settled!
 
 ⚽ {{home_team}} vs {{away_team}}
+🏆 {{league}}
 
-Winner: {{winner}}
-Earnings: {{earnings}}
-Stake: {{stake}} | Code: {{code}}
+🥇 Winner: {{winner}}
+💰 Earnings: {{earnings}}
 
-Congratulations!`,
+Mode: {{mode}} | Stake: {{stake}}/player
+Players: {{players_joined}} | Pot: {{net_pot}}
+Code: {{code}}`,
 };
 
 // Backward-compat alias
@@ -173,14 +175,16 @@ const SINGLE_COUNTDOWN_MACROS = [
 ];
 
 const SETTLED_MACROS = [
-  { key: '{{home_team}}', desc: 'Home team name' },
-  { key: '{{away_team}}', desc: 'Away team name' },
-  { key: '{{league}}',    desc: 'League name' },
-  { key: '{{winner}}',    desc: 'Winner username' },
-  { key: '{{earnings}}',  desc: 'Winner earnings amount (e.g. $45.00)' },
-  { key: '{{stake}}',     desc: 'Stake per player' },
-  { key: '{{code}}',      desc: 'Challenge booking code' },
-  { key: '{{mode}}',      desc: 'Bet mode' },
+  { key: '{{home_team}}',     desc: 'Home team name' },
+  { key: '{{away_team}}',     desc: 'Away team name' },
+  { key: '{{league}}',        desc: 'League name' },
+  { key: '{{winner}}',        desc: 'Winner username' },
+  { key: '{{earnings}}',      desc: 'Winner earnings (e.g. $14.91)' },
+  { key: '{{stake}}',         desc: 'Stake per player' },
+  { key: '{{net_pot}}',       desc: 'Total pot after fees (e.g. $15.20)' },
+  { key: '{{players_joined}}', desc: 'Number of players who joined' },
+  { key: '{{code}}',          desc: 'Challenge booking code' },
+  { key: '{{mode}}',          desc: 'Bet mode' },
 ];
 
 // ── Template helpers ───────────────────────────────────────────────────────────
@@ -350,7 +354,7 @@ function cleanupOldNotified() {
 function cleanupOldLogs() {
   try {
     const info = getSQLite()
-      .prepare("DELETE FROM telegram_logs WHERE created_at < datetime('now', '-30 days')")
+      .prepare("DELETE FROM telegram_logs WHERE created_at < datetime('now', '-90 days')")
       .run();
     if (info.changes > 0) {
       console.log(`[GameBetWatcher] Cleaned up ${info.changes} old telegram_logs rows`);
@@ -655,10 +659,8 @@ async function pollSettledBets(db) {
   const bets = await db.collection('game_bet')
     .find({
       createdAt: { $gt: thirtyDaysAgo },
-      $or: [
-        { status:   { $regex: /^(SETTLED|FINISHED|COMPLETED)$/i } },
-        { resolved: true },
-      ],
+      resolved:  true,
+      status:    { $regex: /^(FINISHED|SETTLED|COMPLETED)$/i },
     })
     .toArray();
 
@@ -666,19 +668,38 @@ async function pollSettledBets(db) {
     const betId = bet._id.toString();
     if (hasNotified(betId, 'settled')) continue;
 
-    // Require a winner to have been determined
-    const winnerId = bet.winnerId || bet.winner || bet.winnerUserId;
-    if (!winnerId) continue;
-
     const template = getTemplate('game_bet_settled');
     if (!template) { markNotified(betId, 'settled'); continue; }
 
-    const [fixture, creatorName] = await Promise.all([
-      resolveFixture(db, bet),
-      resolveCreator(db, bet),
-    ]);
+    const multi      = isMultiplayer(bet);
+    const stakeAmt   = Number(bet.amount) || 0;
+    const feeDeducted = Number(bet.totalFeesDeducted) || 0;
 
-    // Resolve winner username
+    // Player count: multiplayer uses participants array; single always has 2 (creator + acceptedBy)
+    const playersJoined = multi
+      ? (bet.participants?.length || 0)
+      : (bet.participants?.length > 0 && bet.acceptedBy ? 2 : bet.participants?.length || 1);
+
+    const grossPot     = stakeAmt * playersJoined;
+    const netPot       = grossPot - feeDeducted;
+    const winnerPct    = (bet.winnerSplit?.[0] ?? 100) / 100;
+    const earnings     = netPot * winnerPct;
+
+    // Determine winner:
+    // SINGLE → bet.winnerId is the explicit winner field
+    // MULTIPLAYER → no winnerId; find participant with highest currentScore
+    let winnerId = null;
+    if (!multi && bet.winnerId) {
+      winnerId = bet.winnerId;
+    } else if (multi && bet.participants?.length > 0) {
+      const sorted = [...bet.participants].sort((a, b) => (b.currentScore ?? 0) - (a.currentScore ?? 0));
+      winnerId = sorted[0]?.user;
+    }
+
+    if (!winnerId) { markNotified(betId, 'settled'); continue; }
+
+    const [fixture] = await Promise.all([resolveFixture(db, bet)]);
+
     let winnerName = null;
     try {
       const wUser = await db.collection('users').findOne(
@@ -688,19 +709,17 @@ async function pollSettledBets(db) {
       winnerName = wUser ? (wUser.username || wUser.displayName || wUser.name) : null;
     } catch { /* ignore */ }
 
-    const stakeAmt  = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
-    const earnings  = bet.winnerEarnings ?? bet.earnings ?? bet.payout ?? null;
-
     const vars = {
-      home_team: fixture.homeTeam || '—',
-      away_team: fixture.awayTeam || '—',
-      league:    fixture.league   || '—',
-      winner:    winnerName || String(winnerId).slice(-6),
-      earnings:  earnings != null ? `$${Number(earnings).toFixed(2)}` : '—',
-      stake:     stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
-      code:      bet.bookingCode || bet.title || bet.name || betId,
-      mode:      formatMode(bet),
-      creator:   creatorName || '—',
+      home_team:      fixture.homeTeam || '—',
+      away_team:      fixture.awayTeam || '—',
+      league:         fixture.league   || '—',
+      winner:         winnerName || String(winnerId).slice(-6),
+      earnings:       `$${earnings.toFixed(2)}`,
+      stake:          `$${stakeAmt.toFixed(2)}`,
+      net_pot:        `$${netPot.toFixed(2)}`,
+      players_joined: playersJoined,
+      code:           bet.bookingCode || betId,
+      mode:           formatMode(bet),
     };
 
     const result = await sendMessage(renderTemplate(template, vars), 'game_bet_settled');
