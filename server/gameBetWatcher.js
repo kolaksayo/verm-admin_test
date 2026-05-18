@@ -3,7 +3,8 @@ const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
 
-const POLL_INTERVAL_MS = 2 * 60 * 1000;
+const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
+const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
 
 // ── Default templates ──────────────────────────────────────────────────────────
 
@@ -107,6 +108,16 @@ Stake: {{stake}} per player
 Pot if full: {{total_pot}} ({{max_players}} slots)
 Mode: {{mode}} | Code: {{code}}
 Creator: {{creator}}`,
+
+  game_bet_settled: `🏆 Challenge Settled!
+
+⚽ {{home_team}} vs {{away_team}}
+
+Winner: {{winner}}
+Earnings: {{earnings}}
+Stake: {{stake}} | Code: {{code}}
+
+Congratulations!`,
 };
 
 // Backward-compat alias
@@ -159,6 +170,17 @@ const SINGLE_COUNTDOWN_MACROS = [
   { key: '{{creator}}',             desc: 'Creator username' },
   { key: '{{kickoff_time}}',        desc: 'Formatted kickoff time (e.g. 20:00)' },
   { key: '{{minutes_until_match}}', desc: 'Minutes until kickoff' },
+];
+
+const SETTLED_MACROS = [
+  { key: '{{home_team}}', desc: 'Home team name' },
+  { key: '{{away_team}}', desc: 'Away team name' },
+  { key: '{{league}}',    desc: 'League name' },
+  { key: '{{winner}}',    desc: 'Winner username' },
+  { key: '{{earnings}}',  desc: 'Winner earnings amount (e.g. $45.00)' },
+  { key: '{{stake}}',     desc: 'Stake per player' },
+  { key: '{{code}}',      desc: 'Challenge booking code' },
+  { key: '{{mode}}',      desc: 'Bet mode' },
 ];
 
 // ── Template helpers ───────────────────────────────────────────────────────────
@@ -278,6 +300,50 @@ function markNotified(betId, key) {
       .run(String(betId), key);
   } catch {
     // ignore
+  }
+}
+
+// ── lastChecked persistence ────────────────────────────────────────────────────
+
+function readLastChecked() {
+  try {
+    const row = getSQLite()
+      .prepare("SELECT value FROM admin_settings WHERE key = 'watcher_last_checked'")
+      .get();
+    if (row?.value) {
+      const d = new Date(row.value);
+      if (!isNaN(d.getTime())) return d;
+    }
+  } catch {
+    // ignore
+  }
+  return new Date(); // first run: start from now
+}
+
+function saveLastChecked(date) {
+  try {
+    getSQLite().prepare(`
+      INSERT INTO admin_settings (key, value, updated_at)
+      VALUES ('watcher_last_checked', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(date.toISOString());
+  } catch {
+    // non-fatal
+  }
+}
+
+// ── Cleanup old notified rows ──────────────────────────────────────────────────
+
+function cleanupOldNotified() {
+  try {
+    const info = getSQLite()
+      .prepare("DELETE FROM telegram_notified WHERE notified_at < datetime('now', '-30 days')")
+      .run();
+    if (info.changes > 0) {
+      console.log(`[GameBetWatcher] Cleaned up ${info.changes} old telegram_notified rows`);
+    }
+  } catch {
+    // non-fatal
   }
 }
 
@@ -571,33 +637,107 @@ async function pollSingleCountdowns(db) {
   }
 }
 
+async function pollSettledBets(db) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const bets = await db.collection('game_bet')
+    .find({
+      createdAt: { $gt: thirtyDaysAgo },
+      $or: [
+        { status:   { $regex: /^(SETTLED|FINISHED|COMPLETED)$/i } },
+        { resolved: true },
+      ],
+    })
+    .toArray();
+
+  for (const bet of bets) {
+    const betId = bet._id.toString();
+    if (hasNotified(betId, 'settled')) continue;
+
+    // Require a winner to have been determined
+    const winnerId = bet.winnerId || bet.winner || bet.winnerUserId;
+    if (!winnerId) continue;
+
+    const template = getTemplate('game_bet_settled');
+    if (!template) { markNotified(betId, 'settled'); continue; }
+
+    const [fixture, creatorName] = await Promise.all([
+      resolveFixture(db, bet),
+      resolveCreator(db, bet),
+    ]);
+
+    // Resolve winner username
+    let winnerName = null;
+    try {
+      const wUser = await db.collection('users').findOne(
+        { _id: toOid(winnerId) },
+        { projection: { username: 1, displayName: 1, name: 1 } },
+      );
+      winnerName = wUser ? (wUser.username || wUser.displayName || wUser.name) : null;
+    } catch { /* ignore */ }
+
+    const stakeAmt  = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+    const earnings  = bet.winnerEarnings ?? bet.earnings ?? bet.payout ?? null;
+
+    const vars = {
+      home_team: fixture.homeTeam || '—',
+      away_team: fixture.awayTeam || '—',
+      league:    fixture.league   || '—',
+      winner:    winnerName || String(winnerId).slice(-6),
+      earnings:  earnings != null ? `$${Number(earnings).toFixed(2)}` : '—',
+      stake:     stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
+      code:      bet.bookingCode || bet.title || bet.name || betId,
+      mode:      formatMode(bet),
+      creator:   creatorName || '—',
+    };
+
+    const result = await sendMessage(renderTemplate(template, vars), 'game_bet_settled');
+    if (result.ok) {
+      markNotified(betId, 'settled');
+      console.log(`[GameBetWatcher] Settled notified: ${vars.code}`);
+    }
+  }
+}
+
 // ── Watcher entry point ────────────────────────────────────────────────────────
 
 function startWatcher() {
-  let lastChecked = new Date();
-  console.log(`[GameBetWatcher] Started. Polling every ${POLL_INTERVAL_MS / 1000}s.`);
+  let lastChecked = readLastChecked();
+  console.log(`[GameBetWatcher] Started. New-bet poll every ${NEW_BET_INTERVAL_MS / 1000}s, progress/countdowns every ${POLL_INTERVAL_MS / 1000}s.`);
+  console.log(`[GameBetWatcher] Resuming from: ${lastChecked.toISOString()}`);
 
+  // New bets — fast poll (30 s)
   setInterval(async () => {
-    if (!isConfigured()) {
-      console.log('[GameBetWatcher] Telegram not configured — skipping poll.');
-      return;
-    }
-
+    if (!isConfigured()) return;
     try {
       const db    = getDb();
       const since = lastChecked;
       lastChecked = new Date();
+      saveLastChecked(lastChecked);
+      await pollNewBets(db, since);
+    } catch (err) {
+      console.error('[GameBetWatcher] New-bet poll error:', err.message);
+    }
+  }, NEW_BET_INTERVAL_MS);
 
+  // Fill progress + countdowns + settled — slow poll (2 min)
+  setInterval(async () => {
+    if (!isConfigured()) return;
+    try {
+      const db = getDb();
       await Promise.allSettled([
-        pollNewBets(db, since),
         pollFillProgress(db),
         pollSingleCountdowns(db),
         pollMatchCountdowns(db),
+        pollSettledBets(db),
       ]);
     } catch (err) {
-      console.error('[GameBetWatcher] Poll error:', err.message);
+      console.error('[GameBetWatcher] Progress/countdown poll error:', err.message);
     }
   }, POLL_INTERVAL_MS);
+
+  // Daily cleanup of old telegram_notified rows
+  cleanupOldNotified();
+  setInterval(cleanupOldNotified, 24 * 60 * 60 * 1000);
 }
 
 module.exports = {
@@ -611,6 +751,7 @@ module.exports = {
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
+  SETTLED_MACROS,
   renderTemplate,
   getTemplate,
   resolveTeamName,

@@ -93,7 +93,7 @@ export default function FixturesView() {
 
   const [leagues, setLeagues] = useState([]);
   const [selectedLeague, setSelectedLeague] = useState({ id: '', name: '' });
-  const [dateFilter, setDateFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('today');
   const [customDate, setCustomDate] = useState(todayStr);
   const [search, setSearch] = useState('');
   const [fixtures, setFixtures] = useState([]);

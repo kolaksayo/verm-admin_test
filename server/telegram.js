@@ -25,7 +25,7 @@ function logSend(trigger, preview, ok, error = null) {
   } catch { /* non-fatal */ }
 }
 
-async function sendMessage(text, trigger = 'manual') {
+async function sendMessage(text, trigger = 'manual', _isRetry = false) {
   const { token, chatId } = getConfig();
   const preview = text.replace(/<[^>]+>/g, '').slice(0, 120);
 
@@ -44,10 +44,17 @@ async function sendMessage(text, trigger = 'manual') {
     );
     const json = await res.json();
     logSend(trigger, preview, json.ok, json.ok ? null : (json.description || 'api_error'));
+    if (!json.ok && !_isRetry) {
+      // Schedule one retry in 5 minutes for transient failures
+      setTimeout(() => sendMessage(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
     return json;
   } catch (err) {
     logSend(trigger, preview, false, err.message);
     console.error('[Telegram] send error:', err.message);
+    if (!_isRetry) {
+      setTimeout(() => sendMessage(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
     return { ok: false, reason: err.message };
   }
 }

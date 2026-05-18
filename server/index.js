@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const { connect } = require('./db');
 
 const authRoutes = require('./routes/auth');
@@ -26,16 +27,32 @@ const { startSnapshotScheduler } = require('./rateSnapshotJob');
 
 const app = express();
 
+// Rate limiters
+const heavyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+});
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+});
+
 app.use(compression());
 app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/collections', collectionsRoutes);
+app.use('/api/collections', heavyLimiter, collectionsRoutes);
 app.use('/api/lookup', lookupRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
-app.use('/api/fixtures', fixturesRoutes);
+app.use('/api/fixtures', searchLimiter, fixturesRoutes);
 app.use('/api/user-profile', userProfileRoutes);
 app.use('/api/game-bets', gameBetsRoutes);
 app.use('/api/cashflow', cashflowRoutes);

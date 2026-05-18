@@ -13,6 +13,7 @@ const TRIGGER_LABELS = {
   game_bet_match_30min:   '30min Countdown',
   game_bet_match_15min:   '15min Countdown',
   game_bet_large_stake:   'Large Stake',
+  game_bet_settled:       'Settled',
   test:                   'Test',
   manual:                 'Manual',
 };
@@ -27,6 +28,7 @@ const TRIGGER_COLORS = {
   game_bet_match_30min:   'bg-vs-lime/15 text-vs-lime',
   game_bet_match_15min:   'bg-vs-lime/15 text-vs-lime',
   game_bet_large_stake:   'bg-vs-warning/15 text-vs-warning',
+  game_bet_settled:       'bg-vs-success/15 text-vs-success',
   test:                   'bg-vs-success/15 text-vs-success',
   manual:                 'bg-vs-elevated text-vs-text-3',
 };
@@ -161,8 +163,9 @@ function MessagesTab({ templates, loading, onSaved }) {
       </p>
 
       <div className="flex gap-1 mb-5 bg-vs-elevated rounded-lg p-1 w-fit">
-        <button onClick={() => setMode('single')} className={subTabCls(mode === 'single')}>Single Bet</button>
-        <button onClick={() => setMode('multi')}  className={subTabCls(mode === 'multi')}>Multiplayer</button>
+        <button onClick={() => setMode('single')}  className={subTabCls(mode === 'single')}>Single Bet</button>
+        <button onClick={() => setMode('multi')}   className={subTabCls(mode === 'multi')}>Multiplayer</button>
+        <button onClick={() => setMode('settled')} className={subTabCls(mode === 'settled')}>Settled</button>
       </div>
 
       {loading ? (

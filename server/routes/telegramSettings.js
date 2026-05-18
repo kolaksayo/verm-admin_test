@@ -8,6 +8,7 @@ const {
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
+  SETTLED_MACROS,
   renderTemplate,
   getTemplate,
 } = require('../gameBetWatcher');
@@ -113,6 +114,15 @@ const TRIGGERS = [
     description: 'Fired when a multiplayer bet stake exceeds the configured threshold',
     macros:      LARGE_STAKE_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_large_stake,
+  },
+  // ── Settled (all modes) ───────────────────────────────────────────────────────
+  {
+    trigger:     'game_bet_settled',
+    group:       'settled',
+    label:       'Challenge Settled',
+    description: 'Fired once when a challenge is resolved and a winner is determined',
+    macros:      SETTLED_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_settled,
   },
 ];
 
@@ -332,6 +342,8 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       fill_percent:        '60%',
       total_pot:           '$30.00',
       creator:             'testuser',
+      winner:              'testuser',
+      earnings:            '$45.00',
       code:                'TEST-ABCD',
       mode:                'Multiplayer',
       slots:               10,

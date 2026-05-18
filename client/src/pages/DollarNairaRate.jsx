@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 
 const PERIODS = ['morning', 'midday', 'night'];
 const PERIOD_LABELS = { morning: 'Morning', midday: 'Midday', night: 'Night' };
@@ -109,6 +112,45 @@ export default function DollarNairaRate() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Rate trend chart */}
+      {history.length > 1 && (
+        <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Rate Trend (last {history.length} days)</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={[...history].reverse()} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--vs-border)" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: 'var(--vs-text-3)', fontSize: 11 }}
+                tickFormatter={(d) => {
+                  try { return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); }
+                  catch { return d; }
+                }}
+              />
+              <YAxis
+                tick={{ fill: 'var(--vs-text-3)', fontSize: 11 }}
+                tickFormatter={(v) => `₦${Number(v).toLocaleString('en-NG')}`}
+                width={80}
+              />
+              <Tooltip
+                contentStyle={{ background: 'var(--vs-card)', border: '1px solid var(--vs-border)', borderRadius: 8 }}
+                labelStyle={{ color: 'var(--vs-text-3)', fontSize: 12 }}
+                itemStyle={{ fontSize: 12 }}
+                formatter={(v) => [`₦${Number(v).toLocaleString('en-NG')}`, undefined]}
+                labelFormatter={(d) => {
+                  try { return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+                  catch { return d; }
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+              <Line type="monotone" dataKey="morning" name="Morning" stroke="#f59e0b" dot={false} strokeWidth={2} connectNulls />
+              <Line type="monotone" dataKey="midday"  name="Midday"  stroke="#a3e635" dot={false} strokeWidth={2} connectNulls />
+              <Line type="monotone" dataKey="night"   name="Night"   stroke="#a78bfa" dot={false} strokeWidth={2} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
 
