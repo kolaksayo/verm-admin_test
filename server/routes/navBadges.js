@@ -4,28 +4,46 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-const DEPOSIT_FILTER = {
+const DEPOSIT_BASE = {
   type:        { $regex: /^CREDIT$/i },
   description: { $regex: /^TOP\s*UP$/i },
-  'gateWayResponse.data.amount': { $exists: true, $gt: 0 },
-  status: { $regex: /^pending$/i },
+  status:      'PAID',
 };
 
-const WITHDRAWAL_FILTER = {
+const WITHDRAWAL_BASE = {
   type:        { $regex: /^DEBIT$/i },
   description: { $regex: /safehaven naira transfer/i },
-  status: { $regex: /^pending$/i },
+  status:      'PAID',
 };
 
-// GET /api/nav-badges — returns pending counts for sidebar badges
+// GET /api/nav-badges
 router.get('/', auth, async (req, res) => {
   try {
-    const db = getDb();
-    const [deposits, withdrawals] = await Promise.all([
-      db.collection('transactions').countDocuments(DEPOSIT_FILTER),
-      db.collection('transactions').countDocuments(WITHDRAWAL_FILTER),
+    const db  = getDb();
+    const now = Date.now();
+    const h24 = new Date(now - 24 * 60 * 60 * 1000);
+    const d7  = new Date(now - 7  * 24 * 60 * 60 * 1000);
+    const d30 = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      dep24h, dep7d, dep30d, depAll,
+      wit24h, wit7d, wit30d, witAll,
+    ] = await Promise.all([
+      db.collection('transactions').countDocuments({ ...DEPOSIT_BASE,    createdAt: { $gte: h24 } }),
+      db.collection('transactions').countDocuments({ ...DEPOSIT_BASE,    createdAt: { $gte: d7  } }),
+      db.collection('transactions').countDocuments({ ...DEPOSIT_BASE,    createdAt: { $gte: d30 } }),
+      db.collection('transactions').countDocuments(DEPOSIT_BASE),
+      db.collection('transactions').countDocuments({ ...WITHDRAWAL_BASE, createdAt: { $gte: h24 } }),
+      db.collection('transactions').countDocuments({ ...WITHDRAWAL_BASE, createdAt: { $gte: d7  } }),
+      db.collection('transactions').countDocuments({ ...WITHDRAWAL_BASE, createdAt: { $gte: d30 } }),
+      db.collection('transactions').countDocuments(WITHDRAWAL_BASE),
     ]);
-    res.json({ ngnDeposits: deposits, ngnWithdrawals: withdrawals });
+
+    res.json({
+      transactions: dep24h + wit24h, // combined 24h — drives sidebar badge
+      deposits:    { h24: dep24h, d7: dep7d, d30: dep30d, allTime: depAll },
+      withdrawals: { h24: wit24h, d7: wit7d, d30: wit30d, allTime: witAll },
+    });
   } catch (err) {
     console.error('Nav badges error:', err);
     res.status(500).json({ error: err.message });

@@ -45,7 +45,12 @@ export default function NgnDeposits({ hideHeader = false }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo]     = useState('');
   const [expanded, setExpanded] = useState(null);
+  const [stats, setStats]       = useState(null);
   const searchRef = useRef();
+
+  useEffect(() => {
+    api.get('/nav-badges').then((r) => setStats(r.data.deposits)).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -80,12 +85,26 @@ export default function NgnDeposits({ hideHeader = false }) {
     <div>
       {/* Header */}
       {!hideHeader && (
-        <div className="mb-3">
+        <div className="mb-4">
           <h1 className="text-2xl font-bold text-vs-text">NGN Deposits</h1>
-          <p className="text-sm text-vs-text-3 mt-1">
-            SafeHaven virtual account funding events
-            {!loading && <span className="ml-2 font-medium text-vs-text">{total.toLocaleString()} total</span>}
-          </p>
+          <p className="text-sm text-vs-text-3 mt-1">SafeHaven virtual account funding events</p>
+        </div>
+      )}
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Last 24 h',  value: stats.h24 },
+            { label: 'Last 7 days', value: stats.d7 },
+            { label: 'Last 30 days', value: stats.d30 },
+            { label: 'All Time',   value: stats.allTime },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-vs-card border border-vs-border rounded-xl px-4 py-3">
+              <p className="text-xs text-vs-text-3 mb-1">{label}</p>
+              <p className="text-2xl font-bold text-vs-lime">{value.toLocaleString()}</p>
+            </div>
+          ))}
         </div>
       )}
 

@@ -49,8 +49,13 @@ export default function NgnWithdrawals({ hideHeader = false }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [statuses, setStatuses]   = useState([]);
   const [expanded, setExpanded]   = useState(null);
+  const [stats, setStats]         = useState(null);
   const searchRef = useRef();
   const debounceTimer = useRef(null);
+
+  useEffect(() => {
+    api.get('/nav-badges').then((r) => setStats(r.data.withdrawals)).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -95,12 +100,26 @@ export default function NgnWithdrawals({ hideHeader = false }) {
     <div>
       {/* Header */}
       {!hideHeader && (
-        <div className="mb-3">
+        <div className="mb-4">
           <h1 className="text-2xl font-bold text-vs-text">NGN Withdrawals</h1>
-          <p className="text-sm text-vs-text-3 mt-1">
-            SafeHaven Naira transfer transactions
-            {!loading && <span className="ml-2 font-medium text-vs-text">{total.toLocaleString()} total</span>}
-          </p>
+          <p className="text-sm text-vs-text-3 mt-1">SafeHaven Naira transfer transactions</p>
+        </div>
+      )}
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Last 24 h',   value: stats.h24 },
+            { label: 'Last 7 days', value: stats.d7 },
+            { label: 'Last 30 days', value: stats.d30 },
+            { label: 'All Time',    value: stats.allTime },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-vs-card border border-vs-border rounded-xl px-4 py-3">
+              <p className="text-xs text-vs-text-3 mb-1">{label}</p>
+              <p className="text-2xl font-bold text-vs-warning">{value.toLocaleString()}</p>
+            </div>
+          ))}
         </div>
       )}
 
