@@ -491,38 +491,23 @@ async function pollMatchCountdowns(db) {
       kickoff_time: kickoffTime,
     };
 
-    // 1 hour window: 55–65 min
-    if (minutesAway >= 55 && minutesAway <= 65 && !hasNotified(betId, '1hr')) {
-      const template = getTemplate('game_bet_match_1hr');
-      if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_match_1hr');
-        if (result.ok) {
-          markNotified(betId, '1hr');
-          console.log(`[GameBetWatcher] 1hr countdown notified: ${vars.code}`);
-        }
-      }
-    }
+    // Fire each threshold once, as soon as minutesAway drops below it.
+    // Grace period of 60 min past kickoff handles server restarts mid-window.
+    const checkpoints = [
+      { key: '1hr',   trigger: 'game_bet_match_1hr',   threshold: 65 },
+      { key: '30min', trigger: 'game_bet_match_30min',  threshold: 35 },
+      { key: '15min', trigger: 'game_bet_match_15min',  threshold: 20 },
+    ];
 
-    // 30 min window: 25–35 min
-    if (minutesAway >= 25 && minutesAway <= 35 && !hasNotified(betId, '30min')) {
-      const template = getTemplate('game_bet_match_30min');
-      if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_match_30min');
-        if (result.ok) {
-          markNotified(betId, '30min');
-          console.log(`[GameBetWatcher] 30min countdown notified: ${vars.code}`);
-        }
-      }
-    }
-
-    // 15 min window: 10–20 min
-    if (minutesAway >= 10 && minutesAway <= 20 && !hasNotified(betId, '15min')) {
-      const template = getTemplate('game_bet_match_15min');
-      if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_match_15min');
-        if (result.ok) {
-          markNotified(betId, '15min');
-          console.log(`[GameBetWatcher] 15min countdown notified: ${vars.code}`);
+    for (const cp of checkpoints) {
+      if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
+        const template = getTemplate(cp.trigger);
+        if (template) {
+          const result = await sendMessage(renderTemplate(template, vars), cp.trigger);
+          if (result.ok) {
+            markNotified(betId, cp.key);
+            console.log(`[GameBetWatcher] Multi ${cp.key} countdown: ${vars.code}`);
+          }
         }
       }
     }
@@ -533,7 +518,7 @@ async function pollSingleCountdowns(db) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const bets = await db.collection('game_bet').find({
     createdAt: { $gt: thirtyDaysAgo },
-    status: { $nin: ['settled', 'completed', 'cancelled', 'closed', 'expired'] },
+    status: { $not: { $regex: /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED|finished|settled|completed|cancelled|canceled|closed|expired|deleted)$/ } },
     gameFixtureId: { $exists: true },
   }).toArray();
 
@@ -566,13 +551,13 @@ async function pollSingleCountdowns(db) {
     };
 
     const checkpoints = [
-      { key: '1hr',   trigger: 'game_bet_single_1hr',   min: 55, max: 65 },
-      { key: '30min', trigger: 'game_bet_single_30min',  min: 25, max: 35 },
-      { key: '15min', trigger: 'game_bet_single_15min',  min: 10, max: 20 },
+      { key: '1hr',   trigger: 'game_bet_single_1hr',   threshold: 65 },
+      { key: '30min', trigger: 'game_bet_single_30min',  threshold: 35 },
+      { key: '15min', trigger: 'game_bet_single_15min',  threshold: 20 },
     ];
 
     for (const cp of checkpoints) {
-      if (minutesAway >= cp.min && minutesAway <= cp.max && !hasNotified(betId, cp.key)) {
+      if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
         const template = getTemplate(cp.trigger);
         if (template) {
           const result = await sendMessage(renderTemplate(template, vars), cp.trigger);
