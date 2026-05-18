@@ -401,6 +401,18 @@ function cleanupOldLogs() {
 
 // ── Settings helpers ───────────────────────────────────────────────────────────
 
+function getRankingsTopN() {
+  try {
+    const row = getSQLite()
+      .prepare("SELECT value FROM admin_settings WHERE key = 'rankings_top_n'")
+      .get();
+    const n = row ? Number(row.value) : 10;
+    return Number.isFinite(n) && n >= 1 ? Math.min(25, n) : 10;
+  } catch {
+    return 10;
+  }
+}
+
 function getLargeStakeThreshold() {
   try {
     const row = getSQLite()
@@ -783,7 +795,7 @@ async function pollSettledBets(db) {
 
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
 
-async function buildRankingsVars(db, period) {
+async function buildRankingsVars(db, period, topN) {
   const now = new Date();
   let periodStart = null;
   let periodLabel = '';
@@ -811,7 +823,7 @@ async function buildRankingsVars(db, period) {
       betsCount:  { $sum: 1 },
     }},
     { $sort: { totalScore: -1 } },
-    { $limit: 10 },
+    { $limit: topN },
   ]).toArray();
 
   const countResult = await db.collection('game_bet').aggregate([
@@ -898,7 +910,7 @@ async function pollRankingsNotification(db) {
     if (hasRankingsBeenSentThisPeriod(period)) continue;
 
     try {
-      const vars   = await buildRankingsVars(db, period);
+      const vars   = await buildRankingsVars(db, period, getRankingsTopN());
       const result = await sendMessage(renderTemplate(template, vars), trigger);
       if (result.ok) {
         markRankingsSent(period);

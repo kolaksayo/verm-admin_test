@@ -179,24 +179,28 @@ router.get('/config', auth, (req, res) => {
   const threshold = sqlite
     .prepare("SELECT value FROM admin_settings WHERE key = 'large_stake_threshold'")
     .get();
+  const topN = sqlite
+    .prepare("SELECT value FROM admin_settings WHERE key = 'rankings_top_n'")
+    .get();
   res.json({
     botToken:           token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
     chatId:             chatId || '',
     largeStakeThreshold: threshold ? Number(threshold.value) : 7,
+    rankingsTopN:        topN ? Number(topN.value) : 10,
   });
 });
 
 // POST /api/telegram/config — save bot token, chat ID, and/or threshold
 router.post('/config', auth, (req, res) => {
-  const { botToken, chatId, largeStakeThreshold } = req.body;
+  const { botToken, chatId, largeStakeThreshold, rankingsTopN } = req.body;
 
-  // Validate: need at least one valid field
   const hasToken     = botToken != null && String(botToken).trim() !== '';
   const hasChatId    = chatId   != null && String(chatId).trim()   !== '';
   const hasThreshold = largeStakeThreshold != null && Number(largeStakeThreshold) > 0;
+  const hasTopN      = rankingsTopN != null && Number.isInteger(Number(rankingsTopN)) && Number(rankingsTopN) >= 1;
 
-  if (!hasToken && !hasChatId && !hasThreshold) {
-    return res.status(400).json({ ok: false, error: 'Provide at least one of: botToken, chatId, largeStakeThreshold' });
+  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN) {
+    return res.status(400).json({ ok: false, error: 'Provide at least one of: botToken, chatId, largeStakeThreshold, rankingsTopN' });
   }
 
   try {
@@ -210,6 +214,7 @@ router.post('/config', auth, (req, res) => {
     if (hasToken)     upsert.run('telegram_bot_token', String(botToken).trim());
     if (hasChatId)    upsert.run('telegram_chat_id',   String(chatId).trim());
     if (hasThreshold) upsert.run('large_stake_threshold', String(Number(largeStakeThreshold)));
+    if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))))
 
     res.json({ ok: true });
   } catch (err) {

@@ -209,6 +209,10 @@ export default function TelegramSettings() {
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [thresholdMsg, setThresholdMsg]     = useState('');
 
+  const [rankingsTopN, setRankingsTopN]         = useState('10');
+  const [savingTopN, setSavingTopN]             = useState(false);
+  const [topNMsg, setTopNMsg]                   = useState('');
+
   const [templates, setTemplates]             = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
@@ -244,6 +248,7 @@ export default function TelegramSettings() {
     if (tab === 'Settings') {
       api.get('/telegram/config').then((r) => {
         if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
+        if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
       }).catch(() => {});
     }
   }, [tab]);
@@ -274,6 +279,19 @@ export default function TelegramSettings() {
       setThresholdMsg(err.response?.data?.error || 'Failed');
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  const handleSaveTopN = async (e) => {
+    e.preventDefault();
+    setSavingTopN(true); setTopNMsg('');
+    try {
+      await api.post('/telegram/config', { rankingsTopN: Number(rankingsTopN) });
+      setTopNMsg('Saved');
+    } catch (err) {
+      setTopNMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setSavingTopN(false);
     }
   };
 
@@ -356,7 +374,8 @@ export default function TelegramSettings() {
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>
             <p className="text-xs text-vs-text-3 mb-4">Configure thresholds for cross-cutting alert triggers.</p>
-            <form onSubmit={handleSaveThreshold} className="flex items-end gap-4">
+
+            <form onSubmit={handleSaveThreshold} className="flex items-end gap-4 mb-5">
               <div>
                 <label className="text-xs text-vs-text-3 block mb-1">Large Stake Threshold ($)</label>
                 <input type="number" min="0.01" step="0.01" value={threshold} onChange={(e) => setThreshold(e.target.value)}
@@ -371,6 +390,28 @@ export default function TelegramSettings() {
                 {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
               </div>
             </form>
+
+            <div className="border-t border-vs-border pt-5">
+              <form onSubmit={handleSaveTopN} className="flex items-end gap-4">
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">Rankings — Players Shown</label>
+                  <select value={rankingsTopN} onChange={(e) => setRankingsTopN(e.target.value)}
+                    className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple">
+                    {[3, 5, 10, 15, 20, 25].map((n) => (
+                      <option key={n} value={n}>Top {n}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-vs-text-3 mt-1">Number of players listed in weekly/monthly ranking notifications</p>
+                </div>
+                <div className="flex items-center gap-3 mb-[26px]">
+                  <button type="submit" disabled={savingTopN}
+                    className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                    {savingTopN ? 'Saving…' : 'Save'}
+                  </button>
+                  {topNMsg && <p className={`text-xs ${topNMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{topNMsg}</p>}
+                </div>
+              </form>
+            </div>
           </div>
 
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
