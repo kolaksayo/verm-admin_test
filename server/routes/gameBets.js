@@ -7,13 +7,35 @@ const router = express.Router();
 
 const toOid = (val) => { try { return new ObjectId(String(val)); } catch { return null; } };
 
+function getPeriodMatch(period) {
+  const now = new Date();
+  if (period === 'weekly') {
+    const day  = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const mon  = new Date(now);
+    mon.setHours(0, 0, 0, 0);
+    mon.setDate(mon.getDate() - diff);
+    return { createdAt: { $gte: mon } };
+  }
+  if (period === 'monthly') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { createdAt: { $gte: start } };
+  }
+  return {};
+}
+
 router.get('/user-rankings', auth, async (req, res) => {
   try {
-    const db = getDb();
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const db     = getDb();
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const period = ['weekly', 'monthly', 'all'].includes(req.query.period) ? req.query.period : 'all';
+    const match  = getPeriodMatch(period);
+
+    const matchStage = Object.keys(match).length ? [{ $match: match }] : [];
 
     const pipeline = [
+      ...matchStage,
       { $unwind: '$participants' },
       { $group: {
         _id: '$participants.user',
@@ -28,6 +50,7 @@ router.get('/user-rankings', auth, async (req, res) => {
     ];
 
     const countPipeline = [
+      ...matchStage,
       { $unwind: '$participants' },
       { $group: { _id: '$participants.user' } },
       { $count: 'total' },
@@ -63,7 +86,7 @@ router.get('/user-rankings', auth, async (req, res) => {
       avgScore: r.betsCount > 0 ? Math.round((r.totalScore / r.betsCount) * 10) / 10 : 0,
     }));
 
-    res.json({ rankings, total, page, limit, totalPages: Math.ceil(total / limit) });
+    res.json({ rankings, total, page, limit, totalPages: Math.ceil(total / limit), period });
   } catch (err) {
     console.error('User rankings error:', err);
     res.status(500).json({ error: err.message });

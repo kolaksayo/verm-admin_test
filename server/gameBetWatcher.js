@@ -127,6 +127,24 @@ Creator: {{creator}}`,
 Stake: {{stake}}/player | Players: {{players_joined}}/{{max_players}}
 Pot: {{current_pot}} (potential was {{potential_pot}})
 Mode: {{mode}} | Code: {{code}}`,
+
+  rankings_weekly: `📊 Weekly Rankings
+
+Top players this week on VermoSports:
+
+{{top_players}}
+
+{{total_players}} players competed this week
+Generated: {{generated_at}}`,
+
+  rankings_monthly: `📊 Monthly Rankings
+
+Top players this month on VermoSports:
+
+{{top_players}}
+
+{{total_players}} players competed this month
+Generated: {{generated_at}}`,
 };
 
 // Backward-compat alias
@@ -180,6 +198,13 @@ const SINGLE_COUNTDOWN_MACROS = [
   { key: '{{creator}}',             desc: 'Creator username' },
   { key: '{{kickoff_time}}',        desc: 'Formatted kickoff time (e.g. 20:00)' },
   { key: '{{minutes_until_match}}', desc: 'Minutes until kickoff' },
+];
+
+const RANKINGS_MACROS = [
+  { key: '{{period}}',        desc: 'Period label (e.g. This Week / This Month)' },
+  { key: '{{generated_at}}',  desc: 'Date/time this ranking was generated' },
+  { key: '{{top_players}}',   desc: 'Formatted leaderboard list (top 10 players with scores)' },
+  { key: '{{total_players}}', desc: 'Total number of players who competed in the period' },
 ];
 
 const SETTLED_MACROS = [
@@ -754,6 +779,139 @@ async function pollSettledBets(db) {
   }
 }
 
+// ── Rankings notification ──────────────────────────────────────────────────────
+
+const RANK_MEDALS = ['🥇', '🥈', '🥉'];
+
+async function buildRankingsVars(db, period) {
+  const now = new Date();
+  let periodStart = null;
+  let periodLabel = '';
+
+  if (period === 'weekly') {
+    const day  = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    periodStart = new Date(now);
+    periodStart.setHours(0, 0, 0, 0);
+    periodStart.setDate(periodStart.getDate() - diff);
+    periodLabel = 'This Week';
+  } else {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    periodLabel = 'This Month';
+  }
+
+  const matchStage = { $match: { createdAt: { $gte: periodStart } } };
+
+  const rows = await db.collection('game_bet').aggregate([
+    matchStage,
+    { $unwind: '$participants' },
+    { $group: {
+      _id:        '$participants.user',
+      totalScore: { $sum: { $ifNull: ['$participants.currentScore', 0] } },
+      betsCount:  { $sum: 1 },
+    }},
+    { $sort: { totalScore: -1 } },
+    { $limit: 10 },
+  ]).toArray();
+
+  const countResult = await db.collection('game_bet').aggregate([
+    matchStage,
+    { $unwind: '$participants' },
+    { $group: { _id: '$participants.user' } },
+    { $count: 'total' },
+  ]).toArray();
+
+  const totalPlayers = countResult[0]?.total || 0;
+
+  const userIds = rows.map((r) => r._id).filter(Boolean);
+  const users   = userIds.length
+    ? await db.collection('users')
+        .find({ _id: { $in: userIds.map(toOid).filter(Boolean) } }, { projection: { username: 1, name: 1 } })
+        .toArray()
+    : [];
+  const userMap = {};
+  users.forEach((u) => { userMap[u._id.toString()] = u.username || u.name || u._id.toString(); });
+
+  const lines = rows.map((r, i) => {
+    const medal  = RANK_MEDALS[i] || `${i + 1}.`;
+    const name   = r._id ? (userMap[String(r._id)] || String(r._id).slice(-6)) : 'Unknown';
+    const pts    = r.totalScore.toLocaleString();
+    const bets   = r.betsCount;
+    return `${medal} ${name} — ${pts} pts (${bets} bet${bets !== 1 ? 's' : ''})`;
+  });
+
+  return {
+    period:        periodLabel,
+    generated_at:  now.toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    top_players:   lines.length ? lines.join('\n') : 'No activity this period',
+    total_players: totalPlayers,
+  };
+}
+
+function getRankingsSentKey(period) {
+  return period === 'weekly' ? 'rankings_weekly_sent_at' : 'rankings_monthly_sent_at';
+}
+
+function hasRankingsBeenSentThisPeriod(period) {
+  try {
+    const key = getRankingsSentKey(period);
+    const row = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+    if (!row?.value) return false;
+    const sent = new Date(row.value);
+    const now  = new Date();
+    if (period === 'weekly') {
+      // Same ISO week (Mon–Sun)
+      const toMon = (d) => { const m = new Date(d); const day = m.getDay(); m.setDate(m.getDate() - (day === 0 ? 6 : day - 1)); m.setHours(0,0,0,0); return m; };
+      return toMon(sent).getTime() === toMon(now).getTime();
+    }
+    // Monthly: same year+month
+    return sent.getFullYear() === now.getFullYear() && sent.getMonth() === now.getMonth();
+  } catch {
+    return false;
+  }
+}
+
+function markRankingsSent(period) {
+  try {
+    const key = getRankingsSentKey(period);
+    getSQLite().prepare(`
+      INSERT INTO admin_settings (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(key, new Date().toISOString());
+  } catch { /* non-fatal */ }
+}
+
+async function pollRankingsNotification(db) {
+  const now     = new Date();
+  const isMonday = now.getDay() === 1;
+  const isFirst  = now.getDate() === 1;
+
+  const toSend = [];
+  if (isMonday) toSend.push('weekly');
+  if (isFirst)  toSend.push('monthly');
+
+  for (const period of toSend) {
+    const trigger = `rankings_${period}`;
+    const template = getTemplate(trigger);
+    if (!template) continue;
+    if (hasRankingsBeenSentThisPeriod(period)) continue;
+
+    try {
+      const vars   = await buildRankingsVars(db, period);
+      const result = await sendMessage(renderTemplate(template, vars), trigger);
+      if (result.ok) {
+        markRankingsSent(period);
+        console.log(`[GameBetWatcher] Rankings notification sent: ${trigger}`);
+      } else {
+        console.error(`[GameBetWatcher] Rankings Telegram error (${trigger}):`, result);
+      }
+    } catch (err) {
+      console.error(`[GameBetWatcher] Rankings build error (${trigger}):`, err.message);
+    }
+  }
+}
+
 // ── Watcher entry point ────────────────────────────────────────────────────────
 
 function startWatcher() {
@@ -793,10 +951,18 @@ function startWatcher() {
     }
   }, POLL_INTERVAL_MS);
 
-  // Daily cleanup of old rows
-  cleanupOldNotified();
-  cleanupOldLogs();
-  setInterval(() => { cleanupOldNotified(); cleanupOldLogs(); }, 24 * 60 * 60 * 1000);
+  // Daily cleanup + rankings check
+  const runDaily = async () => {
+    cleanupOldNotified();
+    cleanupOldLogs();
+    if (isConfigured()) {
+      try { await pollRankingsNotification(getDb()); } catch (err) {
+        console.error('[GameBetWatcher] Daily rankings error:', err.message);
+      }
+    }
+  };
+  runDaily();
+  setInterval(runDaily, 24 * 60 * 60 * 1000);
 }
 
 module.exports = {
@@ -811,6 +977,7 @@ module.exports = {
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
   SETTLED_MACROS,
+  RANKINGS_MACROS,
   renderTemplate,
   getTemplate,
   resolveTeamName,

@@ -8,19 +8,26 @@ function formatNum(n) {
 
 const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
-export default function UserRankingsView({ onUserClick }) {
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+const PERIODS = [
+  { value: 'weekly',  label: 'This Week' },
+  { value: 'monthly', label: 'This Month' },
+  { value: 'all',     label: 'All Time' },
+];
 
-  const fetch = useCallback(async () => {
+export default function UserRankingsView({ onUserClick }) {
+  const [period, setPeriod]       = useState('all');
+  const [rows, setRows]           = useState([]);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/game-bets/user-rankings', { params: { page, limit: 50 } });
+      const res = await api.get('/game-bets/user-rankings', { params: { page, limit: 50, period } });
       setRows(res.data.rankings);
       setTotal(res.data.total);
       setTotalPages(res.data.totalPages);
@@ -29,15 +36,33 @@ export default function UserRankingsView({ onUserClick }) {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, period]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { setPage(1); }, [period]);
+  useEffect(() => { load(); }, [load]);
+
+  const tabCls = (active) =>
+    `px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+      active ? 'bg-vs-card text-vs-text shadow-sm' : 'text-vs-text-3 hover:text-vs-text'
+    }`;
+
+  const periodLabel = PERIODS.find((p) => p.value === period)?.label || 'All Time';
 
   return (
     <div>
+      {/* Period tabs */}
+      <div className="flex gap-1 mb-5 bg-vs-elevated rounded-lg p-1 w-fit">
+        {PERIODS.map((p) => (
+          <button key={p.value} onClick={() => setPeriod(p.value)} className={tabCls(period === p.value)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       {!loading && (
         <p className="text-sm text-vs-text-3 mb-4">
           {total.toLocaleString()} player{total !== 1 ? 's' : ''} ranked by cumulative points
+          {period !== 'all' && <span className="text-vs-text-3"> · {periodLabel}</span>}
         </p>
       )}
 
@@ -48,7 +73,9 @@ export default function UserRankingsView({ onUserClick }) {
       {loading ? (
         <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm">No data found.</div>
+        <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm">
+          No activity{period !== 'all' ? ` ${periodLabel.toLowerCase()}` : ''}.
+        </div>
       ) : (
         <>
           <div className="bg-vs-card rounded-xl border border-vs-border overflow-hidden">
@@ -69,12 +96,10 @@ export default function UserRankingsView({ onUserClick }) {
                       key={r.userId || r.rank}
                       className={`hover:bg-vs-elevated transition-colors ${r.rank <= 3 ? 'bg-vs-warning/3' : ''}`}
                     >
-                      {/* Rank */}
                       <td className="px-4 py-3 text-vs-text-3 font-mono text-xs whitespace-nowrap">
                         {MEDAL[r.rank] || `#${r.rank}`}
                       </td>
 
-                      {/* Username */}
                       <td className="px-4 py-3">
                         {onUserClick && r.userId ? (
                           <button
@@ -88,18 +113,12 @@ export default function UserRankingsView({ onUserClick }) {
                         )}
                       </td>
 
-                      {/* Total score */}
                       <td className="px-4 py-3">
                         <span className="text-sm font-bold text-vs-text">{formatNum(r.totalScore)}</span>
                       </td>
 
-                      {/* Bets count */}
                       <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{formatNum(r.betsCount)}</td>
-
-                      {/* Avg per bet */}
                       <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{formatNum(r.avgScore)}</td>
-
-                      {/* Point breakdown */}
                       <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{formatNum(r.playerPoints)}</td>
                       <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{formatNum(r.timePoints)}</td>
                       <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{formatNum(r.goalPoints)}</td>

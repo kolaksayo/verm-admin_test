@@ -9,6 +9,7 @@ const {
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
   SETTLED_MACROS,
+  RANKINGS_MACROS,
   renderTemplate,
   getTemplate,
 } = require('../gameBetWatcher');
@@ -123,6 +124,23 @@ const TRIGGERS = [
     description: 'Fired once when a challenge is resolved and a winner is determined',
     macros:      SETTLED_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_settled,
+  },
+  // ── Rankings ──────────────────────────────────────────────────────────────────
+  {
+    trigger:     'rankings_weekly',
+    group:       'rankings',
+    label:       'Weekly Rankings',
+    description: 'Sent every Monday with the top 10 players for the past week',
+    macros:      RANKINGS_MACROS,
+    default:     DEFAULT_TEMPLATES.rankings_weekly,
+  },
+  {
+    trigger:     'rankings_monthly',
+    group:       'rankings',
+    label:       'Monthly Rankings',
+    description: 'Sent on the 1st of each month with the top 10 players for the past month',
+    macros:      RANKINGS_MACROS,
+    default:     DEFAULT_TEMPLATES.rankings_monthly,
   },
 ];
 
@@ -352,6 +370,11 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       minutes_until_match: 60,
       kickoff_time:        kickoffTime,
       match_date:          new Date().toLocaleDateString('en-GB'),
+      // Rankings
+      period:              'This Week',
+      generated_at:        new Date().toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      top_players:         '🥇 testuser1 — 320 pts (5 bets)\n🥈 testuser2 — 280 pts (4 bets)\n🥉 testuser3 — 210 pts (3 bets)\n4. testuser4 — 180 pts (6 bets)\n5. testuser5 — 150 pts (2 bets)',
+      total_players:       42,
     };
 
     // Get the saved (or default) template
