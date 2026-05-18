@@ -51,7 +51,8 @@ Stake: {{stake}} | Code: {{code}}`,
 🏆 {{league}}
 
 Players: {{current_players}}/{{max_players}} joined
-Stake: {{stake}} per player | Pot: {{total_pot}}
+Stake: {{stake}} per player
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Code: {{code}}
 Created by: {{creator}}
 
@@ -61,27 +62,31 @@ Open the app to join!`,
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}}/{{max_players}} players joined ({{fill_percent}} filled)
-{{slots_remaining}} slots remaining | Pot: {{total_pot}}
+{{slots_remaining}} slots remaining
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Code: {{code}}`,
 
   game_bet_multi_almost_3: `🔥 Almost Full — 3 Slots Left!
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}}/{{max_players}} players joined
-Stake: {{stake}} | Pot: {{total_pot}}
+Stake: {{stake}}
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Code: {{code}}`,
 
   game_bet_multi_almost_1: `🚨 Last Spot Available!
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}}/{{max_players}} players joined
-Stake: {{stake}} | Pot: {{total_pot}}
+Stake: {{stake}}
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Code: {{code}}`,
 
   game_bet_match_1hr: `⏰ Match in 1 Hour!
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}} players in the challenge
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
 Code: {{code}}`,
 
@@ -89,6 +94,7 @@ Code: {{code}}`,
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}} players ready
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
 Code: {{code}}`,
 
@@ -96,6 +102,7 @@ Code: {{code}}`,
 
 ⚽ {{home_team}} vs {{away_team}}
 {{current_players}} players competing
+Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
 Code: {{code}}`,
 
@@ -105,7 +112,7 @@ Code: {{code}}`,
 🏆 {{league}}
 
 Stake: {{stake}} per player
-Pot if full: {{total_pot}} ({{max_players}} slots)
+Current Pot: {{current_pot}} | Potential: {{potential_pot}} ({{max_players}} slots)
 Mode: {{mode}} | Code: {{code}}
 Creator: {{creator}}`,
 
@@ -117,9 +124,9 @@ Creator: {{creator}}`,
 🥇 Winner: {{winner}}
 💰 Earnings: {{earnings}}
 
-Mode: {{mode}} | Stake: {{stake}}/player
-Players: {{players_joined}} | Pot: {{net_pot}}
-Code: {{code}}`,
+Stake: {{stake}}/player | Players: {{players_joined}}/{{max_players}}
+Pot: {{current_pot}} (potential was {{potential_pot}})
+Mode: {{mode}} | Code: {{code}}`,
 };
 
 // Backward-compat alias
@@ -147,7 +154,8 @@ const MULTI_BASE_MACROS = [
   { key: '{{current_players}}', desc: 'Current number of participants' },
   { key: '{{slots_remaining}}', desc: 'Remaining open slots' },
   { key: '{{fill_percent}}',    desc: 'How full the challenge is (e.g. 60%)' },
-  { key: '{{total_pot}}',       desc: 'Total pot if all slots filled' },
+  { key: '{{current_pot}}',     desc: 'Prize pot based on players who have joined (e.g. $9.00)' },
+  { key: '{{potential_pot}}',   desc: 'Prize pot if all slots fill (e.g. $15.00)' },
   { key: '{{creator}}',         desc: 'Username of creator' },
   { key: '{{code}}',            desc: 'Challenge booking code' },
 ];
@@ -175,16 +183,18 @@ const SINGLE_COUNTDOWN_MACROS = [
 ];
 
 const SETTLED_MACROS = [
-  { key: '{{home_team}}',     desc: 'Home team name' },
-  { key: '{{away_team}}',     desc: 'Away team name' },
-  { key: '{{league}}',        desc: 'League name' },
-  { key: '{{winner}}',        desc: 'Winner username' },
-  { key: '{{earnings}}',      desc: 'Winner earnings (e.g. $14.91)' },
-  { key: '{{stake}}',         desc: 'Stake per player' },
-  { key: '{{net_pot}}',       desc: 'Total pot after fees (e.g. $15.20)' },
+  { key: '{{home_team}}',      desc: 'Home team name' },
+  { key: '{{away_team}}',      desc: 'Away team name' },
+  { key: '{{league}}',         desc: 'League name' },
+  { key: '{{winner}}',         desc: 'Winner username' },
+  { key: '{{earnings}}',       desc: 'Winner earnings after fees (e.g. $10.64)' },
+  { key: '{{stake}}',          desc: 'Stake per player' },
+  { key: '{{current_pot}}',    desc: 'Actual pot (players who joined, minus fees)' },
+  { key: '{{potential_pot}}',  desc: 'Pot if all slots had filled (no fees)' },
   { key: '{{players_joined}}', desc: 'Number of players who joined' },
-  { key: '{{code}}',          desc: 'Challenge booking code' },
-  { key: '{{mode}}',          desc: 'Bet mode' },
+  { key: '{{max_players}}',    desc: 'Maximum capacity' },
+  { key: '{{code}}',           desc: 'Challenge booking code' },
+  { key: '{{mode}}',           desc: 'Bet mode' },
 ];
 
 // ── Template helpers ───────────────────────────────────────────────────────────
@@ -385,9 +395,14 @@ function buildMultiVars(bet, fixture, creator, currentPlayers) {
   const fillPercent    = maxPlayers > 0
     ? `${Math.round((currentPlayers / maxPlayers) * 100)}%`
     : '0%';
-  const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
-  const stake    = stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : null;
-  const totalPot = stakeAmt != null && maxPlayers > 0
+  const stakeAmt    = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+  const stake       = stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : null;
+  // current_pot: gross based on players who have already joined (pre-settlement, no fees yet)
+  const currentPot  = stakeAmt != null && currentPlayers > 0
+    ? `$${(stakeAmt * currentPlayers).toFixed(2)}`
+    : null;
+  // potential_pot: gross based on full capacity (hypothetical)
+  const potentialPot = stakeAmt != null && maxPlayers > 0
     ? `$${(stakeAmt * maxPlayers).toFixed(2)}`
     : null;
 
@@ -400,7 +415,8 @@ function buildMultiVars(bet, fixture, creator, currentPlayers) {
     current_players: currentPlayers,
     slots_remaining: slotsRemaining,
     fill_percent:    fillPercent,
-    total_pot:       totalPot          || '—',
+    current_pot:     currentPot        || '—',
+    potential_pot:   potentialPot      || '—',
     creator:         creator           || '—',
     code:            bet.bookingCode || bet.title || bet.name || bet._id.toString(),
     mode:            formatMode(bet),
@@ -709,6 +725,12 @@ async function pollSettledBets(db) {
       winnerName = wUser ? (wUser.username || wUser.displayName || wUser.name) : null;
     } catch { /* ignore */ }
 
+    const maxPlayers   = Number(bet.capacity || bet.maxParticipants) || 0;
+    // current_pot: net (fees deducted) — this is the real money being split
+    const currentPot   = netPot;
+    // potential_pot: gross at full capacity — no fees since hypothetical
+    const potentialPot = stakeAmt * maxPlayers;
+
     const vars = {
       home_team:      fixture.homeTeam || '—',
       away_team:      fixture.awayTeam || '—',
@@ -716,8 +738,10 @@ async function pollSettledBets(db) {
       winner:         winnerName || String(winnerId).slice(-6),
       earnings:       `$${earnings.toFixed(2)}`,
       stake:          `$${stakeAmt.toFixed(2)}`,
-      net_pot:        `$${netPot.toFixed(2)}`,
+      current_pot:    `$${currentPot.toFixed(2)}`,
+      potential_pot:  `$${potentialPot.toFixed(2)}`,
       players_joined: playersJoined,
+      max_players:    maxPlayers || '—',
       code:           bet.bookingCode || betId,
       mode:           formatMode(bet),
     };
