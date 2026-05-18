@@ -6,6 +6,34 @@ const { sendMessage, isConfigured } = require('./telegram');
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
 
+// ── Watcher health state ───────────────────────────────────────────────────────
+
+const watcherState = {
+  started:            false,
+  startedAt:          null,
+  lastNewBetPoll:     null,
+  lastProgressPoll:   null,
+  lastError:          null,
+  lastErrorAt:        null,
+  newBetPollCount:    0,
+  progressPollCount:  0,
+};
+
+function getWatcherState() {
+  try {
+    const get = (key) => getSQLite()
+      .prepare('SELECT value FROM admin_settings WHERE key = ?')
+      .get(key)?.value || null;
+    return {
+      ...watcherState,
+      rankingsWeeklySentAt:  get('rankings_weekly_sent_at'),
+      rankingsMonthlySentAt: get('rankings_monthly_sent_at'),
+    };
+  } catch {
+    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null };
+  }
+}
+
 // ── Default templates ──────────────────────────────────────────────────────────
 
 const DEFAULT_TEMPLATES = {
@@ -795,12 +823,26 @@ async function pollSettledBets(db) {
 
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
 
-async function buildRankingsVars(db, period, topN) {
+async function buildRankingsVars(db, period, topN, options = {}) {
   const now = new Date();
   let periodStart = null;
   let periodLabel = '';
 
-  if (period === 'weekly') {
+  if (options.weekStart) {
+    // weekStart is any ISO date — we compute the Monday of that week
+    const d    = new Date(options.weekStart);
+    const day  = d.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - diff);
+    periodStart = d;
+    periodLabel = `Week of ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+  } else if (options.monthOf) {
+    // monthOf is 'YYYY-MM'
+    const [yr, mo] = options.monthOf.split('-').map(Number);
+    periodStart = new Date(yr, mo - 1, 1);
+    periodLabel = periodStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  } else if (period === 'weekly') {
     const day  = now.getDay();
     const diff = day === 0 ? 6 : day - 1;
     periodStart = new Date(now);
@@ -931,6 +973,9 @@ function startWatcher() {
   console.log(`[GameBetWatcher] Started. New-bet poll every ${NEW_BET_INTERVAL_MS / 1000}s, progress/countdowns every ${POLL_INTERVAL_MS / 1000}s.`);
   console.log(`[GameBetWatcher] Resuming from: ${lastChecked.toISOString()}`);
 
+  watcherState.started   = true;
+  watcherState.startedAt = new Date();
+
   // New bets — fast poll (30 s)
   setInterval(async () => {
     if (!isConfigured()) return;
@@ -939,10 +984,13 @@ function startWatcher() {
       const since = lastChecked;
       const next  = new Date();
       await pollNewBets(db, since);
-      // Advance only after successful poll so a crash doesn't skip bets
       lastChecked = next;
       saveLastChecked(lastChecked);
+      watcherState.lastNewBetPoll  = new Date();
+      watcherState.newBetPollCount += 1;
     } catch (err) {
+      watcherState.lastError   = err.message;
+      watcherState.lastErrorAt = new Date();
       console.error('[GameBetWatcher] New-bet poll error:', err.message);
     }
   }, NEW_BET_INTERVAL_MS);
@@ -958,7 +1006,11 @@ function startWatcher() {
         pollMatchCountdowns(db),
         pollSettledBets(db),
       ]);
+      watcherState.lastProgressPoll  = new Date();
+      watcherState.progressPollCount += 1;
     } catch (err) {
+      watcherState.lastError   = err.message;
+      watcherState.lastErrorAt = new Date();
       console.error('[GameBetWatcher] Progress/countdown poll error:', err.message);
     }
   }, POLL_INTERVAL_MS);
@@ -979,6 +1031,9 @@ function startWatcher() {
 
 module.exports = {
   startWatcher,
+  getWatcherState,
+  buildRankingsVars,
+  getRankingsTopN,
   // backward compat
   DEFAULT_TEMPLATE,
   GAME_BET_MACROS,

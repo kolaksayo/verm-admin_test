@@ -3,6 +3,15 @@ import api from '../api';
 
 const TABS = ['Settings', 'Messages', 'Logs'];
 
+function timeAgo(iso) {
+  if (!iso) return null;
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60)   return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
 const TRIGGER_LABELS = {
   game_bet:               'Single Bet',
   game_bet_multi_created: 'Multi Created',
@@ -40,13 +49,14 @@ const TRIGGER_COLORS = {
 // ── Messages tab ─────────────────────────────────────────────────────────────
 
 function TemplateEditor({ tpl, onSaved }) {
-  const [text, setText]       = useState(tpl.template);
-  const [enabled, setEnabled] = useState(tpl.enabled);
-  const [saving, setSaving]   = useState(false);
-  const [msg, setMsg]         = useState('');
-  const [testing, setTesting] = useState(false);
-  const [testMsg, setTestMsg] = useState('');
-  const textareaRef           = useRef(null);
+  const [text, setText]         = useState(tpl.template);
+  const [enabled, setEnabled]   = useState(tpl.enabled);
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState('');
+  const [testing, setTesting]   = useState(false);
+  const [testMsg, setTestMsg]   = useState('');
+  const [preview, setPreview]   = useState(false);
+  const textareaRef             = useRef(null);
 
   const insertMacro = (macro) => {
     const el  = textareaRef.current;
@@ -119,13 +129,34 @@ function TemplateEditor({ tpl, onSaved }) {
         </div>
       </div>
 
-      <textarea
-        ref={textareaRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={10}
-        className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
-      />
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs text-vs-text-3 flex-1">Template</span>
+        <button
+          type="button"
+          onClick={() => setPreview((v) => !v)}
+          className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+            preview
+              ? 'bg-vs-purple/15 border-vs-purple/40 text-vs-purple-light'
+              : 'border-vs-border text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated'
+          }`}
+        >
+          {preview ? '✏ Edit' : '👁 Preview'}
+        </button>
+      </div>
+
+      {preview ? (
+        <div className="w-full min-h-[240px] px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text whitespace-pre-wrap">
+          {renderPreview(text)}
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={10}
+          className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
+        />
+      )}
 
       <div className="flex items-center gap-3 mt-3">
         <button onClick={handleSave} disabled={saving}
@@ -144,6 +175,42 @@ function TemplateEditor({ tpl, onSaved }) {
         {testMsg && <p className={`text-xs ${testMsg === 'Test sent!' ? 'text-vs-success' : 'text-vs-danger'}`}>{testMsg}</p>}
       </div>
     </div>
+  );
+}
+
+// ── Preview vars (sample data matching all known macros) ──────────────────────
+
+const PREVIEW_VARS = {
+  home_team:           'Arsenal',
+  away_team:           'Chelsea',
+  league:              'Premier League',
+  stake:               '$5.00',
+  max_players:         10,
+  current_players:     6,
+  slots_remaining:     4,
+  fill_percent:        '60%',
+  current_pot:         '$30.00',
+  potential_pot:       '$50.00',
+  creator:             'testuser',
+  winner:              'testuser',
+  earnings:            '$21.00',
+  players_joined:      6,
+  code:                'TEST-ABCD',
+  mode:                'Multiplayer',
+  slots:               10,
+  minutes_until_match: 60,
+  kickoff_time:        '20:00',
+  match_date:          new Date().toLocaleDateString('en-GB'),
+  period:              'This Week',
+  generated_at:        new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+  top_players:         '🥇 testuser1 — 320 pts (5 bets)\n🥈 testuser2 — 280 pts (4 bets)\n🥉 testuser3 — 210 pts (3 bets)',
+  total_players:       42,
+};
+
+function renderPreview(template) {
+  return Object.entries(PREVIEW_VARS).reduce(
+    (t, [k, v]) => t.replaceAll(`{{${k}}}`, v ?? '—'),
+    template,
   );
 }
 
@@ -213,12 +280,23 @@ export default function TelegramSettings() {
   const [savingTopN, setSavingTopN]             = useState(false);
   const [topNMsg, setTopNMsg]                   = useState('');
 
+  const [watcherStatus, setWatcherStatus]       = useState(null);
+  const [watcherTick, setWatcherTick]           = useState(0);
+
+  const [rankingsPeriod, setRankingsPeriod]     = useState('weekly');
+  const [rankingsWeekStart, setRankingsWeekStart] = useState('');
+  const [rankingsMonthOf, setRankingsMonthOf]   = useState('');
+  const [sendingRankings, setSendingRankings]   = useState(false);
+  const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
+
   const [templates, setTemplates]             = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
   const [logs, setLogs]               = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logTriggerFilter, setLogTriggerFilter] = useState('');
+  const [retryingId, setRetryingId]   = useState(null);
+  const [retryResults, setRetryResults] = useState({});
 
   const loadStatus = () =>
     api.get('/telegram/status').then((r) => setStatus(r.data)).catch(() => {});
@@ -242,6 +320,17 @@ export default function TelegramSettings() {
   useEffect(() => { loadStatus(); }, []);
   useEffect(() => { if (tab === 'Messages') loadTemplates(); }, [tab, loadTemplates]);
   useEffect(() => { if (tab === 'Logs') loadLogs(); }, [tab, loadLogs]);
+
+  // Watcher health — fetch on Settings tab, refresh every 15s, tick every 5s for "Xs ago"
+  useEffect(() => {
+    if (tab !== 'Settings') return;
+    const fetchWatcher = () =>
+      api.get('/telegram/watcher-status').then((r) => setWatcherStatus(r.data)).catch(() => {});
+    fetchWatcher();
+    const pollId = setInterval(fetchWatcher, 15000);
+    const tickId = setInterval(() => setWatcherTick((n) => n + 1), 5000);
+    return () => { clearInterval(pollId); clearInterval(tickId); };
+  }, [tab]);
 
   // Load threshold when Settings tab is active
   useEffect(() => {
@@ -295,6 +384,22 @@ export default function TelegramSettings() {
     }
   };
 
+  const handleSendRankings = async (e) => {
+    e.preventDefault();
+    setSendingRankings(true); setRankingsSendMsg('');
+    try {
+      const body = { period: rankingsPeriod };
+      if (rankingsPeriod === 'weekly'  && rankingsWeekStart) body.weekStart = rankingsWeekStart;
+      if (rankingsPeriod === 'monthly' && rankingsMonthOf)   body.monthOf   = rankingsMonthOf;
+      const r = await api.post('/telegram/rankings/send', body);
+      setRankingsSendMsg(r.data.ok ? 'Sent!' : (r.data.description || r.data.error || 'Failed'));
+    } catch (err) {
+      setRankingsSendMsg(err.response?.data?.error || 'Request failed');
+    } finally {
+      setSendingRankings(false);
+    }
+  };
+
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
@@ -304,6 +409,19 @@ export default function TelegramSettings() {
       setTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleRetry = async (id) => {
+    setRetryingId(id);
+    setRetryResults((prev) => ({ ...prev, [id]: null }));
+    try {
+      const r = await api.post(`/telegram/logs/${id}/retry`);
+      setRetryResults((prev) => ({ ...prev, [id]: r.data.ok ? 'ok' : (r.data.description || r.data.error || 'fail') }));
+    } catch (err) {
+      setRetryResults((prev) => ({ ...prev, [id]: err.response?.data?.error || 'fail' }));
+    } finally {
+      setRetryingId(null);
     }
   };
 
@@ -412,6 +530,105 @@ export default function TelegramSettings() {
                 </div>
               </form>
             </div>
+          </div>
+
+          {/* Watcher Health */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Watcher Health</p>
+            {watcherStatus ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'New-Bet Poll',     value: watcherStatus.lastNewBetPoll,   count: watcherStatus.newBetPollCount,    interval: '30s' },
+                    { label: 'Progress Poll',    value: watcherStatus.lastProgressPoll, count: watcherStatus.progressPollCount,  interval: '2m' },
+                    { label: 'Weekly Rankings',  value: watcherStatus.rankingsWeeklySentAt,  count: null, interval: 'Mon' },
+                    { label: 'Monthly Rankings', value: watcherStatus.rankingsMonthlySentAt, count: null, interval: '1st' },
+                  ].map(({ label, value, count, interval }) => {
+                    const ago  = timeAgo(value);
+                    const ageS = value ? Math.floor((Date.now() - new Date(value).getTime()) / 1000) : null;
+                    const dot  = !value ? 'bg-vs-text-3' : ageS < 120 ? 'bg-vs-success' : ageS < 600 ? 'bg-vs-warning' : 'bg-vs-danger';
+                    return (
+                      <div key={label} className="bg-vs-elevated rounded-lg px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                          <span className="text-xs text-vs-text-3">{label}</span>
+                          <span className="ml-auto text-[10px] text-vs-text-3 opacity-60">{interval}</span>
+                        </div>
+                        <p className="text-xs font-mono text-vs-text">{ago || 'Never'}</p>
+                        {count != null && <p className="text-[10px] text-vs-text-3 mt-0.5">{count} polls</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+                {watcherStatus.lastError && (
+                  <div className="bg-vs-danger/10 border border-vs-danger/20 rounded-lg px-3 py-2 text-xs">
+                    <span className="text-vs-danger font-semibold">Last error</span>
+                    <span className="text-vs-text-3 mx-2">·</span>
+                    <span className="text-vs-danger">{watcherStatus.lastError}</span>
+                    {watcherStatus.lastErrorAt && (
+                      <span className="text-vs-text-3 ml-2">{timeAgo(watcherStatus.lastErrorAt)}</span>
+                    )}
+                  </div>
+                )}
+                {watcherStatus.startedAt && (
+                  <p className="text-xs text-vs-text-3">Watcher started {timeAgo(watcherStatus.startedAt)}</p>
+                )}
+              </div>
+            ) : (
+              <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />
+            )}
+          </div>
+
+          {/* Send Rankings Now */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Send Rankings Now</p>
+            <p className="text-xs text-vs-text-3 mb-4">Manually trigger a rankings notification without waiting for the scheduled send.</p>
+            <form onSubmit={handleSendRankings} className="space-y-3">
+              <div className="flex gap-2">
+                {['weekly', 'monthly'].map((p) => (
+                  <button key={p} type="button" onClick={() => { setRankingsPeriod(p); setRankingsSendMsg(''); }}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                      rankingsPeriod === p
+                        ? 'bg-vs-purple/15 border-vs-purple/40 text-vs-purple-light'
+                        : 'border-vs-border text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated'
+                    }`}>
+                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
+
+              {rankingsPeriod === 'weekly' && (
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">
+                    Custom week <span className="opacity-60">(any date in that week — leave blank for current week)</span>
+                  </label>
+                  <input type="date" value={rankingsWeekStart} onChange={(e) => setRankingsWeekStart(e.target.value)}
+                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+              )}
+
+              {rankingsPeriod === 'monthly' && (
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">
+                    Custom month <span className="opacity-60">(leave blank for current month)</span>
+                  </label>
+                  <input type="month" value={rankingsMonthOf} onChange={(e) => setRankingsMonthOf(e.target.value)}
+                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button type="submit" disabled={sendingRankings}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {sendingRankings ? 'Sending…' : 'Send Rankings'}
+                </button>
+                {rankingsSendMsg && (
+                  <p className={`text-xs ${rankingsSendMsg === 'Sent!' ? 'text-vs-success' : 'text-vs-danger'}`}>
+                    {rankingsSendMsg}
+                  </p>
+                )}
+              </div>
+            </form>
           </div>
 
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
@@ -528,17 +745,18 @@ export default function TelegramSettings() {
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
+                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-vs-border">
                 {logsLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                    <tr key={i}>{Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
                     ))}</tr>
                   ))
                 ) : visibleLogs.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">
+                  <tr><td colSpan={6} className="text-center py-10 text-vs-text-3 text-sm">
                     {logTriggerFilter ? 'No sends recorded for this trigger.' : 'No sends recorded yet.'}
                   </td></tr>
                 ) : (
@@ -559,6 +777,24 @@ export default function TelegramSettings() {
                       </td>
                       <td className="px-5 py-3 text-xs text-vs-text-3 max-w-[280px] truncate">{row.preview}</td>
                       <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
+                      <td className="px-5 py-3 text-right">
+                        {!row.ok && (
+                          <div className="flex items-center justify-end gap-2">
+                            {retryResults[row.id] && (
+                              <span className={`text-xs ${retryResults[row.id] === 'ok' ? 'text-vs-success' : 'text-vs-danger'}`}>
+                                {retryResults[row.id] === 'ok' ? '✓ Sent' : retryResults[row.id]}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleRetry(row.id)}
+                              disabled={retryingId === row.id}
+                              className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40"
+                            >
+                              {retryingId === row.id ? '…' : 'Retry'}
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

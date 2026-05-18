@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api';
 
 function formatNum(n) {
@@ -14,20 +15,28 @@ const PERIODS = [
   { value: 'all',     label: 'All Time' },
 ];
 
+const VALID_PERIODS = ['weekly', 'monthly', 'all'];
+
 export default function UserRankingsView({ onUserClick }) {
-  const [period, setPeriod]       = useState('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const periodParam = VALID_PERIODS.includes(searchParams.get('period')) ? searchParams.get('period') : 'all';
+  const pageParam   = Math.max(1, parseInt(searchParams.get('page')) || 1);
+
   const [rows, setRows]           = useState([]);
   const [total, setTotal]         = useState(0);
-  const [page, setPage]           = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
+
+  const setPeriod = (p) => setSearchParams({ period: p, page: 1 });
+  const setPage   = (n) => setSearchParams({ period: periodParam, page: n });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/game-bets/user-rankings', { params: { page, limit: 50, period } });
+      const res = await api.get('/game-bets/user-rankings', { params: { page: pageParam, limit: 50, period: periodParam } });
       setRows(res.data.rankings);
       setTotal(res.data.total);
       setTotalPages(res.data.totalPages);
@@ -36,9 +45,8 @@ export default function UserRankingsView({ onUserClick }) {
     } finally {
       setLoading(false);
     }
-  }, [page, period]);
+  }, [pageParam, periodParam]);
 
-  useEffect(() => { setPage(1); }, [period]);
   useEffect(() => { load(); }, [load]);
 
   const tabCls = (active) =>
@@ -46,14 +54,14 @@ export default function UserRankingsView({ onUserClick }) {
       active ? 'bg-vs-card text-vs-text shadow-sm' : 'text-vs-text-3 hover:text-vs-text'
     }`;
 
-  const periodLabel = PERIODS.find((p) => p.value === period)?.label || 'All Time';
+  const periodLabel = PERIODS.find((p) => p.value === periodParam)?.label || 'All Time';
 
   return (
     <div>
       {/* Period tabs */}
       <div className="flex gap-1 mb-5 bg-vs-elevated rounded-lg p-1 w-fit">
         {PERIODS.map((p) => (
-          <button key={p.value} onClick={() => setPeriod(p.value)} className={tabCls(period === p.value)}>
+          <button key={p.value} onClick={() => setPeriod(p.value)} className={tabCls(periodParam === p.value)}>
             {p.label}
           </button>
         ))}
@@ -62,7 +70,7 @@ export default function UserRankingsView({ onUserClick }) {
       {!loading && (
         <p className="text-sm text-vs-text-3 mb-4">
           {total.toLocaleString()} player{total !== 1 ? 's' : ''} ranked by cumulative points
-          {period !== 'all' && <span className="text-vs-text-3"> · {periodLabel}</span>}
+          {periodParam !== 'all' && <span className="text-vs-text-3"> · {periodLabel}</span>}
         </p>
       )}
 
@@ -74,7 +82,7 @@ export default function UserRankingsView({ onUserClick }) {
         <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm">
-          No activity{period !== 'all' ? ` ${periodLabel.toLowerCase()}` : ''}.
+          No activity{periodParam !== 'all' ? ` ${periodLabel.toLowerCase()}` : ''}.
         </div>
       ) : (
         <>
@@ -131,12 +139,12 @@ export default function UserRankingsView({ onUserClick }) {
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-vs-border bg-vs-elevated">
-                <span className="text-xs text-vs-text-3">Page {page} / {totalPages}</span>
+                <span className="text-xs text-vs-text-3">Page {pageParam} / {totalPages}</span>
                 <div className="flex gap-1">
-                  <button onClick={() => setPage(1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">«</button>
-                  <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">‹</button>
-                  <button onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">›</button>
-                  <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">»</button>
+                  <button onClick={() => setPage(1)} disabled={pageParam === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">«</button>
+                  <button onClick={() => setPage(pageParam - 1)} disabled={pageParam === 1} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">‹</button>
+                  <button onClick={() => setPage(pageParam + 1)} disabled={pageParam >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">›</button>
+                  <button onClick={() => setPage(totalPages)} disabled={pageParam >= totalPages} className="px-2 py-1 text-xs rounded border border-vs-border text-vs-text-3 disabled:opacity-30 hover:bg-vs-hover transition-colors">»</button>
                 </div>
               </div>
             )}

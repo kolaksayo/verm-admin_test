@@ -66,6 +66,9 @@ function getDb() {
       );
       CREATE INDEX IF NOT EXISTS idx_tg_notified ON telegram_notified(bet_id);
     `);
+
+    // Safe additive migrations
+    try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN message TEXT`); } catch { /* already exists */ }
   }
   return db;
 }

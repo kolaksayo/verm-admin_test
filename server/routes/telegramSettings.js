@@ -12,6 +12,9 @@ const {
   RANKINGS_MACROS,
   renderTemplate,
   getTemplate,
+  getWatcherState,
+  buildRankingsVars,
+  getRankingsTopN,
 } = require('../gameBetWatcher');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
@@ -387,6 +390,60 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
     const testMsg  = '[TEST] ' + renderTemplate(template, sampleVars);
 
     const result = await sendMessage(testMsg, req.params.trigger + '_test');
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/telegram/watcher-status
+router.get('/watcher-status', auth, (req, res) => {
+  res.json(getWatcherState());
+});
+
+// POST /api/telegram/logs/:id/retry — re-send a failed message
+router.post('/logs/:id/retry', auth, async (req, res) => {
+  if (!isConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram not configured' });
+  }
+  try {
+    const sqlite = getSQLite();
+    const row    = sqlite.prepare('SELECT * FROM telegram_logs WHERE id = ?').get(Number(req.params.id));
+    if (!row)    return res.status(404).json({ ok: false, error: 'Log entry not found' });
+    if (!row.message) return res.status(400).json({ ok: false, error: 'No message stored for this entry (pre-dates retry feature)' });
+
+    const result = await sendMessage(row.message, row.trigger);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/telegram/rankings/send — manual send with optional custom period
+router.post('/rankings/send', auth, async (req, res) => {
+  if (!isConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
+  }
+
+  const { period, weekStart, monthOf } = req.body;
+  if (!['weekly', 'monthly'].includes(period)) {
+    return res.status(400).json({ ok: false, error: 'period must be "weekly" or "monthly"' });
+  }
+
+  const trigger  = `rankings_${period}`;
+  const template = getTemplate(trigger);
+  if (!template) {
+    return res.status(400).json({ ok: false, error: `Template for ${trigger} is disabled` });
+  }
+
+  try {
+    const db     = getDb();
+    const options = {};
+    if (period === 'weekly'  && weekStart) options.weekStart = weekStart;
+    if (period === 'monthly' && monthOf)   options.monthOf   = monthOf;
+
+    const vars   = await buildRankingsVars(db, period, getRankingsTopN(), options);
+    const result = await sendMessage(renderTemplate(template, vars), trigger);
     res.json(result);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
