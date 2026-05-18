@@ -61,7 +61,7 @@ app.use('/api/ngn-deposits', ngnDepositsRoutes);
 app.use('/api/ngn-withdrawals', ngnWithdrawalsRoutes);
 app.use('/api/dollar-naira-rate', dollarNairaRateRoutes);
 app.use('/api/telegram', telegramSettingsRoutes);
-app.use('/api/nav-badges', navBadgesRoutes);
+app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));

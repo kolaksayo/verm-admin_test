@@ -26,7 +26,9 @@ function StatusBadge({ status }) {
     ? 'bg-vs-success/15 text-vs-success'
     : s === 'pending' || s === 'processing'
       ? 'bg-vs-warning/15 text-vs-warning'
-      : 'bg-vs-elevated text-vs-text-3';
+      : s === 'cancelled' || s === 'canceled' || s === 'failed'
+        ? 'bg-vs-danger/15 text-vs-danger'
+        : 'bg-vs-elevated text-vs-text-3';
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${cls}`}>
       {status}
@@ -49,7 +51,10 @@ export default function NgnDeposits({ hideHeader = false }) {
   const searchRef = useRef();
 
   useEffect(() => {
-    api.get('/nav-badges').then((r) => setStats(r.data.deposits)).catch(() => {});
+    const fetchStats = () => api.get('/nav-badges').then((r) => setStats(r.data.deposits)).catch(() => {});
+    fetchStats();
+    const id = setInterval(fetchStats, 60000);
+    return () => clearInterval(id);
   }, []);
 
   const load = useCallback(() => {

@@ -54,7 +54,10 @@ export default function NgnWithdrawals({ hideHeader = false }) {
   const debounceTimer = useRef(null);
 
   useEffect(() => {
-    api.get('/nav-badges').then((r) => setStats(r.data.withdrawals)).catch(() => {});
+    const fetchStats = () => api.get('/nav-badges').then((r) => setStats(r.data.withdrawals)).catch(() => {});
+    fetchStats();
+    const id = setInterval(fetchStats, 60000);
+    return () => clearInterval(id);
   }, []);
 
   const load = useCallback(() => {

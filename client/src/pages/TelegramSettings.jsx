@@ -209,6 +209,7 @@ export default function TelegramSettings() {
 
   const [logs, setLogs]               = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [logTriggerFilter, setLogTriggerFilter] = useState('');
 
   const loadStatus = () =>
     api.get('/telegram/status').then((r) => setStatus(r.data)).catch(() => {});
@@ -449,59 +450,77 @@ export default function TelegramSettings() {
       )}
 
       {/* ── Logs tab ── */}
-      {tab === 'Logs' && (
-        <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-vs-border flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Send Log</p>
-            <button onClick={loadLogs}
-              className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
-              Refresh
-            </button>
+      {tab === 'Logs' && (() => {
+        const triggersInLogs = [...new Set(logs.map((r) => r.trigger))].sort();
+        const visibleLogs = logTriggerFilter
+          ? logs.filter((r) => r.trigger === logTriggerFilter)
+          : logs;
+        return (
+          <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-vs-border flex items-center gap-3 flex-wrap">
+              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mr-auto">Send Log</p>
+              <select
+                value={logTriggerFilter}
+                onChange={(e) => setLogTriggerFilter(e.target.value)}
+                className="px-2 py-1 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple"
+              >
+                <option value="">All triggers</option>
+                {triggersInLogs.map((t) => (
+                  <option key={t} value={t}>{TRIGGER_LABELS[t] || t}</option>
+                ))}
+              </select>
+              <button onClick={loadLogs}
+                className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
+                Refresh
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-vs-border bg-vs-elevated/40">
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Trigger</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-vs-border">
+                {logsLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                      <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
+                    ))}</tr>
+                  ))
+                ) : visibleLogs.length === 0 ? (
+                  <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">
+                    {logTriggerFilter ? 'No sends recorded for this trigger.' : 'No sends recorded yet.'}
+                  </td></tr>
+                ) : (
+                  visibleLogs.map((row) => (
+                    <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
+                      <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
+                        }`}>
+                          {TRIGGER_LABELS[row.trigger] || row.trigger}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={`text-xs font-semibold ${row.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                          {row.ok ? 'OK' : 'FAIL'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-vs-text-3 max-w-[280px] truncate">{row.preview}</td>
+                      <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vs-border bg-vs-elevated/40">
-                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Trigger</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-vs-border">
-              {logsLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
-                    <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
-                  ))}</tr>
-                ))
-              ) : logs.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No sends recorded yet.</td></tr>
-              ) : (
-                logs.map((row) => (
-                  <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
-                    <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
-                      }`}>
-                        {TRIGGER_LABELS[row.trigger] || row.trigger}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-semibold ${row.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                        {row.ok ? 'OK' : 'FAIL'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-vs-text-3 max-w-[280px] truncate">{row.preview}</td>
-                    <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

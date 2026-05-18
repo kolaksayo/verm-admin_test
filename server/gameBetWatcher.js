@@ -347,6 +347,19 @@ function cleanupOldNotified() {
   }
 }
 
+function cleanupOldLogs() {
+  try {
+    const info = getSQLite()
+      .prepare("DELETE FROM telegram_logs WHERE created_at < datetime('now', '-30 days')")
+      .run();
+    if (info.changes > 0) {
+      console.log(`[GameBetWatcher] Cleaned up ${info.changes} old telegram_logs rows`);
+    }
+  } catch {
+    // non-fatal
+  }
+}
+
 // ── Settings helpers ───────────────────────────────────────────────────────────
 
 function getLargeStakeThreshold() {
@@ -711,9 +724,11 @@ function startWatcher() {
     try {
       const db    = getDb();
       const since = lastChecked;
-      lastChecked = new Date();
-      saveLastChecked(lastChecked);
+      const next  = new Date();
       await pollNewBets(db, since);
+      // Advance only after successful poll so a crash doesn't skip bets
+      lastChecked = next;
+      saveLastChecked(lastChecked);
     } catch (err) {
       console.error('[GameBetWatcher] New-bet poll error:', err.message);
     }
@@ -735,9 +750,10 @@ function startWatcher() {
     }
   }, POLL_INTERVAL_MS);
 
-  // Daily cleanup of old telegram_notified rows
+  // Daily cleanup of old rows
   cleanupOldNotified();
-  setInterval(cleanupOldNotified, 24 * 60 * 60 * 1000);
+  cleanupOldLogs();
+  setInterval(() => { cleanupOldNotified(); cleanupOldLogs(); }, 24 * 60 * 60 * 1000);
 }
 
 module.exports = {

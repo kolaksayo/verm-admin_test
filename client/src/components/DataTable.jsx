@@ -32,7 +32,7 @@ function cellValue(val) {
 }
 
 const PRIORITY_COLUMNS = {
-  game_bet: ['bookingCode', 'gameLeagueId', 'currencyType', 'createdBy', 'status', 'createdAt'],
+  game_bet: ['bookingCode', 'betMode', 'status', 'createdBy', 'capacity', 'createdAt'],
   game_bet_leaderboard: ['user', 'gameBet', 'rank', 'points', 'correctPredictions', 'totalPredictions'],
   users: ['username', 'email', 'name', 'isVerified', 'isActive', 'createdAt'],
   transactions: ['type', 'amount', 'user', 'currencyType', 'status', 'createdAt'],
