@@ -482,6 +482,7 @@ function buildMultiVars(bet, fixture, creator, currentPlayers) {
     fill_percent:    fillPercent,
     current_pot:     currentPot        || '—',
     potential_pot:   potentialPot      || '—',
+    total_pot:       currentPot        || '—', // backward-compat alias for saved templates
     creator:         creator           || '—',
     code:            bet.bookingCode || bet.title || bet.name || bet._id.toString(),
     mode:            formatMode(bet),
@@ -805,6 +806,7 @@ async function pollSettledBets(db) {
       stake:          `$${stakeAmt.toFixed(2)}`,
       current_pot:    `$${currentPot.toFixed(2)}`,
       potential_pot:  `$${potentialPot.toFixed(2)}`,
+      total_pot:      `$${currentPot.toFixed(2)}`, // backward-compat alias
       players_joined: playersJoined,
       max_players:    maxPlayers || '—',
       code:           bet.bookingCode || betId,
