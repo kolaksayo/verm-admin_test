@@ -456,7 +456,10 @@ router.post('/rankings/send', auth, async (req, res) => {
     const db      = getDb();
     const options = {};
     if (period === 'weekly'  && weekStart) options.weekStart = weekStart;
-    if (period === 'monthly' && monthOf)   options.monthOf   = monthOf;
+    if (period === 'monthly' && monthOf) {
+      if (!/^\d{4}-\d{2}$/.test(monthOf)) return res.status(400).json({ ok: false, error: 'monthOf must be in YYYY-MM format' });
+      options.monthOf = monthOf;
+    }
 
     const vars    = await buildRankingsVars(db, period, getRankingsTopN(), options);
     const message = renderTemplate(template, vars);

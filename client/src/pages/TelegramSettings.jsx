@@ -1000,8 +1000,33 @@ export default function TelegramSettings() {
                   <label className="text-xs text-vs-text-3 block mb-1">
                     Custom month <span className="opacity-60">(leave blank for current month)</span>
                   </label>
-                  <input type="month" value={rankingsMonthOf} onChange={(e) => setRankingsMonthOf(e.target.value)}
-                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                  <div className="flex gap-2">
+                    {(() => {
+                      const [selYear, selMonth] = rankingsMonthOf ? rankingsMonthOf.split('-') : ['', ''];
+                      const currentYear = new Date().getFullYear();
+                      const years = Array.from({ length: 4 }, (_, i) => currentYear - i);
+                      const months = [
+                        ['01','January'],['02','February'],['03','March'],['04','April'],
+                        ['05','May'],['06','June'],['07','July'],['08','August'],
+                        ['09','September'],['10','October'],['11','November'],['12','December'],
+                      ];
+                      const selectCls = 'px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple';
+                      const update = (year, month) => {
+                        if (year && month) setRankingsMonthOf(`${year}-${month}`);
+                        else setRankingsMonthOf('');
+                      };
+                      return (<>
+                        <select value={selMonth} onChange={(e) => update(selYear, e.target.value)} className={selectCls}>
+                          <option value="">Month</option>
+                          {months.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                        </select>
+                        <select value={selYear} onChange={(e) => update(e.target.value, selMonth)} className={selectCls}>
+                          <option value="">Year</option>
+                          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </>);
+                    })()}
+                  </div>
                 </div>
               )}
 
