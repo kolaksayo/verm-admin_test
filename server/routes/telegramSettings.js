@@ -388,6 +388,8 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       match_date:          new Date().toLocaleDateString('en-GB'),
       // Rankings
       period:              'This Week',
+      week:                '12 May – 18 May 2025',
+      month:               'May 2025',
       generated_at:        new Date().toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       top_players:         '🥇 testuser1 — 320 pts (5 bets)\n🥈 testuser2 — 280 pts (4 bets)\n🥉 testuser3 — 210 pts (3 bets)\n4. testuser4 — 180 pts (6 bets)\n5. testuser5 — 150 pts (2 bets)',
       total_players:       42,

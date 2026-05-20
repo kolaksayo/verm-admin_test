@@ -230,9 +230,11 @@ const SINGLE_COUNTDOWN_MACROS = [
 ];
 
 const RANKINGS_MACROS = [
-  { key: '{{period}}',        desc: 'Period label (e.g. This Week / This Month)' },
+  { key: '{{period}}',        desc: 'Period label (e.g. This Week / This Month / May 2025)' },
+  { key: '{{week}}',          desc: 'Week date range, e.g. 12 May – 18 May 2025 (weekly only)' },
+  { key: '{{month}}',         desc: 'Full month name and year, e.g. May 2025 (monthly only)' },
   { key: '{{generated_at}}',  desc: 'Date/time this ranking was generated' },
-  { key: '{{top_players}}',   desc: 'Formatted leaderboard list (top 10 players with scores)' },
+  { key: '{{top_players}}',   desc: 'Formatted leaderboard list (top N players with scores)' },
   { key: '{{total_players}}', desc: 'Total number of players who competed in the period' },
 ];
 
@@ -927,8 +929,17 @@ async function buildRankingsVars(db, period, topN, options = {}) {
     return `${medal} ${name} — ${pts} pts (${bets} bet${bets !== 1 ? 's' : ''})`;
   });
 
+  // Compute week range (Monday–Sunday) and month label for the respective macros
+  const weekEnd = new Date(periodStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const shortFmt = { day: '2-digit', month: 'short', timeZone: 'Africa/Lagos' };
+  const weekLabel = `${periodStart.toLocaleDateString('en-GB', shortFmt)} – ${weekEnd.toLocaleDateString('en-GB', { ...shortFmt, year: 'numeric' })}`;
+  const monthLabel = periodStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'Africa/Lagos' });
+
   return {
     period:        periodLabel,
+    week:          weekLabel,
+    month:         monthLabel,
     generated_at:  now.toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     top_players:   lines.length ? lines.join('\n') : 'No activity this period',
     total_players: totalPlayers,
