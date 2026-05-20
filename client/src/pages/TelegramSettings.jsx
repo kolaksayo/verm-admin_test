@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
 
-const TABS = ['Settings', 'Messages', 'Logs'];
+const TABS = ['Telegram', 'WhatsApp', 'Messages', 'Logs'];
 
 function timeAgo(iso) {
   if (!iso) return null;
@@ -289,6 +289,16 @@ export default function TelegramSettings() {
   const [sendingRankings, setSendingRankings]   = useState(false);
   const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
 
+  // WhatsApp state
+  const [waStatus, setWaStatus]         = useState(null);
+  const [waToken, setWaToken]           = useState('');
+  const [waGroupId, setWaGroupId]       = useState('');
+  const [waSaving, setWaSaving]         = useState(false);
+  const [waSaveMsg, setWaSaveMsg]       = useState('');
+  const [waTesting, setWaTesting]       = useState(false);
+  const [waTestResult, setWaTestResult] = useState(null);
+  const [logChannel, setLogChannel]     = useState('all');
+
   const [templates, setTemplates]             = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
@@ -311,15 +321,27 @@ export default function TelegramSettings() {
 
   const loadLogs = useCallback(() => {
     setLogsLoading(true);
-    api.get('/telegram/logs')
+    api.get('/telegram/logs', { params: { channel: logChannel } })
       .then((r) => setLogs(r.data.rows))
       .catch(() => {})
       .finally(() => setLogsLoading(false));
-  }, []);
+  }, [logChannel]);
+
+  useEffect(() => { if (tab === 'Logs') loadLogs(); }, [logChannel]);
 
   useEffect(() => { loadStatus(); }, []);
   useEffect(() => { if (tab === 'Messages') loadTemplates(); }, [tab, loadTemplates]);
   useEffect(() => { if (tab === 'Logs') loadLogs(); }, [tab, loadLogs]);
+
+  // WhatsApp — fetch status when tab opens
+  useEffect(() => {
+    if (tab !== 'WhatsApp') return;
+    api.get('/whatsapp/status').then((r) => setWaStatus(r.data)).catch(() => {});
+    api.get('/whatsapp/config').then((r) => {
+      // don't pre-fill masked token; only pre-fill groupId
+      if (r.data.groupId) setWaGroupId(r.data.groupId);
+    }).catch(() => {});
+  }, [tab]);
 
   // Watcher health — fetch on Settings tab, refresh every 15s, tick every 5s for "Xs ago"
   useEffect(() => {
@@ -334,7 +356,7 @@ export default function TelegramSettings() {
 
   // Load threshold when Settings tab is active
   useEffect(() => {
-    if (tab === 'Settings') {
+    if (tab === 'Telegram') {
       api.get('/telegram/config').then((r) => {
         if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
         if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
@@ -412,11 +434,40 @@ export default function TelegramSettings() {
     }
   };
 
-  const handleRetry = async (id) => {
+  const handleWaSave = async (e) => {
+    e.preventDefault();
+    setWaSaving(true); setWaSaveMsg('');
+    try {
+      await api.post('/whatsapp/config', { apiToken: waToken || undefined, groupId: waGroupId || undefined });
+      setWaSaveMsg('Saved!');
+      setWaToken('');
+      const r = await api.get('/whatsapp/status');
+      setWaStatus(r.data);
+    } catch (err) {
+      setWaSaveMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setWaSaving(false);
+    }
+  };
+
+  const handleWaTest = async () => {
+    setWaTesting(true); setWaTestResult(null);
+    try {
+      const r = await api.post('/whatsapp/test');
+      setWaTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.reason || 'Failed') });
+    } catch (e) {
+      setWaTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setWaTesting(false);
+    }
+  };
+
+  const handleRetry = async (id, channel) => {
     setRetryingId(id);
     setRetryResults((prev) => ({ ...prev, [id]: null }));
     try {
-      const r = await api.post(`/telegram/logs/${id}/retry`);
+      const endpoint = channel === 'whatsapp' ? `/whatsapp/logs/${id}/retry` : `/telegram/logs/${id}/retry`;
+      const r = await api.post(endpoint);
       setRetryResults((prev) => ({ ...prev, [id]: r.data.ok ? 'ok' : (r.data.description || r.data.error || 'fail') }));
     } catch (err) {
       setRetryResults((prev) => ({ ...prev, [id]: err.response?.data?.error || 'fail' }));
@@ -458,7 +509,7 @@ export default function TelegramSettings() {
       </div>
 
       {/* ── Settings tab ── */}
-      {tab === 'Settings' && (
+      {tab === 'Telegram' && (
         <>
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Bot Configuration</p>
@@ -708,6 +759,102 @@ export default function TelegramSettings() {
       )}
 
       {/* ── Messages tab ── */}
+      {/* ── WhatsApp tab ── */}
+      {tab === 'WhatsApp' && (
+        <>
+          {/* Config */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">WhatsApp Configuration</p>
+            <p className="text-xs text-vs-text-3 mb-4">
+              Powered by <span className="font-medium text-vs-text-2">whapi.cloud</span> — messages are sent alongside Telegram when both are configured.
+            </p>
+            <form onSubmit={handleWaSave} className="space-y-3">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[220px]">
+                  <label className="text-xs text-vs-text-3 block mb-1">API Token</label>
+                  <input type="password" value={waToken} onChange={(e) => setWaToken(e.target.value)}
+                    placeholder={waStatus?.tokenSet ? 'Already set — paste new to update' : 'Your whapi.cloud Bearer token'}
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs text-vs-text-3 block mb-1">Group ID</label>
+                  <input type="text" value={waGroupId} onChange={(e) => setWaGroupId(e.target.value)}
+                    placeholder="120363xxxxxxxxxx@g.us"
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
+                  <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@g.us'}</span></p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button type="submit" disabled={waSaving || (!waToken.trim() && !waGroupId.trim())}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {waSaving ? 'Saving…' : 'Save'}
+                </button>
+                {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+              </div>
+            </form>
+          </div>
+
+          {/* Connection Status */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Connection Status</p>
+            {waStatus ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${waStatus.configured ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                  <span className={`text-sm font-medium ${waStatus.configured ? 'text-vs-success' : 'text-vs-danger'}`}>
+                    {waStatus.configured ? 'Configured & Active' : 'Not Configured'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${waStatus.tokenSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                    <span className="text-vs-text-3">API Token</span>
+                    <span className={`ml-auto font-medium ${waStatus.tokenSet ? 'text-vs-success' : 'text-vs-danger'}`}>
+                      {waStatus.tokenSet ? waStatus.tokenPreview : 'Missing'}
+                    </span>
+                  </div>
+                  <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${waStatus.groupIdSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                    <span className="text-vs-text-3">Group ID</span>
+                    <span className={`ml-auto font-mono text-xs ${waStatus.groupIdSet ? 'text-vs-success' : 'text-vs-danger'}`}>
+                      {waStatus.groupId || 'Missing'}
+                    </span>
+                  </div>
+                </div>
+                {waStatus.configured && (
+                  <div className="pt-1 flex items-center gap-3">
+                    <button onClick={handleWaTest} disabled={waTesting}
+                      className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                      {waTesting ? 'Sending…' : 'Send Test Message'}
+                    </button>
+                    {waTestResult && <p className={`text-xs ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
+                  </div>
+                )}
+              </div>
+            ) : <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />}
+          </div>
+
+          {/* How to get credentials */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">How to get your credentials</p>
+            <ol className="space-y-3 text-sm text-vs-text-2">
+              {[
+                <>Sign up at <span className="font-mono text-vs-purple-light">whapi.cloud</span> and create a channel instance.</>,
+                <>Connect your WhatsApp number by scanning the QR code shown in the dashboard.</>,
+                <>Copy your <strong>API Token</strong> (Bearer token) from the channel settings page.</>,
+                <>Get the <strong>Group ID</strong> by sending a message to your group and checking the webhook or message logs — it looks like <span className="font-mono">120363xxxxxxxxxx@g.us</span>.</>,
+                <>Paste both values into the form above and click <strong>Save</strong>.</>,
+              ].map((step, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      )}
+
       {tab === 'Messages' && (
         <MessagesTab templates={templates} loading={templatesLoading} onSaved={loadTemplates} />
       )}
@@ -722,6 +869,15 @@ export default function TelegramSettings() {
           <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-vs-border flex items-center gap-3 flex-wrap">
               <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mr-auto">Send Log</p>
+              <select
+                value={logChannel}
+                onChange={(e) => setLogChannel(e.target.value)}
+                className="px-2 py-1 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple"
+              >
+                <option value="all">All channels</option>
+                <option value="telegram">Telegram</option>
+                <option value="whatsapp">WhatsApp</option>
+              </select>
               <select
                 value={logTriggerFilter}
                 onChange={(e) => setLogTriggerFilter(e.target.value)}
@@ -741,6 +897,7 @@ export default function TelegramSettings() {
               <thead>
                 <tr className="border-b border-vs-border bg-vs-elevated/40">
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Channel</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Trigger</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
@@ -751,18 +908,27 @@ export default function TelegramSettings() {
               <tbody className="divide-y divide-vs-border">
                 {logsLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 6 }).map((_, j) => (
+                    <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
                       <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
                     ))}</tr>
                   ))
                 ) : visibleLogs.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-vs-text-3 text-sm">
+                  <tr><td colSpan={7} className="text-center py-10 text-vs-text-3 text-sm">
                     {logTriggerFilter ? 'No sends recorded for this trigger.' : 'No sends recorded yet.'}
                   </td></tr>
                 ) : (
                   visibleLogs.map((row) => (
                     <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
                       <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          row.channel === 'whatsapp'
+                            ? 'bg-vs-success/15 text-vs-success'
+                            : 'bg-vs-purple/15 text-vs-purple-light'
+                        }`}>
+                          {row.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                        </span>
+                      </td>
                       <td className="px-5 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                           TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
@@ -786,7 +952,7 @@ export default function TelegramSettings() {
                               </span>
                             )}
                             <button
-                              onClick={() => handleRetry(row.id)}
+                              onClick={() => handleRetry(row.id, row.channel)}
                               disabled={retryingId === row.id}
                               className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40"
                             >

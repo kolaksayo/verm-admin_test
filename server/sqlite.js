@@ -69,6 +69,7 @@ function getDb() {
 
     // Safe additive migrations
     try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN message TEXT`); } catch { /* already exists */ }
+    try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN channel TEXT NOT NULL DEFAULT 'telegram'`); } catch { /* already exists */ }
   }
   return db;
 }

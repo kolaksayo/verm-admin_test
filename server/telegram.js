@@ -20,8 +20,8 @@ function logSend(trigger, text, ok, error = null) {
   const preview = text.replace(/<[^>]+>/g, '').slice(0, 200);
   try {
     getSQLite().prepare(`
-      INSERT INTO telegram_logs (trigger, preview, message, ok, error)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO telegram_logs (trigger, preview, message, ok, error, channel)
+      VALUES (?, ?, ?, ?, ?, 'telegram')
     `).run(trigger, preview, text || null, ok ? 1 : 0, error);
   } catch { /* non-fatal */ }
 }

@@ -235,13 +235,15 @@ router.post('/test', auth, async (req, res) => {
 });
 
 // GET /api/telegram/logs — recent send log from SQLite
+// ?channel=telegram|whatsapp|all  (default: telegram)
 router.get('/logs', auth, (req, res) => {
   try {
-    const sqlite = getSQLite();
-    const limit  = Math.min(200, parseInt(req.query.limit) || 100);
-    const rows   = sqlite.prepare(
-      'SELECT * FROM telegram_logs ORDER BY id DESC LIMIT ?'
-    ).all(limit);
+    const sqlite  = getSQLite();
+    const limit   = Math.min(200, parseInt(req.query.limit) || 100);
+    const channel = req.query.channel || 'telegram';
+    const rows = channel === 'all'
+      ? sqlite.prepare('SELECT * FROM telegram_logs ORDER BY id DESC LIMIT ?').all(limit)
+      : sqlite.prepare("SELECT * FROM telegram_logs WHERE channel = ? ORDER BY id DESC LIMIT ?").all(channel, limit);
     res.json({ rows });
   } catch (err) {
     res.status(500).json({ error: err.message });

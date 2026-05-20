@@ -2,6 +2,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -347,6 +348,17 @@ function getCurrentPlayers(bet) {
   return 1;
 }
 
+// ── Multi-channel send ─────────────────────────────────────────────────────────
+// Sends to all configured channels; returns Telegram result as primary
+// so callers can still use result.ok for dedup logic.
+
+async function notifyAll(text, trigger) {
+  const sends = [sendMessage(text, trigger)];
+  if (isWAConfigured()) sends.push(sendWhatsApp(text, trigger));
+  const [tg] = await Promise.allSettled(sends);
+  return tg.status === 'fulfilled' ? tg.value : { ok: false, reason: tg.reason?.message };
+}
+
 // ── SQLite dedup helpers ───────────────────────────────────────────────────────
 
 function hasNotified(betId, key) {
@@ -528,7 +540,7 @@ async function pollNewBets(db, since) {
         };
       }
       const message = renderTemplate(template, vars);
-      const result  = await sendMessage(message, triggerKey);
+      const result  = await notifyAll(message, triggerKey);
       if (result.ok) {
         console.log(`[GameBetWatcher] Notified (${triggerKey}): ${vars.code}`);
       } else {
@@ -544,7 +556,7 @@ async function pollNewBets(db, since) {
         if (largeTemplate) {
           const vars    = buildMultiVars(bet, fixture, creatorName, getCurrentPlayers(bet));
           const message = renderTemplate(largeTemplate, vars);
-          const result  = await sendMessage(message, 'game_bet_large_stake');
+          const result  = await notifyAll(message, 'game_bet_large_stake');
           if (result.ok) {
             console.log(`[GameBetWatcher] Large stake notified: ${vars.code}`);
           } else {
@@ -586,7 +598,7 @@ async function pollFillProgress(db) {
     if (fillRatio >= 0.6 && fillRatio < 1 && !hasNotified(betId, 'half')) {
       const template = getTemplate('game_bet_multi_half');
       if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_multi_half');
+        const result = await notifyAll(renderTemplate(template, vars), 'game_bet_multi_half');
         if (result.ok) {
           markNotified(betId, 'half');
           console.log(`[GameBetWatcher] Half-fill notified: ${vars.code}`);
@@ -598,7 +610,7 @@ async function pollFillProgress(db) {
     if (remaining <= 3 && remaining > 1 && !hasNotified(betId, 'almost_3')) {
       const template = getTemplate('game_bet_multi_almost_3');
       if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_multi_almost_3');
+        const result = await notifyAll(renderTemplate(template, vars), 'game_bet_multi_almost_3');
         if (result.ok) {
           markNotified(betId, 'almost_3');
           console.log(`[GameBetWatcher] Almost-3 notified: ${vars.code}`);
@@ -610,7 +622,7 @@ async function pollFillProgress(db) {
     if (remaining === 1 && !hasNotified(betId, 'almost_1')) {
       const template = getTemplate('game_bet_multi_almost_1');
       if (template) {
-        const result = await sendMessage(renderTemplate(template, vars), 'game_bet_multi_almost_1');
+        const result = await notifyAll(renderTemplate(template, vars), 'game_bet_multi_almost_1');
         if (result.ok) {
           markNotified(betId, 'almost_1');
           console.log(`[GameBetWatcher] Last-slot notified: ${vars.code}`);
@@ -668,7 +680,7 @@ async function pollMatchCountdowns(db) {
       if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
         const template = getTemplate(cp.trigger);
         if (template) {
-          const result = await sendMessage(renderTemplate(template, vars), cp.trigger);
+          const result = await notifyAll(renderTemplate(template, vars), cp.trigger);
           if (result.ok) {
             markNotified(betId, cp.key);
             console.log(`[GameBetWatcher] Multi ${cp.key} countdown: ${vars.code}`);
@@ -725,7 +737,7 @@ async function pollSingleCountdowns(db) {
       if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
         const template = getTemplate(cp.trigger);
         if (template) {
-          const result = await sendMessage(renderTemplate(template, vars), cp.trigger);
+          const result = await notifyAll(renderTemplate(template, vars), cp.trigger);
           if (result.ok) {
             markNotified(betId, cp.key);
             console.log(`[GameBetWatcher] Single ${cp.key} countdown: ${vars.code}`);
@@ -813,7 +825,7 @@ async function pollSettledBets(db) {
       mode:           formatMode(bet),
     };
 
-    const result = await sendMessage(renderTemplate(template, vars), 'game_bet_settled');
+    const result = await notifyAll(renderTemplate(template, vars), 'game_bet_settled');
     if (result.ok) {
       markNotified(betId, 'settled');
       console.log(`[GameBetWatcher] Settled notified: ${vars.code}`);
@@ -955,7 +967,7 @@ async function pollRankingsNotification(db) {
 
     try {
       const vars   = await buildRankingsVars(db, period, getRankingsTopN());
-      const result = await sendMessage(renderTemplate(template, vars), trigger);
+      const result = await notifyAll(renderTemplate(template, vars), trigger);
       if (result.ok) {
         markRankingsSent(period);
         console.log(`[GameBetWatcher] Rankings notification sent: ${trigger}`);
