@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
 
-const TABS = ['Telegram', 'WhatsApp', 'Messages', 'Logs'];
+const TABS = ['Telegram', 'WhatsApp', 'Messages', 'Logs', 'Settings'];
 
 function timeAgo(iso) {
   if (!iso) return null;
@@ -46,7 +46,7 @@ const TRIGGER_COLORS = {
   manual:                 'bg-vs-elevated text-vs-text-3',
 };
 
-// ── Messages tab ─────────────────────────────────────────────────────────────
+// ── Template editor ───────────────────────────────────────────────────────────
 
 function TemplateEditor({ tpl, onSaved }) {
   const [text, setText]         = useState(tpl.template);
@@ -255,42 +255,55 @@ function MessagesTab({ templates, loading, onSaved }) {
   );
 }
 
+// ── Enable/disable toggle card ────────────────────────────────────────────────
+
+function ChannelToggle({ channel, enabled, onToggle, toggling }) {
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+      <div>
+        <p className="text-sm font-semibold text-vs-text">{channel} Notifications</p>
+        <p className="text-xs text-vs-text-3 mt-0.5">
+          {enabled
+            ? 'Notifications are enabled — messages will be sent to this channel.'
+            : 'Notifications are disabled — messages will not be sent to this channel.'}
+        </p>
+      </div>
+      <button
+        onClick={onToggle}
+        disabled={toggling}
+        className={`relative w-12 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
+          enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
+        }`}
+      >
+        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-7' : 'left-1'}`} />
+      </button>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function TelegramSettings() {
-  const [tab, setTab] = useState('Settings');
+  const [tab, setTab] = useState('Telegram');
 
-  const [status, setStatus]         = useState(null);
-  const [testing, setTesting]       = useState(false);
-  const [testResult, setTestResult] = useState(null);
-  const [message, setMessage]       = useState('');
-  const [sending, setSending]       = useState(false);
-  const [sendResult, setSendResult] = useState(null);
+  // ── Telegram state ────────────────────────────────────────────────────────
+  const [status, setStatus]             = useState(null);
+  const [tgEnabled, setTgEnabled]       = useState(true);
+  const [togglingTg, setTogglingTg]     = useState(false);
+  const [testing, setTesting]           = useState(false);
+  const [testResult, setTestResult]     = useState(null);
+  const [message, setMessage]           = useState('');
+  const [sending, setSending]           = useState(false);
+  const [sendResult, setSendResult]     = useState(null);
+  const [botToken, setBotToken]         = useState('');
+  const [chatId, setChatId]             = useState('');
+  const [saving, setSaving]             = useState(false);
+  const [saveMsg, setSaveMsg]           = useState('');
 
-  const [botToken, setBotToken] = useState('');
-  const [chatId, setChatId]     = useState('');
-  const [saving, setSaving]     = useState(false);
-  const [saveMsg, setSaveMsg]   = useState('');
-
-  const [threshold, setThreshold]           = useState('7');
-  const [savingThreshold, setSavingThreshold] = useState(false);
-  const [thresholdMsg, setThresholdMsg]     = useState('');
-
-  const [rankingsTopN, setRankingsTopN]         = useState('10');
-  const [savingTopN, setSavingTopN]             = useState(false);
-  const [topNMsg, setTopNMsg]                   = useState('');
-
-  const [watcherStatus, setWatcherStatus]       = useState(null);
-  const [watcherTick, setWatcherTick]           = useState(0);
-
-  const [rankingsPeriod, setRankingsPeriod]     = useState('weekly');
-  const [rankingsWeekStart, setRankingsWeekStart] = useState('');
-  const [rankingsMonthOf, setRankingsMonthOf]   = useState('');
-  const [sendingRankings, setSendingRankings]   = useState(false);
-  const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
-
-  // WhatsApp state
+  // ── WhatsApp state ────────────────────────────────────────────────────────
   const [waStatus, setWaStatus]         = useState(null);
+  const [waEnabled, setWaEnabled]       = useState(true);
+  const [togglingWa, setTogglingWa]     = useState(false);
   const [waToken, setWaToken]           = useState('');
   const [waGroupId, setWaGroupId]       = useState('');
   const [waSaving, setWaSaving]         = useState(false);
@@ -300,19 +313,40 @@ export default function TelegramSettings() {
   const [waMessage, setWaMessage]       = useState('');
   const [waSending, setWaSending]       = useState(false);
   const [waSendResult, setWaSendResult] = useState(null);
-  const [logChannel, setLogChannel]     = useState('all');
 
-  const [templates, setTemplates]             = useState([]);
+  // ── Settings tab state ────────────────────────────────────────────────────
+  const [threshold, setThreshold]               = useState('7');
+  const [savingThreshold, setSavingThreshold]   = useState(false);
+  const [thresholdMsg, setThresholdMsg]         = useState('');
+  const [rankingsTopN, setRankingsTopN]         = useState('10');
+  const [savingTopN, setSavingTopN]             = useState(false);
+  const [topNMsg, setTopNMsg]                   = useState('');
+  const [watcherStatus, setWatcherStatus]       = useState(null);
+  const [watcherTick, setWatcherTick]           = useState(0);
+  const [rankingsPeriod, setRankingsPeriod]     = useState('weekly');
+  const [rankingsWeekStart, setRankingsWeekStart] = useState('');
+  const [rankingsMonthOf, setRankingsMonthOf]   = useState('');
+  const [sendingRankings, setSendingRankings]   = useState(false);
+  const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
+  const [rankingsChannels, setRankingsChannels] = useState({ telegram: true, whatsapp: true });
+
+  // ── Logs + Messages state ─────────────────────────────────────────────────
+  const [logChannel, setLogChannel]             = useState('all');
+  const [templates, setTemplates]               = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
-
-  const [logs, setLogs]               = useState([]);
-  const [logsLoading, setLogsLoading] = useState(false);
+  const [logs, setLogs]                         = useState([]);
+  const [logsLoading, setLogsLoading]           = useState(false);
   const [logTriggerFilter, setLogTriggerFilter] = useState('');
-  const [retryingId, setRetryingId]   = useState(null);
-  const [retryResults, setRetryResults] = useState({});
+  const [retryingId, setRetryingId]             = useState(null);
+  const [retryResults, setRetryResults]         = useState({});
+
+  // ── Data loaders ──────────────────────────────────────────────────────────
 
   const loadStatus = () =>
-    api.get('/telegram/status').then((r) => setStatus(r.data)).catch(() => {});
+    api.get('/telegram/status').then((r) => {
+      setStatus(r.data);
+      if (r.data.enabled != null) setTgEnabled(!!r.data.enabled);
+    }).catch(() => {});
 
   const loadTemplates = useCallback(() => {
     setTemplatesLoading(true);
@@ -330,25 +364,28 @@ export default function TelegramSettings() {
       .finally(() => setLogsLoading(false));
   }, [logChannel]);
 
-  useEffect(() => { if (tab === 'Logs') loadLogs(); }, [logChannel]);
-
   useEffect(() => { loadStatus(); }, []);
   useEffect(() => { if (tab === 'Messages') loadTemplates(); }, [tab, loadTemplates]);
   useEffect(() => { if (tab === 'Logs') loadLogs(); }, [tab, loadLogs]);
+  useEffect(() => { if (tab === 'Logs') loadLogs(); }, [logChannel]);
 
-  // WhatsApp — fetch status when tab opens
   useEffect(() => {
     if (tab !== 'WhatsApp') return;
-    api.get('/whatsapp/status').then((r) => setWaStatus(r.data)).catch(() => {});
+    api.get('/whatsapp/status').then((r) => {
+      setWaStatus(r.data);
+      if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
+    }).catch(() => {});
     api.get('/whatsapp/config').then((r) => {
-      // don't pre-fill masked token; only pre-fill groupId
       if (r.data.groupId) setWaGroupId(r.data.groupId);
     }).catch(() => {});
   }, [tab]);
 
-  // Watcher health — fetch on Settings tab, refresh every 15s, tick every 5s for "Xs ago"
   useEffect(() => {
     if (tab !== 'Settings') return;
+    api.get('/telegram/config').then((r) => {
+      if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
+      if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
+    }).catch(() => {});
     const fetchWatcher = () =>
       api.get('/telegram/watcher-status').then((r) => setWatcherStatus(r.data)).catch(() => {});
     fetchWatcher();
@@ -357,15 +394,7 @@ export default function TelegramSettings() {
     return () => { clearInterval(pollId); clearInterval(tickId); };
   }, [tab]);
 
-  // Load threshold when Settings tab is active
-  useEffect(() => {
-    if (tab === 'Telegram') {
-      api.get('/telegram/config').then((r) => {
-        if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
-        if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
-      }).catch(() => {});
-    }
-  }, [tab]);
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleSaveConfig = async (e) => {
     e.preventDefault();
@@ -380,6 +409,99 @@ export default function TelegramSettings() {
       setSaveMsg(err.response?.data?.error || 'Failed to save');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleTg = async () => {
+    setTogglingTg(true);
+    const next = !tgEnabled;
+    try {
+      await api.post('/telegram/config', { enabled: next });
+      setTgEnabled(next);
+    } catch { /* ignore */ } finally {
+      setTogglingTg(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const r = await api.post('/telegram/test');
+      setTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.description || 'Failed') });
+    } catch (e) {
+      setTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    setSending(true); setSendResult(null);
+    try {
+      const r = await api.post('/telegram/send', { text: message });
+      setSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.description || 'Failed') });
+      if (r.data.ok) setMessage('');
+    } catch (e) {
+      setSendResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleWaSave = async (e) => {
+    e.preventDefault();
+    setWaSaving(true); setWaSaveMsg('');
+    try {
+      await api.post('/whatsapp/config', { apiToken: waToken || undefined, groupId: waGroupId || undefined });
+      setWaSaveMsg('Saved!');
+      setWaToken('');
+      const r = await api.get('/whatsapp/status');
+      setWaStatus(r.data);
+      if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
+    } catch (err) {
+      setWaSaveMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setWaSaving(false);
+    }
+  };
+
+  const handleToggleWa = async () => {
+    setTogglingWa(true);
+    const next = !waEnabled;
+    try {
+      await api.post('/whatsapp/config', { enabled: next });
+      setWaEnabled(next);
+    } catch { /* ignore */ } finally {
+      setTogglingWa(false);
+    }
+  };
+
+  const handleWaTest = async () => {
+    setWaTesting(true); setWaTestResult(null);
+    try {
+      const r = await api.post('/whatsapp/test');
+      setWaTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.reason || 'Failed') });
+    } catch (e) {
+      setWaTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setWaTesting(false);
+    }
+  };
+
+  const handleWaSend = async (e) => {
+    e.preventDefault();
+    if (!waMessage.trim()) return;
+    setWaSending(true); setWaSendResult(null);
+    try {
+      const r = await api.post('/whatsapp/send', { text: waMessage });
+      setWaSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.reason || r.data.error || 'Failed') });
+      if (r.data.ok) setWaMessage('');
+    } catch (e) {
+      setWaSendResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setWaSending(false);
     }
   };
 
@@ -416,67 +538,14 @@ export default function TelegramSettings() {
       const body = { period: rankingsPeriod };
       if (rankingsPeriod === 'weekly'  && rankingsWeekStart) body.weekStart = rankingsWeekStart;
       if (rankingsPeriod === 'monthly' && rankingsMonthOf)   body.monthOf   = rankingsMonthOf;
+      const channels = Object.entries(rankingsChannels).filter(([, v]) => v).map(([k]) => k);
+      if (channels.length) body.channels = channels;
       const r = await api.post('/telegram/rankings/send', body);
       setRankingsSendMsg(r.data.ok ? 'Sent!' : (r.data.description || r.data.error || 'Failed'));
     } catch (err) {
       setRankingsSendMsg(err.response?.data?.error || 'Request failed');
     } finally {
       setSendingRankings(false);
-    }
-  };
-
-  const handleTest = async () => {
-    setTesting(true); setTestResult(null);
-    try {
-      const r = await api.post('/telegram/test');
-      setTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.description || 'Failed') });
-    } catch (e) {
-      setTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const handleWaSave = async (e) => {
-    e.preventDefault();
-    setWaSaving(true); setWaSaveMsg('');
-    try {
-      await api.post('/whatsapp/config', { apiToken: waToken || undefined, groupId: waGroupId || undefined });
-      setWaSaveMsg('Saved!');
-      setWaToken('');
-      const r = await api.get('/whatsapp/status');
-      setWaStatus(r.data);
-    } catch (err) {
-      setWaSaveMsg(err.response?.data?.error || 'Failed');
-    } finally {
-      setWaSaving(false);
-    }
-  };
-
-  const handleWaTest = async () => {
-    setWaTesting(true); setWaTestResult(null);
-    try {
-      const r = await api.post('/whatsapp/test');
-      setWaTestResult({ ok: r.data.ok, msg: r.data.ok ? 'Message sent!' : (r.data.reason || 'Failed') });
-    } catch (e) {
-      setWaTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
-    } finally {
-      setWaTesting(false);
-    }
-  };
-
-  const handleWaSend = async (e) => {
-    e.preventDefault();
-    if (!waMessage.trim()) return;
-    setWaSending(true); setWaSendResult(null);
-    try {
-      const r = await api.post('/whatsapp/send', { text: waMessage });
-      setWaSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.reason || r.data.error || 'Failed') });
-      if (r.data.ok) setWaMessage('');
-    } catch (e) {
-      setWaSendResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
-    } finally {
-      setWaSending(false);
     }
   };
 
@@ -494,26 +563,11 @@ export default function TelegramSettings() {
     }
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!message.trim()) return;
-    setSending(true); setSendResult(null);
-    try {
-      const r = await api.post('/telegram/send', { text: message });
-      setSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.description || 'Failed') });
-      if (r.data.ok) setMessage('');
-    } catch (e) {
-      setSendResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
-    } finally {
-      setSending(false);
-    }
-  };
-
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-vs-text">Telegram Notifications</h1>
-        <p className="text-sm text-vs-text-3 mt-1">Automatic alerts to your Telegram group when new challenges are created</p>
+        <h1 className="text-2xl font-bold text-vs-text">Notifications</h1>
+        <p className="text-sm text-vs-text-3 mt-1">Manage Telegram and WhatsApp alerts for challenge activity</p>
       </div>
 
       {/* Tabs */}
@@ -526,9 +580,11 @@ export default function TelegramSettings() {
         ))}
       </div>
 
-      {/* ── Settings tab ── */}
+      {/* ── Telegram tab ── */}
       {tab === 'Telegram' && (
         <>
+          <ChannelToggle channel="Telegram" enabled={tgEnabled} onToggle={handleToggleTg} toggling={togglingTg} />
+
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Bot Configuration</p>
             <p className="text-xs text-vs-text-3 mb-4">Saved to local storage — no server restart needed.</p>
@@ -553,149 +609,6 @@ export default function TelegramSettings() {
                   {saving ? 'Saving…' : 'Save'}
                 </button>
                 {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
-              </div>
-            </form>
-          </div>
-
-          {/* Alert Settings */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>
-            <p className="text-xs text-vs-text-3 mb-4">Configure thresholds for cross-cutting alert triggers.</p>
-
-            <form onSubmit={handleSaveThreshold} className="flex items-end gap-4 mb-5">
-              <div>
-                <label className="text-xs text-vs-text-3 block mb-1">Large Stake Threshold ($)</label>
-                <input type="number" min="0.01" step="0.01" value={threshold} onChange={(e) => setThreshold(e.target.value)}
-                  className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                <p className="text-xs text-vs-text-3 mt-1">Fire "Large Stake Alert" when bet amount exceeds this value</p>
-              </div>
-              <div className="flex items-center gap-3 mb-[26px]">
-                <button type="submit" disabled={savingThreshold}
-                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {savingThreshold ? 'Saving…' : 'Save'}
-                </button>
-                {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
-              </div>
-            </form>
-
-            <div className="border-t border-vs-border pt-5">
-              <form onSubmit={handleSaveTopN} className="flex items-end gap-4">
-                <div>
-                  <label className="text-xs text-vs-text-3 block mb-1">Rankings — Players Shown</label>
-                  <select value={rankingsTopN} onChange={(e) => setRankingsTopN(e.target.value)}
-                    className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple">
-                    {[3, 5, 10, 15, 20, 25].map((n) => (
-                      <option key={n} value={n}>Top {n}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-vs-text-3 mt-1">Number of players listed in weekly/monthly ranking notifications</p>
-                </div>
-                <div className="flex items-center gap-3 mb-[26px]">
-                  <button type="submit" disabled={savingTopN}
-                    className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                    {savingTopN ? 'Saving…' : 'Save'}
-                  </button>
-                  {topNMsg && <p className={`text-xs ${topNMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{topNMsg}</p>}
-                </div>
-              </form>
-            </div>
-          </div>
-
-          {/* Watcher Health */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Watcher Health</p>
-            {watcherStatus ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: 'New-Bet Poll',     value: watcherStatus.lastNewBetPoll,   count: watcherStatus.newBetPollCount,    interval: '30s' },
-                    { label: 'Progress Poll',    value: watcherStatus.lastProgressPoll, count: watcherStatus.progressPollCount,  interval: '2m' },
-                    { label: 'Weekly Rankings',  value: watcherStatus.rankingsWeeklySentAt,  count: null, interval: 'Mon' },
-                    { label: 'Monthly Rankings', value: watcherStatus.rankingsMonthlySentAt, count: null, interval: '1st' },
-                  ].map(({ label, value, count, interval }) => {
-                    const ago  = timeAgo(value);
-                    const ageS = value ? Math.floor((Date.now() - new Date(value).getTime()) / 1000) : null;
-                    const dot  = !value ? 'bg-vs-text-3' : ageS < 120 ? 'bg-vs-success' : ageS < 600 ? 'bg-vs-warning' : 'bg-vs-danger';
-                    return (
-                      <div key={label} className="bg-vs-elevated rounded-lg px-3 py-2.5">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                          <span className="text-xs text-vs-text-3">{label}</span>
-                          <span className="ml-auto text-[10px] text-vs-text-3 opacity-60">{interval}</span>
-                        </div>
-                        <p className="text-xs font-mono text-vs-text">{ago || 'Never'}</p>
-                        {count != null && <p className="text-[10px] text-vs-text-3 mt-0.5">{count} polls</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-                {watcherStatus.lastError && (
-                  <div className="bg-vs-danger/10 border border-vs-danger/20 rounded-lg px-3 py-2 text-xs">
-                    <span className="text-vs-danger font-semibold">Last error</span>
-                    <span className="text-vs-text-3 mx-2">·</span>
-                    <span className="text-vs-danger">{watcherStatus.lastError}</span>
-                    {watcherStatus.lastErrorAt && (
-                      <span className="text-vs-text-3 ml-2">{timeAgo(watcherStatus.lastErrorAt)}</span>
-                    )}
-                  </div>
-                )}
-                {watcherStatus.startedAt && (
-                  <p className="text-xs text-vs-text-3">Watcher started {timeAgo(watcherStatus.startedAt)}</p>
-                )}
-              </div>
-            ) : (
-              <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />
-            )}
-          </div>
-
-          {/* Send Rankings Now */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Send Rankings Now</p>
-            <p className="text-xs text-vs-text-3 mb-4">Manually trigger a rankings notification without waiting for the scheduled send.</p>
-            <form onSubmit={handleSendRankings} className="space-y-3">
-              <div className="flex gap-2">
-                {['weekly', 'monthly'].map((p) => (
-                  <button key={p} type="button" onClick={() => { setRankingsPeriod(p); setRankingsSendMsg(''); }}
-                    className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                      rankingsPeriod === p
-                        ? 'bg-vs-purple/15 border-vs-purple/40 text-vs-purple-light'
-                        : 'border-vs-border text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated'
-                    }`}>
-                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
-                  </button>
-                ))}
-              </div>
-
-              {rankingsPeriod === 'weekly' && (
-                <div>
-                  <label className="text-xs text-vs-text-3 block mb-1">
-                    Custom week <span className="opacity-60">(any date in that week — leave blank for current week)</span>
-                  </label>
-                  <input type="date" value={rankingsWeekStart} onChange={(e) => setRankingsWeekStart(e.target.value)}
-                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                </div>
-              )}
-
-              {rankingsPeriod === 'monthly' && (
-                <div>
-                  <label className="text-xs text-vs-text-3 block mb-1">
-                    Custom month <span className="opacity-60">(leave blank for current month)</span>
-                  </label>
-                  <input type="month" value={rankingsMonthOf} onChange={(e) => setRankingsMonthOf(e.target.value)}
-                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                </div>
-              )}
-
-              <div className="flex items-center gap-3">
-                <button type="submit" disabled={sendingRankings}
-                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {sendingRankings ? 'Sending…' : 'Send Rankings'}
-                </button>
-                {rankingsSendMsg && (
-                  <p className={`text-xs ${rankingsSendMsg === 'Sent!' ? 'text-vs-success' : 'text-vs-danger'}`}>
-                    {rankingsSendMsg}
-                  </p>
-                )}
               </div>
             </form>
           </div>
@@ -776,11 +689,11 @@ export default function TelegramSettings() {
         </>
       )}
 
-      {/* ── Messages tab ── */}
       {/* ── WhatsApp tab ── */}
       {tab === 'WhatsApp' && (
         <>
-          {/* Config */}
+          <ChannelToggle channel="WhatsApp" enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa} />
+
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">WhatsApp Configuration</p>
             <p className="text-xs text-vs-text-3 mb-4">
@@ -812,7 +725,6 @@ export default function TelegramSettings() {
             </form>
           </div>
 
-          {/* Connection Status */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Connection Status</p>
             {waStatus ? (
@@ -852,7 +764,6 @@ export default function TelegramSettings() {
             ) : <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />}
           </div>
 
-          {/* Manual Message */}
           {waStatus?.configured && (
             <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
               <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Send Manual Message</p>
@@ -871,7 +782,6 @@ export default function TelegramSettings() {
             </div>
           )}
 
-          {/* How to get credentials */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">How to get your credentials</p>
             <ol className="space-y-3 text-sm text-vs-text-2">
@@ -892,6 +802,7 @@ export default function TelegramSettings() {
         </>
       )}
 
+      {/* ── Messages tab ── */}
       {tab === 'Messages' && (
         <MessagesTab templates={templates} loading={templatesLoading} onSaved={loadTemplates} />
       )}
@@ -1006,6 +917,172 @@ export default function TelegramSettings() {
           </div>
         );
       })()}
+
+      {/* ── Settings tab ── */}
+      {tab === 'Settings' && (
+        <>
+          {/* Alert Settings */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>
+            <p className="text-xs text-vs-text-3 mb-4">Configure thresholds for cross-cutting alert triggers.</p>
+
+            <form onSubmit={handleSaveThreshold} className="flex items-end gap-4 mb-5">
+              <div>
+                <label className="text-xs text-vs-text-3 block mb-1">Large Stake Threshold ($)</label>
+                <input type="number" min="0.01" step="0.01" value={threshold} onChange={(e) => setThreshold(e.target.value)}
+                  className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                <p className="text-xs text-vs-text-3 mt-1">Fire "Large Stake Alert" when bet amount exceeds this value</p>
+              </div>
+              <div className="flex items-center gap-3 mb-[26px]">
+                <button type="submit" disabled={savingThreshold}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {savingThreshold ? 'Saving…' : 'Save'}
+                </button>
+                {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
+              </div>
+            </form>
+
+            <div className="border-t border-vs-border pt-5">
+              <form onSubmit={handleSaveTopN} className="flex items-end gap-4">
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">Rankings — Players Shown</label>
+                  <select value={rankingsTopN} onChange={(e) => setRankingsTopN(e.target.value)}
+                    className="w-40 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple">
+                    {[3, 5, 10, 15, 20, 25].map((n) => (
+                      <option key={n} value={n}>Top {n}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-vs-text-3 mt-1">Number of players listed in weekly/monthly ranking notifications</p>
+                </div>
+                <div className="flex items-center gap-3 mb-[26px]">
+                  <button type="submit" disabled={savingTopN}
+                    className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                    {savingTopN ? 'Saving…' : 'Save'}
+                  </button>
+                  {topNMsg && <p className={`text-xs ${topNMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{topNMsg}</p>}
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* Send Rankings Now */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Send Rankings Now</p>
+            <p className="text-xs text-vs-text-3 mb-4">Manually trigger a rankings notification without waiting for the scheduled send.</p>
+            <form onSubmit={handleSendRankings} className="space-y-3">
+              <div className="flex gap-2">
+                {['weekly', 'monthly'].map((p) => (
+                  <button key={p} type="button" onClick={() => { setRankingsPeriod(p); setRankingsSendMsg(''); }}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                      rankingsPeriod === p
+                        ? 'bg-vs-purple/15 border-vs-purple/40 text-vs-purple-light'
+                        : 'border-vs-border text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated'
+                    }`}>
+                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
+
+              {rankingsPeriod === 'weekly' && (
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">
+                    Custom week <span className="opacity-60">(any date in that week — leave blank for current week)</span>
+                  </label>
+                  <input type="date" value={rankingsWeekStart} onChange={(e) => setRankingsWeekStart(e.target.value)}
+                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+              )}
+
+              {rankingsPeriod === 'monthly' && (
+                <div>
+                  <label className="text-xs text-vs-text-3 block mb-1">
+                    Custom month <span className="opacity-60">(leave blank for current month)</span>
+                  </label>
+                  <input type="month" value={rankingsMonthOf} onChange={(e) => setRankingsMonthOf(e.target.value)}
+                    className="px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs text-vs-text-3 mb-2">Send to:</p>
+                <div className="flex gap-5">
+                  {[{ key: 'telegram', label: 'Telegram' }, { key: 'whatsapp', label: 'WhatsApp' }].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={rankingsChannels[key]}
+                        onChange={(e) => setRankingsChannels((prev) => ({ ...prev, [key]: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-vs-purple"
+                      />
+                      <span className="text-sm text-vs-text">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button type="submit"
+                  disabled={sendingRankings || !Object.values(rankingsChannels).some(Boolean)}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {sendingRankings ? 'Sending…' : 'Send Rankings'}
+                </button>
+                {rankingsSendMsg && (
+                  <p className={`text-xs ${rankingsSendMsg === 'Sent!' ? 'text-vs-success' : 'text-vs-danger'}`}>
+                    {rankingsSendMsg}
+                  </p>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* Watcher Health */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Watcher Health</p>
+            {watcherStatus ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'New-Bet Poll',     value: watcherStatus.lastNewBetPoll,        count: watcherStatus.newBetPollCount,   interval: '30s' },
+                    { label: 'Progress Poll',    value: watcherStatus.lastProgressPoll,      count: watcherStatus.progressPollCount, interval: '2m' },
+                    { label: 'Weekly Rankings',  value: watcherStatus.rankingsWeeklySentAt,  count: null,                            interval: 'Mon' },
+                    { label: 'Monthly Rankings', value: watcherStatus.rankingsMonthlySentAt, count: null,                            interval: '1st' },
+                  ].map(({ label, value, count, interval }) => {
+                    const ago  = timeAgo(value);
+                    const ageS = value ? Math.floor((Date.now() - new Date(value).getTime()) / 1000) : null;
+                    const dot  = !value ? 'bg-vs-text-3' : ageS < 120 ? 'bg-vs-success' : ageS < 600 ? 'bg-vs-warning' : 'bg-vs-danger';
+                    return (
+                      <div key={label} className="bg-vs-elevated rounded-lg px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                          <span className="text-xs text-vs-text-3">{label}</span>
+                          <span className="ml-auto text-[10px] text-vs-text-3 opacity-60">{interval}</span>
+                        </div>
+                        <p className="text-xs font-mono text-vs-text">{ago || 'Never'}</p>
+                        {count != null && <p className="text-[10px] text-vs-text-3 mt-0.5">{count} polls</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+                {watcherStatus.lastError && (
+                  <div className="bg-vs-danger/10 border border-vs-danger/20 rounded-lg px-3 py-2 text-xs">
+                    <span className="text-vs-danger font-semibold">Last error</span>
+                    <span className="text-vs-text-3 mx-2">·</span>
+                    <span className="text-vs-danger">{watcherStatus.lastError}</span>
+                    {watcherStatus.lastErrorAt && (
+                      <span className="text-vs-text-3 ml-2">{timeAgo(watcherStatus.lastErrorAt)}</span>
+                    )}
+                  </div>
+                )}
+                {watcherStatus.startedAt && (
+                  <p className="text-xs text-vs-text-3">Watcher started {timeAgo(watcherStatus.startedAt)}</p>
+                )}
+              </div>
+            ) : (
+              <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

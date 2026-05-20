@@ -167,12 +167,15 @@ async function resolveTeamNameLocal(db, val) {
 // GET /api/telegram/status
 router.get('/status', auth, (req, res) => {
   const { token, chatId } = getConfig();
+  const row = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
+  const enabled = row ? row.value !== '0' : true;
   res.json({
     configured:      !!(token && chatId),
     botTokenSet:     !!token,
     chatIdSet:       !!chatId,
     botTokenPreview: token ? token.slice(0, 8) + '…' : null,
     chatId:          chatId || null,
+    enabled,
   });
 });
 
@@ -196,15 +199,16 @@ router.get('/config', auth, (req, res) => {
 
 // POST /api/telegram/config — save bot token, chat ID, and/or threshold
 router.post('/config', auth, (req, res) => {
-  const { botToken, chatId, largeStakeThreshold, rankingsTopN } = req.body;
+  const { botToken, chatId, largeStakeThreshold, rankingsTopN, enabled } = req.body;
 
   const hasToken     = botToken != null && String(botToken).trim() !== '';
   const hasChatId    = chatId   != null && String(chatId).trim()   !== '';
   const hasThreshold = largeStakeThreshold != null && Number(largeStakeThreshold) > 0;
   const hasTopN      = rankingsTopN != null && Number.isInteger(Number(rankingsTopN)) && Number(rankingsTopN) >= 1;
+  const hasEnabled   = enabled != null;
 
-  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN) {
-    return res.status(400).json({ ok: false, error: 'Provide at least one of: botToken, chatId, largeStakeThreshold, rankingsTopN' });
+  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN && !hasEnabled) {
+    return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
   try {
@@ -218,7 +222,8 @@ router.post('/config', auth, (req, res) => {
     if (hasToken)     upsert.run('telegram_bot_token', String(botToken).trim());
     if (hasChatId)    upsert.run('telegram_chat_id',   String(chatId).trim());
     if (hasThreshold) upsert.run('large_stake_threshold', String(Number(largeStakeThreshold)));
-    if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))))
+    if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))));
+    if (hasEnabled)   upsert.run('telegram_enabled', enabled ? '1' : '0');
 
     res.json({ ok: true });
   } catch (err) {
@@ -425,15 +430,18 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
   }
 });
 
-// POST /api/telegram/rankings/send — manual send with optional custom period
+// POST /api/telegram/rankings/send — manual send with optional custom period and channel selection
 router.post('/rankings/send', auth, async (req, res) => {
-  if (!isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
-  }
-
-  const { period, weekStart, monthOf } = req.body;
+  const { period, weekStart, monthOf, channels } = req.body;
   if (!['weekly', 'monthly'].includes(period)) {
     return res.status(400).json({ ok: false, error: 'period must be "weekly" or "monthly"' });
+  }
+
+  const sendToTelegram = !channels || channels.includes('telegram');
+  const sendToWhatsApp = !channels || channels.includes('whatsapp');
+
+  if (sendToTelegram && !isConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
   }
 
   const trigger  = `rankings_${period}`;
@@ -443,17 +451,22 @@ router.post('/rankings/send', auth, async (req, res) => {
   }
 
   try {
-    const db     = getDb();
+    const db      = getDb();
     const options = {};
     if (period === 'weekly'  && weekStart) options.weekStart = weekStart;
     if (period === 'monthly' && monthOf)   options.monthOf   = monthOf;
 
     const vars    = await buildRankingsVars(db, period, getRankingsTopN(), options);
     const message = renderTemplate(template, vars);
-    const sends   = [sendMessage(message, trigger)];
-    if (isWAConfigured()) sends.push(sendWhatsApp(message, trigger));
-    const [tgResult] = await Promise.allSettled(sends);
-    res.json(tgResult.status === 'fulfilled' ? tgResult.value : { ok: false, reason: tgResult.reason?.message });
+
+    const sends = [];
+    if (sendToTelegram && isConfigured())   sends.push(sendMessage(message, trigger));
+    if (sendToWhatsApp && isWAConfigured()) sends.push(sendWhatsApp(message, trigger));
+
+    if (!sends.length) return res.status(400).json({ ok: false, error: 'No configured channels selected' });
+
+    const [primary] = await Promise.allSettled(sends);
+    res.json(primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }

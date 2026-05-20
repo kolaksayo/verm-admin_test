@@ -56,7 +56,7 @@ const NAV_GROUPS = [
       { label: 'Logs', path: '/system-logs' },
       { name: 'currencytypes', label: 'Currency Types' },
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
-      { label: 'Telegram', path: '/telegram' },
+      { label: 'Notifications', path: '/telegram' },
     ],
   },
 ];

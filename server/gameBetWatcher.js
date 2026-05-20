@@ -348,15 +348,30 @@ function getCurrentPlayers(bet) {
   return 1;
 }
 
+// ── Channel enable helpers ─────────────────────────────────────────────────────
+
+function isChannelEnabled(channel) {
+  try {
+    const row = getSQLite()
+      .prepare('SELECT value FROM admin_settings WHERE key = ?')
+      .get(`${channel}_enabled`);
+    return row ? row.value !== '0' : true; // default: enabled
+  } catch {
+    return true;
+  }
+}
+
 // ── Multi-channel send ─────────────────────────────────────────────────────────
-// Sends to all configured channels; returns Telegram result as primary
-// so callers can still use result.ok for dedup logic.
+// Sends to all configured + enabled channels; Telegram result is primary
+// for dedup logic so a WhatsApp failure never blocks markNotified().
 
 async function notifyAll(text, trigger) {
-  const sends = [sendMessage(text, trigger)];
-  if (isWAConfigured()) sends.push(sendWhatsApp(text, trigger));
-  const [tg] = await Promise.allSettled(sends);
-  return tg.status === 'fulfilled' ? tg.value : { ok: false, reason: tg.reason?.message };
+  const sends = [];
+  if (isConfigured()   && isChannelEnabled('telegram'))  sends.push(sendMessage(text, trigger));
+  if (isWAConfigured() && isChannelEnabled('whatsapp'))  sends.push(sendWhatsApp(text, trigger));
+  if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
+  const [primary] = await Promise.allSettled(sends);
+  return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
 }
 
 // ── SQLite dedup helpers ───────────────────────────────────────────────────────
@@ -868,7 +883,11 @@ async function buildRankingsVars(db, period, topN, options = {}) {
     periodLabel = 'This Month';
   }
 
-  const matchStage = { $match: { createdAt: { $gte: periodStart } } };
+  const matchStage = { $match: {
+    resolved: true,
+    status:   { $regex: /^(FINISHED|SETTLED|COMPLETED)$/i },
+    createdAt: { $gte: periodStart },
+  } };
 
   const rows = await db.collection('game_bet').aggregate([
     matchStage,

@@ -7,21 +7,25 @@ const router = express.Router();
 
 const toOid = (val) => { try { return new ObjectId(String(val)); } catch { return null; } };
 
+// Only count bets that are fully resolved/completed — exclude open and cancelled bets
+const COMPLETED_STATUSES = /^(FINISHED|SETTLED|COMPLETED)$/i;
+
 function getPeriodMatch(period) {
   const now = new Date();
+  const base = { resolved: true, status: { $regex: COMPLETED_STATUSES } };
   if (period === 'weekly') {
     const day  = now.getDay();
     const diff = day === 0 ? 6 : day - 1;
     const mon  = new Date(now);
     mon.setHours(0, 0, 0, 0);
     mon.setDate(mon.getDate() - diff);
-    return { createdAt: { $gte: mon } };
+    return { ...base, createdAt: { $gte: mon } };
   }
   if (period === 'monthly') {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { createdAt: { $gte: start } };
+    return { ...base, createdAt: { $gte: start } };
   }
-  return {};
+  return base;
 }
 
 router.get('/user-rankings', auth, async (req, res) => {
@@ -30,9 +34,8 @@ router.get('/user-rankings', auth, async (req, res) => {
     const page   = Math.max(1, parseInt(req.query.page) || 1);
     const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
     const period = ['weekly', 'monthly', 'all'].includes(req.query.period) ? req.query.period : 'all';
-    const match  = getPeriodMatch(period);
-
-    const matchStage = Object.keys(match).length ? [{ $match: match }] : [];
+    const match      = getPeriodMatch(period);
+    const matchStage = [{ $match: match }];
 
     const pipeline = [
       ...matchStage,

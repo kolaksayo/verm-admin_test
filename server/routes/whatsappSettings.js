@@ -5,35 +5,45 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+function getWhatsAppEnabled(sqlite) {
+  const row = sqlite.prepare("SELECT value FROM admin_settings WHERE key = 'whatsapp_enabled'").get();
+  return row ? row.value !== '0' : true;
+}
+
 // GET /api/whatsapp/status
 router.get('/status', auth, (req, res) => {
   const { token, groupId } = getConfig();
+  const sqlite = getSQLite();
   res.json({
-    configured:       !!(token && groupId),
-    tokenSet:         !!token,
-    groupIdSet:       !!groupId,
-    tokenPreview:     token ? token.slice(0, 8) + '…' : null,
-    groupId:          groupId || null,
+    configured:   !!(token && groupId),
+    tokenSet:     !!token,
+    groupIdSet:   !!groupId,
+    tokenPreview: token ? token.slice(0, 8) + '…' : null,
+    groupId:      groupId || null,
+    enabled:      getWhatsAppEnabled(sqlite),
   });
 });
 
 // GET /api/whatsapp/config
 router.get('/config', auth, (req, res) => {
   const { token, groupId } = getConfig();
+  const sqlite = getSQLite();
   res.json({
     apiToken: token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
     groupId:  groupId || '',
+    enabled:  getWhatsAppEnabled(sqlite),
   });
 });
 
 // POST /api/whatsapp/config
 router.post('/config', auth, (req, res) => {
-  const { apiToken, groupId } = req.body;
+  const { apiToken, groupId, enabled } = req.body;
   const hasToken   = apiToken != null && String(apiToken).trim() !== '';
   const hasGroupId = groupId  != null && String(groupId).trim()  !== '';
+  const hasEnabled = enabled  != null;
 
-  if (!hasToken && !hasGroupId) {
-    return res.status(400).json({ ok: false, error: 'Provide at least one of: apiToken, groupId' });
+  if (!hasToken && !hasGroupId && !hasEnabled) {
+    return res.status(400).json({ ok: false, error: 'Provide at least one of: apiToken, groupId, enabled' });
   }
 
   try {
@@ -45,6 +55,7 @@ router.post('/config', auth, (req, res) => {
     `);
     if (hasToken)   upsert.run('whatsapp_api_token', String(apiToken).trim());
     if (hasGroupId) upsert.run('whatsapp_group_id',  String(groupId).trim());
+    if (hasEnabled) upsert.run('whatsapp_enabled',   enabled ? '1' : '0');
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
