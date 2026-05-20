@@ -297,6 +297,9 @@ export default function TelegramSettings() {
   const [waSaveMsg, setWaSaveMsg]       = useState('');
   const [waTesting, setWaTesting]       = useState(false);
   const [waTestResult, setWaTestResult] = useState(null);
+  const [waMessage, setWaMessage]       = useState('');
+  const [waSending, setWaSending]       = useState(false);
+  const [waSendResult, setWaSendResult] = useState(null);
   const [logChannel, setLogChannel]     = useState('all');
 
   const [templates, setTemplates]             = useState([]);
@@ -459,6 +462,21 @@ export default function TelegramSettings() {
       setWaTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
     } finally {
       setWaTesting(false);
+    }
+  };
+
+  const handleWaSend = async (e) => {
+    e.preventDefault();
+    if (!waMessage.trim()) return;
+    setWaSending(true); setWaSendResult(null);
+    try {
+      const r = await api.post('/whatsapp/send', { text: waMessage });
+      setWaSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.reason || r.data.error || 'Failed') });
+      if (r.data.ok) setWaMessage('');
+    } catch (e) {
+      setWaSendResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setWaSending(false);
     }
   };
 
@@ -833,6 +851,25 @@ export default function TelegramSettings() {
               </div>
             ) : <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />}
           </div>
+
+          {/* Manual Message */}
+          {waStatus?.configured && (
+            <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Send Manual Message</p>
+              <form onSubmit={handleWaSend} className="space-y-3">
+                <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)}
+                  placeholder="Type a message to send to the WhatsApp group…" rows={3}
+                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none" />
+                <div className="flex items-center gap-3">
+                  <button type="submit" disabled={waSending || !waMessage.trim()}
+                    className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                    {waSending ? 'Sending…' : 'Send'}
+                  </button>
+                  {waSendResult && <p className={`text-xs ${waSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waSendResult.msg}</p>}
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* How to get credentials */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5">

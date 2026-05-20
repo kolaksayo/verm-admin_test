@@ -1,6 +1,7 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
 const { sendMessage, isConfigured, getConfig } = require('../telegram');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('../whatsapp');
 const {
   DEFAULT_TEMPLATES,
   GAME_BET_MACROS,
@@ -298,7 +299,7 @@ router.post('/templates/:trigger', auth, (req, res) => {
   }
 });
 
-// POST /api/telegram/templates/:trigger/test — send a test preview to Telegram
+// POST /api/telegram/templates/:trigger/test — send a test preview to all configured channels
 router.post('/templates/:trigger/test', auth, async (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
@@ -391,8 +392,11 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
     const template = getTemplate(req.params.trigger) || valid.default;
     const testMsg  = '[TEST] ' + renderTemplate(template, sampleVars);
 
-    const result = await sendMessage(testMsg, req.params.trigger + '_test');
-    res.json(result);
+    const triggerKey = req.params.trigger + '_test';
+    const sends = [sendMessage(testMsg, triggerKey)];
+    if (isWAConfigured()) sends.push(sendWhatsApp(testMsg, triggerKey));
+    const [tgResult] = await Promise.allSettled(sends);
+    res.json(tgResult.status === 'fulfilled' ? tgResult.value : { ok: false, reason: tgResult.reason?.message });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }

@@ -92,4 +92,13 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
   }
 });
 
+// POST /api/whatsapp/send — manual message from admin
+router.post('/send', auth, async (req, res) => {
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
+  if (!isConfigured()) return res.status(400).json({ ok: false, error: 'WhatsApp not configured' });
+  const result = await sendMessage(text.trim(), 'manual');
+  res.json(result);
+});
+
 module.exports = router;
