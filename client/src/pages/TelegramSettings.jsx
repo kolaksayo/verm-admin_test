@@ -328,6 +328,8 @@ export default function TelegramSettings() {
   const [rankingsPeriod, setRankingsPeriod]     = useState('weekly');
   const [rankingsWeekStart, setRankingsWeekStart] = useState('');
   const [rankingsMonthOf, setRankingsMonthOf]   = useState('');
+  const [rankingsMonthSel, setRankingsMonthSel] = useState('');
+  const [rankingsYearSel, setRankingsYearSel]   = useState('');
   const [sendingRankings, setSendingRankings]   = useState(false);
   const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
   const [rankingsChannels, setRankingsChannels] = useState({ telegram: true, whatsapp: true });
@@ -1002,7 +1004,6 @@ export default function TelegramSettings() {
                   </label>
                   <div className="flex gap-2">
                     {(() => {
-                      const [selYear, selMonth] = rankingsMonthOf ? rankingsMonthOf.split('-') : ['', ''];
                       const currentYear = new Date().getFullYear();
                       const years = Array.from({ length: 4 }, (_, i) => currentYear - i);
                       const months = [
@@ -1011,16 +1012,20 @@ export default function TelegramSettings() {
                         ['09','September'],['10','October'],['11','November'],['12','December'],
                       ];
                       const selectCls = 'px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple';
-                      const update = (year, month) => {
-                        if (year && month) setRankingsMonthOf(`${year}-${month}`);
-                        else setRankingsMonthOf('');
-                      };
                       return (<>
-                        <select value={selMonth} onChange={(e) => update(selYear, e.target.value)} className={selectCls}>
+                        <select value={rankingsMonthSel} onChange={(e) => {
+                          const m = e.target.value;
+                          setRankingsMonthSel(m);
+                          setRankingsMonthOf(rankingsYearSel && m ? `${rankingsYearSel}-${m}` : '');
+                        }} className={selectCls}>
                           <option value="">Month</option>
                           {months.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                         </select>
-                        <select value={selYear} onChange={(e) => update(e.target.value, selMonth)} className={selectCls}>
+                        <select value={rankingsYearSel} onChange={(e) => {
+                          const y = e.target.value;
+                          setRankingsYearSel(y);
+                          setRankingsMonthOf(y && rankingsMonthSel ? `${y}-${rankingsMonthSel}` : '');
+                        }} className={selectCls}>
                           <option value="">Year</option>
                           {years.map((y) => <option key={y} value={y}>{y}</option>)}
                         </select>
