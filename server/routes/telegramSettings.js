@@ -448,9 +448,12 @@ router.post('/rankings/send', auth, async (req, res) => {
     if (period === 'weekly'  && weekStart) options.weekStart = weekStart;
     if (period === 'monthly' && monthOf)   options.monthOf   = monthOf;
 
-    const vars   = await buildRankingsVars(db, period, getRankingsTopN(), options);
-    const result = await sendMessage(renderTemplate(template, vars), trigger);
-    res.json(result);
+    const vars    = await buildRankingsVars(db, period, getRankingsTopN(), options);
+    const message = renderTemplate(template, vars);
+    const sends   = [sendMessage(message, trigger)];
+    if (isWAConfigured()) sends.push(sendWhatsApp(message, trigger));
+    const [tgResult] = await Promise.allSettled(sends);
+    res.json(tgResult.status === 'fulfilled' ? tgResult.value : { ok: false, reason: tgResult.reason?.message });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
