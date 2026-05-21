@@ -21,6 +21,7 @@ const ngnWithdrawalsRoutes = require('./routes/ngnWithdrawals');
 const dollarNairaRateRoutes = require('./routes/dollarNairaRate');
 const telegramSettingsRoutes  = require('./routes/telegramSettings');
 const whatsappSettingsRoutes  = require('./routes/whatsappSettings');
+const dmSettingsRoutes        = require('./routes/dmSettings');
 const navBadgesRoutes = require('./routes/navBadges');
 
 const { startWatcher } = require('./gameBetWatcher');
@@ -61,8 +62,9 @@ app.use('/api/user-dashboard', userDashboardRoutes);
 app.use('/api/ngn-deposits', ngnDepositsRoutes);
 app.use('/api/ngn-withdrawals', ngnWithdrawalsRoutes);
 app.use('/api/dollar-naira-rate', dollarNairaRateRoutes);
-app.use('/api/telegram',  telegramSettingsRoutes);
-app.use('/api/whatsapp',  whatsappSettingsRoutes);
+app.use('/api/telegram',         telegramSettingsRoutes);
+app.use('/api/whatsapp',         whatsappSettingsRoutes);
+app.use('/api/notifications/dm', dmSettingsRoutes);
 app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');

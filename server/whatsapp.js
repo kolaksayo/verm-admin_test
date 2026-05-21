@@ -76,4 +76,55 @@ function isConfigured() {
   return !!(token && groupId);
 }
 
-module.exports = { sendMessage, isConfigured, getConfig, stripHtml };
+const DEFAULT_WELCOME_TEMPLATE = `Welcome to Vermö! 🎉
+
+Hi {{name}}, thanks for joining.
+
+📣 Join our WhatsApp group to chat with other players:
+{{group_link}}
+
+🔔 Follow our WhatsApp channel for match updates & announcements:
+{{channel_link}}
+
+Good luck! 🏆`;
+
+function logUserDm(userId, phone, username, trigger, ok, error = null) {
+  try {
+    getSQLite().prepare(`
+      INSERT OR REPLACE INTO whatsapp_user_dms (user_id, phone, username, trigger, ok, error, sent_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(userId || '', phone, username || null, trigger, ok ? 1 : 0, error);
+  } catch { /* non-fatal */ }
+}
+
+async function sendDM(userId, phone, username, text, trigger = 'user_registered') {
+  const { token } = getConfig();
+  const digits = phone.replace(/\D/g, '');
+  if (!token || !digits) {
+    logUserDm(userId, phone, username, trigger, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+  const plain = stripHtml(text);
+  const to = `${digits}@s.whatsapp.net`;
+  try {
+    const res = await fetch(WHAPI_URL, {
+      method:  'POST',
+      headers: {
+        'Accept':        'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ to, body: plain }),
+    });
+    const json = await res.json();
+    const ok   = res.ok && !json.error;
+    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    logUserDm(userId, phone, username, trigger, ok, errMsg);
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    logUserDm(userId, phone, username, trigger, false, err.message);
+    return { ok: false, reason: err.message };
+  }
+}
+
+module.exports = { sendMessage, sendDM, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE };

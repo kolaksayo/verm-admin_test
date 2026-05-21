@@ -65,6 +65,19 @@ function getDb() {
         UNIQUE(bet_id, trigger_key)
       );
       CREATE INDEX IF NOT EXISTS idx_tg_notified ON telegram_notified(bet_id);
+
+      CREATE TABLE IF NOT EXISTS whatsapp_user_dms (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id  TEXT NOT NULL,
+        phone    TEXT NOT NULL,
+        username TEXT,
+        trigger  TEXT NOT NULL DEFAULT 'user_registered',
+        ok       INTEGER NOT NULL DEFAULT 0,
+        error    TEXT,
+        sent_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_wud_user_trigger
+        ON whatsapp_user_dms(user_id, trigger);
     `);
 
     // Safe additive migrations
