@@ -2,10 +2,11 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, DEFAULT_WELCOME_TEMPLATE } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
+const USER_DM_INTERVAL_MS  = 5 * 60 * 1000; // 5 min — new user welcome DMs
 
 // ── Watcher health state ───────────────────────────────────────────────────────
 
@@ -14,10 +15,12 @@ const watcherState = {
   startedAt:          null,
   lastNewBetPoll:     null,
   lastProgressPoll:   null,
+  lastUserDmPoll:     null,
   lastError:          null,
   lastErrorAt:        null,
   newBetPollCount:    0,
   progressPollCount:  0,
+  userDmPollCount:    0,
 };
 
 function getWatcherState() {
@@ -29,9 +32,10 @@ function getWatcherState() {
       ...watcherState,
       rankingsWeeklySentAt:  get('rankings_weekly_sent_at'),
       rankingsMonthlySentAt: get('rankings_monthly_sent_at'),
+      lastUserDmCheckAt:     get('whatsapp_dm_last_check_at'),
     };
   } catch {
-    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null };
+    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null, lastUserDmCheckAt: null };
   }
 }
 
@@ -454,6 +458,102 @@ function cleanupOldLogs() {
   } catch {
     // non-fatal
   }
+}
+
+// ── User DM helpers ────────────────────────────────────────────────────────────
+
+function isWADmEnabled() {
+  try {
+    const row = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get('whatsapp_dm_enabled');
+    return row ? row.value === '1' : false;
+  } catch {
+    return false;
+  }
+}
+
+function readLastUserDmCheck() {
+  try {
+    const row = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'whatsapp_dm_last_check_at'").get();
+    if (row?.value) {
+      const d = new Date(row.value);
+      if (!isNaN(d.getTime())) return d;
+    }
+  } catch { /* ignore */ }
+  return new Date(Date.now() - 24 * 60 * 60 * 1000); // default: 24h ago
+}
+
+function saveLastUserDmCheck(date) {
+  try {
+    getSQLite().prepare(`
+      INSERT INTO admin_settings (key, value, updated_at)
+      VALUES ('whatsapp_dm_last_check_at', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(date.toISOString());
+  } catch { /* non-fatal */ }
+}
+
+function hasUserDmSent(userId, trigger) {
+  try {
+    const row = getSQLite()
+      .prepare('SELECT ok FROM whatsapp_user_dms WHERE user_id = ? AND trigger = ?')
+      .get(String(userId), trigger);
+    return row ? row.ok === 1 : false;
+  } catch {
+    return false;
+  }
+}
+
+function getWelcomeConfig() {
+  try {
+    const get = (k) => getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+    return {
+      template:    get('whatsapp_welcome_template') || DEFAULT_WELCOME_TEMPLATE,
+      groupLink:   get('whatsapp_group_link')  || '',
+      channelLink: get('whatsapp_channel_link') || '',
+    };
+  } catch {
+    return { template: DEFAULT_WELCOME_TEMPLATE, groupLink: '', channelLink: '' };
+  }
+}
+
+async function pollNewUsers(db) {
+  if (!isWADmEnabled()) return;
+  const { token } = getWAConfig();
+  if (!token) return;
+
+  const since = readLastUserDmCheck();
+  const next  = new Date();
+
+  const newUsers = await db.collection('users')
+    .find({ createdAt: { $gt: since }, phone: { $exists: true, $nin: ['', null] } })
+    .sort({ createdAt: 1 })
+    .limit(50)
+    .toArray();
+
+  const { template, groupLink, channelLink } = getWelcomeConfig();
+
+  for (const user of newUsers) {
+    const userId = user._id.toString();
+    if (hasUserDmSent(userId, 'user_registered')) continue;
+
+    const name     = user.name || user.displayName || user.username || 'there';
+    const username = user.username || '';
+    const rendered = renderTemplate(template, {
+      name,
+      username,
+      group_link:   groupLink   || '(group link not set)',
+      channel_link: channelLink || '(channel link not set)',
+    });
+
+    const result = await sendDM(userId, user.phone, username, rendered, 'user_registered');
+    if (result.ok) {
+      console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
+    } else {
+      console.error(`[GameBetWatcher] Welcome DM failed for ${username || userId}:`, result.reason);
+    }
+  }
+
+  saveLastUserDmCheck(next);
 }
 
 // ── Settings helpers ───────────────────────────────────────────────────────────
@@ -1059,6 +1159,19 @@ function startWatcher() {
     }
   }, POLL_INTERVAL_MS);
 
+  // User welcome DMs — 5 min poll
+  setInterval(async () => {
+    try {
+      await pollNewUsers(getDb());
+      watcherState.lastUserDmPoll  = new Date();
+      watcherState.userDmPollCount += 1;
+    } catch (err) {
+      watcherState.lastError   = err.message;
+      watcherState.lastErrorAt = new Date();
+      console.error('[GameBetWatcher] User DM poll error:', err.message);
+    }
+  }, USER_DM_INTERVAL_MS);
+
   // Daily cleanup + rankings check
   const runDaily = async () => {
     cleanupOldNotified();
@@ -1078,6 +1191,9 @@ module.exports = {
   getWatcherState,
   buildRankingsVars,
   getRankingsTopN,
+  pollNewUsers,
+  getWelcomeConfig,
+  hasUserDmSent,
   // backward compat
   DEFAULT_TEMPLATE,
   GAME_BET_MACROS,

@@ -13,7 +13,7 @@ import UserActivity from './pages/UserActivity';
 import DollarNairaRate from './pages/DollarNairaRate';
 import Transactions from './pages/Transactions';
 import FootballData from './pages/FootballData';
-import TelegramSettings from './pages/TelegramSettings';
+import NotificationsPage from './pages/NotificationsPage';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 
@@ -52,7 +52,8 @@ function AppRoutes() {
         <Route path="transactions" element={<Transactions />} />
         <Route path="football-data" element={<FootballData />} />
         <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
-        <Route path="telegram" element={<TelegramSettings />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="telegram" element={<Navigate to="/notifications" replace />} />
         <Route path="social-data" element={<SocialData />} />
         <Route path="system-logs" element={<SystemLogs />} />
         <Route path="profile" element={<Profile />} />
