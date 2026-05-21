@@ -8,13 +8,15 @@ function getConfig() {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
     return {
-      token:   get('whatsapp_api_token') || process.env.WHATSAPP_API_TOKEN || '',
-      groupId: get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID  || '',
+      token:     get('whatsapp_api_token')  || process.env.WHATSAPP_API_TOKEN  || '',
+      groupId:   get('whatsapp_group_id')   || process.env.WHATSAPP_GROUP_ID   || '',
+      channelId: get('whatsapp_channel_id') || process.env.WHATSAPP_CHANNEL_ID || '',
     };
   } catch {
     return {
-      token:   process.env.WHATSAPP_API_TOKEN || '',
-      groupId: process.env.WHATSAPP_GROUP_ID  || '',
+      token:     process.env.WHATSAPP_API_TOKEN  || '',
+      groupId:   process.env.WHATSAPP_GROUP_ID   || '',
+      channelId: process.env.WHATSAPP_CHANNEL_ID || '',
     };
   }
 }
@@ -188,4 +190,41 @@ async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = fal
   }
 }
 
-module.exports = { sendMessage, sendDM, sendDirectMessage, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE, normalizePhone };
+async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
+  const { token, channelId } = getConfig();
+  const plain = stripHtml(text);
+
+  if (!token || !channelId) {
+    logSend(trigger, text, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  try {
+    const res = await fetchWithTimeout(WHAPI_URL, {
+      method:  'POST',
+      headers: {
+        'Accept':        'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ to: channelId, body: plain }),
+    });
+    const json = await res.json();
+    const ok   = res.ok && !json.error;
+    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    logSend(trigger, text, ok, errMsg);
+    if (!ok && !_isRetry) {
+      setTimeout(() => sendToChannel(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logSend(trigger, text, false, reason);
+    if (!_isRetry) {
+      setTimeout(() => sendToChannel(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return { ok: false, reason };
+  }
+}
+
+module.exports = { sendMessage, sendDM, sendDirectMessage, sendToChannel, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE, normalizePhone };

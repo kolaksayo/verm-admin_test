@@ -12,38 +12,42 @@ function getWhatsAppEnabled(sqlite) {
 
 // GET /api/whatsapp/status
 router.get('/status', auth, (req, res) => {
-  const { token, groupId } = getConfig();
+  const { token, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
-    configured:   !!(token && groupId),
-    tokenSet:     !!token,
-    groupIdSet:   !!groupId,
-    tokenPreview: token ? token.slice(0, 8) + '…' : null,
-    groupId:      groupId || null,
-    enabled:      getWhatsAppEnabled(sqlite),
+    configured:    !!(token && groupId),
+    tokenSet:      !!token,
+    groupIdSet:    !!groupId,
+    channelIdSet:  !!channelId,
+    tokenPreview:  token ? token.slice(0, 8) + '…' : null,
+    groupId:       groupId   || null,
+    channelId:     channelId || null,
+    enabled:       getWhatsAppEnabled(sqlite),
   });
 });
 
 // GET /api/whatsapp/config
 router.get('/config', auth, (req, res) => {
-  const { token, groupId } = getConfig();
+  const { token, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
-    apiToken: token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
-    groupId:  groupId || '',
-    enabled:  getWhatsAppEnabled(sqlite),
+    apiToken:  token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
+    groupId:   groupId   || '',
+    channelId: channelId || '',
+    enabled:   getWhatsAppEnabled(sqlite),
   });
 });
 
 // POST /api/whatsapp/config
 router.post('/config', auth, (req, res) => {
-  const { apiToken, groupId, enabled } = req.body;
-  const hasToken   = apiToken != null && String(apiToken).trim() !== '';
-  const hasGroupId = groupId  != null && String(groupId).trim()  !== '';
-  const hasEnabled = enabled  != null;
+  const { apiToken, groupId, channelId, enabled } = req.body;
+  const hasToken     = apiToken   != null && String(apiToken).trim()   !== '';
+  const hasGroupId   = groupId    != null && String(groupId).trim()    !== '';
+  const hasChannelId = channelId  != null && String(channelId).trim()  !== '';
+  const hasEnabled   = enabled    != null;
 
-  if (!hasToken && !hasGroupId && !hasEnabled) {
-    return res.status(400).json({ ok: false, error: 'Provide at least one of: apiToken, groupId, enabled' });
+  if (!hasToken && !hasGroupId && !hasChannelId && !hasEnabled) {
+    return res.status(400).json({ ok: false, error: 'Provide at least one of: apiToken, groupId, channelId, enabled' });
   }
 
   try {
@@ -53,9 +57,10 @@ router.post('/config', auth, (req, res) => {
       VALUES (?, ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
-    if (hasToken)   upsert.run('whatsapp_api_token', String(apiToken).trim());
-    if (hasGroupId) upsert.run('whatsapp_group_id',  String(groupId).trim());
-    if (hasEnabled) upsert.run('whatsapp_enabled',   enabled ? '1' : '0');
+    if (hasToken)     upsert.run('whatsapp_api_token',  String(apiToken).trim());
+    if (hasGroupId)   upsert.run('whatsapp_group_id',   String(groupId).trim());
+    if (hasChannelId) upsert.run('whatsapp_channel_id', String(channelId).trim());
+    if (hasEnabled)   upsert.run('whatsapp_enabled',    enabled ? '1' : '0');
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

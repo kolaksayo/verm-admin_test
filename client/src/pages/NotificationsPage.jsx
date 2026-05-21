@@ -348,6 +348,7 @@ export default function NotificationsPage() {
   const [togglingWa, setTogglingWa]     = useState(false);
   const [waToken, setWaToken]           = useState('');
   const [waGroupId, setWaGroupId]       = useState('');
+  const [waChannelId, setWaChannelId]   = useState('');
   const [waSaving, setWaSaving]         = useState(false);
   const [waSaveMsg, setWaSaveMsg]       = useState('');
   const [waTesting, setWaTesting]       = useState(false);
@@ -461,7 +462,8 @@ export default function NotificationsPage() {
       if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
     }).catch(() => {});
     api.get('/whatsapp/config').then((r) => {
-      if (r.data.groupId) setWaGroupId(r.data.groupId);
+      if (r.data.groupId)   setWaGroupId(r.data.groupId);
+      if (r.data.channelId) setWaChannelId(r.data.channelId);
     }).catch(() => {});
   }, [tab]);
 
@@ -547,7 +549,11 @@ export default function NotificationsPage() {
     e.preventDefault();
     setWaSaving(true); setWaSaveMsg('');
     try {
-      await api.post('/whatsapp/config', { apiToken: waToken || undefined, groupId: waGroupId || undefined });
+      await api.post('/whatsapp/config', {
+        apiToken:  waToken     || undefined,
+        groupId:   waGroupId   || undefined,
+        channelId: waChannelId || undefined,
+      });
       setWaSaveMsg('Saved!');
       setWaToken('');
       const r = await api.get('/whatsapp/status');
@@ -905,9 +911,16 @@ export default function NotificationsPage() {
                     className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
                   <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@g.us'}</span></p>
                 </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs text-vs-text-3 block mb-1">Channel ID</label>
+                  <input type="text" value={waChannelId} onChange={(e) => setWaChannelId(e.target.value)}
+                    placeholder="120363xxxxxxxxxx@newsletter"
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
+                  <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@newsletter'}</span></p>
+                </div>
               </div>
               <div className="flex items-center gap-3">
-                <button type="submit" disabled={waSaving || (!waToken.trim() && !waGroupId.trim())}
+                <button type="submit" disabled={waSaving || (!waToken.trim() && !waGroupId.trim() && !waChannelId.trim())}
                   className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                   {waSaving ? 'Saving…' : 'Save'}
                 </button>
