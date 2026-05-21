@@ -191,12 +191,12 @@ router.post('/test-settled', auth, async (req, res) => {
       try {
         user = await mongoDb.collection('users').findOne(
           { _id: new ObjectId(userId) },
-          { projection: { phone: 1, username: 1, displayName: 1, name: 1 } },
+          { projection: { mobile: 1, username: 1, displayName: 1, name: 1 } },
         );
       } catch { /* ignore */ }
 
       const username  = user?.username || user?.displayName || user?.name || userId.slice(-6);
-      const phone     = user?.phone || null;
+      const phone     = user?.mobile || null;
 
       if (!phone) {
         results.push({ username, phone: null, ok: false, reason: 'no_phone' });

@@ -527,7 +527,7 @@ async function pollNewUsers(db) {
   const next  = new Date();
 
   const newUsers = await db.collection('users')
-    .find({ createdAt: { $gt: since }, phone: { $exists: true, $nin: ['', null] } })
+    .find({ createdAt: { $gt: since }, mobile: { $exists: true, $nin: ['', null] } })
     .sort({ createdAt: 1 })
     .limit(50)
     .toArray();
@@ -547,7 +547,7 @@ async function pollNewUsers(db) {
       channel_link: channelLink || '(channel link not set)',
     });
 
-    const result = await sendDM(userId, user.phone, username, rendered, 'user_registered');
+    const result = await sendDM(userId, user.mobile, username, rendered, 'user_registered');
     if (result.ok) {
       console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
     } else {
@@ -970,16 +970,16 @@ async function pollSettledBets(db) {
       try {
         user = await db.collection('users').findOne(
           { _id: toOid(userId) },
-          { projection: { phone: 1, username: 1, displayName: 1, name: 1 } },
+          { projection: { mobile: 1, username: 1, displayName: 1, name: 1 } },
         );
       } catch { /* ignore */ }
 
       // No phone — mark done, don't retry
-      if (!user?.phone) { markNotified(betId, perKey); continue; }
+      if (!user?.mobile) { markNotified(betId, perKey); continue; }
 
       const recipient = user.username || user.displayName || user.name || userId.slice(-6);
       const vars = { ...baseVars, recipient, your_result: userId === winnerId ? 'Won 🏆' : 'Lost' };
-      const result = await sendDirectMessage(user.phone, renderTemplate(template, vars), 'game_bet_settled');
+      const result = await sendDirectMessage(user.mobile, renderTemplate(template, vars), 'game_bet_settled');
 
       if (result.ok) {
         markNotified(betId, perKey);
