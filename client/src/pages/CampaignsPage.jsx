@@ -285,67 +285,64 @@ export default function CampaignsPage() {
             {genError && <p className="text-xs text-vs-danger mt-3">{genError}</p>}
           </div>
 
-          {/* Step 4 – Edit & Send */}
-          {(content || generating) && (
-            <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">4. Edit & Send</p>
-                {content && <span className="text-xs text-vs-text-3">{content.length} chars</span>}
+          {/* Step 4 – Edit & Send (always visible) */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">4. Edit & Send</p>
+              {content && <span className="text-xs text-vs-text-3">{content.length} chars</span>}
+            </div>
+
+            {generating ? (
+              <div className="h-40 bg-vs-elevated rounded-lg animate-pulse" />
+            ) : (
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={10}
+                placeholder="Your generated campaign message will appear here. You can also type directly."
+                className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
+              />
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={chTelegram} onChange={(e) => setChTelegram(e.target.checked)}
+                    className="w-4 h-4 accent-purple-500" />
+                  <span className="text-sm text-vs-text">Telegram</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={chWhatsApp} onChange={(e) => setChWhatsApp(e.target.checked)}
+                    className="w-4 h-4 accent-purple-500" />
+                  <span className="text-sm text-vs-text">WhatsApp Channel / Group</span>
+                </label>
               </div>
 
-              {generating ? (
-                <div className="h-40 bg-vs-elevated rounded-lg animate-pulse" />
-              ) : (
-                <textarea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  rows={10}
-                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
-                />
-              )}
+              <button onClick={handleSend}
+                disabled={sending || generating || !content.trim() || (!chTelegram && !chWhatsApp)}
+                className="px-5 py-2 bg-vs-success hover:bg-vs-success/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
+                {sending ? 'Sending…' : '📣 Send to Channels'}
+              </button>
 
-              {!generating && (
-                <div className="mt-4 flex flex-wrap items-center gap-4">
-                  <div className="flex gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={chTelegram} onChange={(e) => setChTelegram(e.target.checked)}
-                        className="w-4 h-4 accent-purple-500" />
-                      <span className="text-sm text-vs-text">Telegram</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={chWhatsApp} onChange={(e) => setChWhatsApp(e.target.checked)}
-                        className="w-4 h-4 accent-purple-500" />
-                      <span className="text-sm text-vs-text">WhatsApp</span>
-                    </label>
-                  </div>
-
-                  <button onClick={handleSend}
-                    disabled={sending || !content.trim() || (!chTelegram && !chWhatsApp)}
-                    className="px-5 py-2 bg-vs-success hover:bg-vs-success/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
-                    {sending ? 'Sending…' : '📣 Send to Channels'}
-                  </button>
-
-                  {sendResults && (
-                    <div className="flex items-center gap-3 text-xs">
-                      {sendResults._error && (
-                        <span className="text-vs-danger">{sendResults._error}</span>
-                      )}
-                      {sendResults.telegram && (
-                        <span className={sendResults.telegram.ok ? 'text-vs-success' : 'text-vs-danger'}>
-                          Telegram: {sendResults.telegram.ok ? '✓ Sent' : (sendResults.telegram.reason || 'Failed')}
-                        </span>
-                      )}
-                      {sendResults.whatsapp && (
-                        <span className={sendResults.whatsapp.ok ? 'text-vs-success' : 'text-vs-danger'}>
-                          WhatsApp: {sendResults.whatsapp.ok ? '✓ Sent' : (sendResults.whatsapp.reason || 'Failed')}
-                        </span>
-                      )}
-                    </div>
+              {sendResults && (
+                <div className="flex items-center gap-3 text-xs">
+                  {sendResults._error && (
+                    <span className="text-vs-danger">{sendResults._error}</span>
+                  )}
+                  {sendResults.telegram && (
+                    <span className={sendResults.telegram.ok ? 'text-vs-success' : 'text-vs-danger'}>
+                      Telegram: {sendResults.telegram.ok ? '✓ Sent' : (sendResults.telegram.reason || 'Failed')}
+                    </span>
+                  )}
+                  {sendResults.whatsapp && (
+                    <span className={sendResults.whatsapp.ok ? 'text-vs-success' : 'text-vs-danger'}>
+                      WhatsApp: {sendResults.whatsapp.ok ? '✓ Sent' : (sendResults.whatsapp.reason || 'Failed')}
+                    </span>
                   )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
       )}
 

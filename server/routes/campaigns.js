@@ -69,45 +69,78 @@ router.post('/generate', auth, async (req, res) => {
     'Write an engaging campaign message.',
   ].filter(Boolean).join('\n\n');
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+
   try {
     let content;
 
     if (provider === 'claude') {
       const apiKey = get('campaign_claude_key') || process.env.ANTHROPIC_API_KEY || '';
       if (!apiKey) return res.status(400).json({ error: 'Claude API key not configured' });
-      const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic.default({ apiKey });
-      const msg = await client.messages.create({
-        model: 'claude-opus-4-7',
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessage }],
+
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      'claude-opus-4-7',
+          max_tokens: 1024,
+          system:     SYSTEM_PROMPT,
+          messages:   [{ role: 'user', content: userMessage }],
+        }),
       });
-      content = msg.content[0]?.text || '';
+      const json = await r.json();
+      if (!r.ok) return res.status(r.status).json({ error: json.error?.message || 'Claude API error' });
+      content = json.content?.[0]?.text || '';
 
     } else if (provider === 'openai') {
       const apiKey = get('campaign_openai_key') || process.env.OPENAI_API_KEY || '';
       if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured' });
-      const OpenAI = require('openai');
-      const client = new OpenAI.default({ apiKey });
-      const completion = await client.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user',   content: userMessage },
-        ],
-        max_tokens: 1024,
+
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify({
+          model:      'gpt-4o',
+          max_tokens: 1024,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user',   content: userMessage },
+          ],
+        }),
       });
-      content = completion.choices[0]?.message?.content || '';
+      const json = await r.json();
+      if (!r.ok) return res.status(r.status).json({ error: json.error?.message || 'OpenAI API error' });
+      content = json.choices?.[0]?.message?.content || '';
 
     } else if (provider === 'gemini') {
       const apiKey = get('campaign_gemini_key') || process.env.GEMINI_API_KEY || '';
       if (!apiKey) return res.status(400).json({ error: 'Gemini API key not configured' });
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
-      const result = await model.generateContent(`${SYSTEM_PROMPT}\n\n${userMessage}`);
-      content = result.response.text();
+
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ parts: [{ text: userMessage }] }],
+          }),
+        },
+      );
+      const json = await r.json();
+      if (!r.ok) return res.status(r.status).json({ error: json.error?.message || 'Gemini API error' });
+      content = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     } else {
       return res.status(400).json({ error: `Unknown provider: ${provider}` });
@@ -115,8 +148,11 @@ router.post('/generate', auth, async (req, res) => {
 
     res.json({ ok: true, content });
   } catch (err) {
-    console.error('[campaigns] generate error:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    console.error('[campaigns] generate error:', reason);
+    res.status(500).json({ ok: false, error: reason });
+  } finally {
+    clearTimeout(timer);
   }
 });
 
