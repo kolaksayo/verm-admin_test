@@ -75,13 +75,16 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
 function normalizePhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
   if (!digits) return digits;
-  try {
-    const sqlite = getSQLite();
-    const cc = sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get('whatsapp_country_code')?.value || '';
-    if (cc && digits.startsWith('0')) {
-      return cc.replace(/\D/g, '') + digits.slice(1);
+  if (digits.startsWith('0')) {
+    try {
+      const sqlite = getSQLite();
+      const cc = sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get('whatsapp_country_code')?.value || '';
+      const code = cc.replace(/\D/g, '') || '234';
+      return code + digits.slice(1);
+    } catch {
+      return '234' + digits.slice(1);
     }
-  } catch { /* use digits as-is */ }
+  }
   return digits;
 }
 
@@ -142,8 +145,9 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
-    logUserDm(userId, phone, username, trigger, false, err.message);
-    return { ok: false, reason: err.message };
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logUserDm(userId, phone, username, trigger, false, reason);
+    return { ok: false, reason };
   }
 }
 
@@ -175,11 +179,12 @@ async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = fal
     }
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
-    logSend(trigger, text, false, err.message);
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logSend(trigger, text, false, reason);
     if (!_isRetry) {
       setTimeout(() => sendDirectMessage(phone, text, trigger, true).catch(() => {}), 5 * 60 * 1000);
     }
-    return { ok: false, reason: err.message };
+    return { ok: false, reason };
   }
 }
 
