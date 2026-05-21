@@ -15,10 +15,13 @@ router.get('/config', auth, (req, res) => {
     const db  = getSQLite();
     const get = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? null;
     res.json({
-      provider:      get('campaign_ai_provider') || 'claude',
+      provider:      get('campaign_ai_provider')    || 'claude',
       claudeKeySet:  !!(get('campaign_claude_key')),
       openaiKeySet:  !!(get('campaign_openai_key')),
       geminiKeySet:  !!(get('campaign_gemini_key')),
+      claudeModel:   get('campaign_claude_model')   || 'claude-sonnet-4-6',
+      openaiModel:   get('campaign_openai_model')   || 'gpt-4o',
+      geminiModel:   get('campaign_gemini_model')   || 'gemini-2.0-flash',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -34,11 +37,14 @@ router.post('/config', auth, (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(k, String(v));
 
-    const { provider, claudeKey, openaiKey, geminiKey } = req.body;
-    if (provider)   set('campaign_ai_provider',  provider);
-    if (claudeKey)  set('campaign_claude_key',   claudeKey);
-    if (openaiKey)  set('campaign_openai_key',   openaiKey);
-    if (geminiKey)  set('campaign_gemini_key',   geminiKey);
+    const { provider, claudeKey, openaiKey, geminiKey, claudeModel, openaiModel, geminiModel } = req.body;
+    if (provider)     set('campaign_ai_provider',  provider);
+    if (claudeKey)    set('campaign_claude_key',   claudeKey);
+    if (openaiKey)    set('campaign_openai_key',   openaiKey);
+    if (geminiKey)    set('campaign_gemini_key',   geminiKey);
+    if (claudeModel)  set('campaign_claude_model', claudeModel);
+    if (openaiModel)  set('campaign_openai_model', openaiModel);
+    if (geminiModel)  set('campaign_gemini_model', geminiModel);
 
     res.json({ ok: true });
   } catch (err) {
@@ -54,6 +60,9 @@ router.post('/generate', auth, async (req, res) => {
   const db       = getSQLite();
   const get      = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? '';
   const provider = reqProvider || get('campaign_ai_provider') || 'claude';
+  const claudeModel = get('campaign_claude_model') || 'claude-sonnet-4-6';
+  const openaiModel = get('campaign_openai_model') || 'gpt-4o';
+  const geminiModel = get('campaign_gemini_model') || 'gemini-2.0-flash';
 
   const fixtureLines = fixtures.map((f) => {
     const dateStr = f.date ? new Date(f.date).toLocaleString('en-GB', {
@@ -88,7 +97,7 @@ router.post('/generate', auth, async (req, res) => {
           'content-type':      'application/json',
         },
         body: JSON.stringify({
-          model:      'claude-opus-4-7',
+          model:      claudeModel,
           max_tokens: 1024,
           system:     SYSTEM_PROMPT,
           messages:   [{ role: 'user', content: userMessage }],
@@ -110,7 +119,7 @@ router.post('/generate', auth, async (req, res) => {
           'Content-Type':  'application/json',
         },
         body: JSON.stringify({
-          model:      'gpt-4o',
+          model:      openaiModel,
           max_tokens: 1024,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -127,7 +136,7 @@ router.post('/generate', auth, async (req, res) => {
       if (!apiKey) return res.status(400).json({ error: 'Gemini API key not configured' });
 
       const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           signal: controller.signal,

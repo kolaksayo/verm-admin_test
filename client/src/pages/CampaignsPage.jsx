@@ -9,6 +9,28 @@ const PROVIDERS = [
   { id: 'gemini',  label: 'Gemini',   color: 'text-blue-400'   },
 ];
 
+const MODELS = {
+  claude: [
+    { id: 'claude-opus-4-7',          label: 'Claude Opus 4' },
+    { id: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4 (recommended)' },
+    { id: 'claude-haiku-4-5-20251001',label: 'Claude Haiku 4' },
+  ],
+  openai: [
+    { id: 'gpt-4o',        label: 'GPT-4o (recommended)' },
+    { id: 'gpt-4o-mini',   label: 'GPT-4o mini' },
+    { id: 'gpt-4-turbo',   label: 'GPT-4 Turbo' },
+    { id: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  ],
+  gemini: [
+    { id: 'gemini-2.0-flash',              label: 'Gemini 2.0 Flash (recommended)' },
+    { id: 'gemini-2.0-flash-lite',         label: 'Gemini 2.0 Flash Lite' },
+    { id: 'gemini-2.5-flash-preview-04-17',label: 'Gemini 2.5 Flash Preview' },
+    { id: 'gemini-2.5-pro-preview-05-06',  label: 'Gemini 2.5 Pro Preview' },
+    { id: 'gemini-1.5-flash',              label: 'Gemini 1.5 Flash' },
+    { id: 'gemini-1.5-pro',                label: 'Gemini 1.5 Pro' },
+  ],
+};
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -50,19 +72,25 @@ export default function CampaignsPage() {
   const [sendResults, setSendResults] = useState(null);
 
   // ── Settings state ────────────────────────────────────────────────────────
-  const [cfgProvider, setCfgProvider] = useState('claude');
-  const [claudeKey, setClaudeKey]     = useState('');
-  const [openaiKey, setOpenaiKey]     = useState('');
-  const [geminiKey, setGeminiKey]     = useState('');
-  const [keyStatus, setKeyStatus]     = useState({ claudeKeySet: false, openaiKeySet: false, geminiKeySet: false });
-  const [savingCfg, setSavingCfg]     = useState(false);
-  const [cfgMsg, setCfgMsg]           = useState('');
+  const [cfgProvider, setCfgProvider]     = useState('claude');
+  const [claudeKey, setClaudeKey]         = useState('');
+  const [openaiKey, setOpenaiKey]         = useState('');
+  const [geminiKey, setGeminiKey]         = useState('');
+  const [claudeModel, setClaudeModel]     = useState('claude-sonnet-4-6');
+  const [openaiModel, setOpenaiModel]     = useState('gpt-4o');
+  const [geminiModel, setGeminiModel]     = useState('gemini-2.0-flash');
+  const [keyStatus, setKeyStatus]         = useState({ claudeKeySet: false, openaiKeySet: false, geminiKeySet: false });
+  const [savingCfg, setSavingCfg]         = useState(false);
+  const [cfgMsg, setCfgMsg]               = useState('');
 
   // ── Load config ───────────────────────────────────────────────────────────
   const loadConfig = useCallback(() => {
     api.get('/campaigns/config').then((r) => {
       setCfgProvider(r.data.provider || 'claude');
       setProvider(r.data.provider || 'claude');
+      if (r.data.claudeModel) setClaudeModel(r.data.claudeModel);
+      if (r.data.openaiModel) setOpenaiModel(r.data.openaiModel);
+      if (r.data.geminiModel) setGeminiModel(r.data.geminiModel);
       setKeyStatus({
         claudeKeySet: !!r.data.claudeKeySet,
         openaiKeySet: !!r.data.openaiKeySet,
@@ -148,6 +176,9 @@ export default function CampaignsPage() {
     try {
       await api.post('/campaigns/config', {
         provider: cfgProvider,
+        claudeModel,
+        openaiModel,
+        geminiModel,
         ...(claudeKey ? { claudeKey } : {}),
         ...(openaiKey ? { openaiKey } : {}),
         ...(geminiKey ? { geminiKey } : {}),
@@ -371,20 +402,30 @@ export default function CampaignsPage() {
               </div>
 
               {[
-                { id: 'claude',  label: 'Claude (Anthropic) API Key', value: claudeKey, set: keyStatus.claudeKeySet, onChange: setClaudeKey, placeholder: 'sk-ant-…' },
-                { id: 'openai',  label: 'OpenAI API Key',             value: openaiKey, set: keyStatus.openaiKeySet, onChange: setOpenaiKey, placeholder: 'sk-proj-…' },
-                { id: 'gemini',  label: 'Gemini (Google) API Key',    value: geminiKey, set: keyStatus.geminiKeySet, onChange: setGeminiKey, placeholder: 'AIza…' },
+                { id: 'claude', label: 'Claude (Anthropic)', keyVal: claudeKey, set: keyStatus.claudeKeySet, onKey: setClaudeKey, placeholder: 'sk-ant-…',  modelVal: claudeModel, onModel: setClaudeModel },
+                { id: 'openai', label: 'OpenAI',             keyVal: openaiKey, set: keyStatus.openaiKeySet, onKey: setOpenaiKey, placeholder: 'sk-proj-…', modelVal: openaiModel, onModel: setOpenaiModel },
+                { id: 'gemini', label: 'Gemini (Google)',     keyVal: geminiKey, set: keyStatus.geminiKeySet, onKey: setGeminiKey, placeholder: 'AIza…',     modelVal: geminiModel, onModel: setGeminiModel },
               ].map((field) => (
-                <div key={field.id}>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs text-vs-text-3">{field.label}</label>
-                    {field.set && (
-                      <span className="text-xs text-vs-success">● Set</span>
-                    )}
+                <div key={field.id} className="space-y-2 pb-4 border-b border-vs-border last:border-0 last:pb-0">
+                  <p className="text-xs font-semibold text-vs-text-2">{field.label}</p>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs text-vs-text-3">API Key</label>
+                      {field.set && <span className="text-xs text-vs-success">● Set</span>}
+                    </div>
+                    <input type="password" value={field.keyVal} onChange={(e) => field.onKey(e.target.value)}
+                      placeholder={field.set ? 'Already set — paste new to update' : field.placeholder}
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                   </div>
-                  <input type="password" value={field.value} onChange={(e) => field.onChange(e.target.value)}
-                    placeholder={field.set ? 'Already set — paste new to update' : field.placeholder}
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                  <div>
+                    <label className="text-xs text-vs-text-3 block mb-1">Model</label>
+                    <select value={field.modelVal} onChange={(e) => field.onModel(e.target.value)}
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple">
+                      {MODELS[field.id].map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               ))}
 
