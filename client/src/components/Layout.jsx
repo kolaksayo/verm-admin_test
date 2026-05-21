@@ -57,6 +57,7 @@ const NAV_GROUPS = [
       { name: 'currencytypes', label: 'Currency Types' },
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
       { label: 'Notifications', path: '/notifications' },
+      { label: 'Campaigns', path: '/campaigns' },
     ],
   },
 ];

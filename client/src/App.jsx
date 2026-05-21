@@ -14,6 +14,7 @@ import DollarNairaRate from './pages/DollarNairaRate';
 import Transactions from './pages/Transactions';
 import FootballData from './pages/FootballData';
 import NotificationsPage from './pages/NotificationsPage';
+import CampaignsPage from './pages/CampaignsPage';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="football-data" element={<FootballData />} />
         <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="telegram" element={<Navigate to="/notifications" replace />} />
         <Route path="social-data" element={<SocialData />} />
         <Route path="system-logs" element={<SystemLogs />} />
