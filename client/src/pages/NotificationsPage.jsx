@@ -361,6 +361,7 @@ export default function NotificationsPage() {
   const [togglingDm, setTogglingDm]           = useState(false);
   const [dmGroupLink, setDmGroupLink]         = useState('');
   const [dmChannelLink, setDmChannelLink]     = useState('');
+  const [dmCountryCode, setDmCountryCode]     = useState('');
   const [dmSavingConfig, setDmSavingConfig]   = useState(false);
   const [dmConfigMsg, setDmConfigMsg]         = useState('');
   const [dmTemplate, setDmTemplate]           = useState(DEFAULT_DM_TEMPLATE);
@@ -435,6 +436,7 @@ export default function NotificationsPage() {
       setDmEnabled(!!r.data.enabled);
       setDmGroupLink(r.data.groupLink || '');
       setDmChannelLink(r.data.channelLink || '');
+      setDmCountryCode(r.data.countryCode || '');
       setDmTemplate(r.data.welcomeTemplate || DEFAULT_DM_TEMPLATE);
     }).catch(() => {});
   }, []);
@@ -613,7 +615,7 @@ export default function NotificationsPage() {
     e.preventDefault();
     setDmSavingConfig(true); setDmConfigMsg('');
     try {
-      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink });
+      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, countryCode: dmCountryCode });
       setDmConfigMsg('Saved!');
     } catch (err) {
       setDmConfigMsg(err.response?.data?.error || 'Failed');
@@ -1038,6 +1040,13 @@ export default function NotificationsPage() {
                   <input type="url" value={dmChannelLink} onChange={(e) => setDmChannelLink(e.target.value)}
                     placeholder="https://whatsapp.com/channel/..."
                     className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                </div>
+                <div className="w-40 flex-shrink-0">
+                  <label className="text-xs text-vs-text-3 block mb-1">Country Code</label>
+                  <input type="text" value={dmCountryCode} onChange={(e) => setDmCountryCode(e.target.value)}
+                    placeholder="234"
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                  <p className="text-xs text-vs-text-3 mt-1">e.g. 234 for Nigeria</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

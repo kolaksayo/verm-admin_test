@@ -26,6 +26,7 @@ router.get('/config', auth, (req, res) => {
       welcomeTemplate: get('whatsapp_welcome_template') || DEFAULT_WELCOME_TEMPLATE,
       groupLink:       get('whatsapp_group_link')  || '',
       channelLink:     get('whatsapp_channel_link') || '',
+      countryCode:     get('whatsapp_country_code') || '',
       macros:          DM_MACROS,
       defaultTemplate: DEFAULT_WELCOME_TEMPLATE,
     });
@@ -43,11 +44,12 @@ router.post('/config', auth, (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(k, String(v));
 
-    const { enabled, welcomeTemplate, groupLink, channelLink } = req.body;
+    const { enabled, welcomeTemplate, groupLink, channelLink, countryCode } = req.body;
     if (enabled != null)         set('whatsapp_dm_enabled',       enabled ? '1' : '0');
     if (welcomeTemplate != null) set('whatsapp_welcome_template', welcomeTemplate);
     if (groupLink != null)       set('whatsapp_group_link',       groupLink);
     if (channelLink != null)     set('whatsapp_channel_link',     channelLink);
+    if (countryCode != null)     set('whatsapp_country_code',     countryCode);
 
     res.json({ ok: true });
   } catch (err) {

@@ -1,6 +1,7 @@
 const { getDb: getSQLite } = require('./sqlite');
 
 const WHAPI_URL = 'https://gate.whapi.cloud/messages/text';
+const FETCH_TIMEOUT_MS = 15000;
 
 function getConfig() {
   try {
@@ -44,7 +45,7 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
   }
 
   try {
-    const res  = await fetch(WHAPI_URL, {
+    const res  = await fetchWithTimeout(WHAPI_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
@@ -69,6 +70,25 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
     }
     return { ok: false, reason: err.message };
   }
+}
+
+function normalizePhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return digits;
+  try {
+    const sqlite = getSQLite();
+    const cc = sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get('whatsapp_country_code')?.value || '';
+    if (cc && digits.startsWith('0')) {
+      return cc.replace(/\D/g, '') + digits.slice(1);
+    }
+  } catch { /* use digits as-is */ }
+  return digits;
+}
+
+function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 function isConfigured() {
@@ -99,7 +119,7 @@ function logUserDm(userId, phone, username, trigger, ok, error = null) {
 
 async function sendDM(userId, phone, username, text, trigger = 'user_registered') {
   const { token } = getConfig();
-  const digits = phone.replace(/\D/g, '');
+  const digits = normalizePhone(phone);
   if (!token || !digits) {
     logUserDm(userId, phone, username, trigger, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
@@ -107,7 +127,7 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
   const plain = stripHtml(text);
   const to = `${digits}@s.whatsapp.net`;
   try {
-    const res = await fetch(WHAPI_URL, {
+    const res = await fetchWithTimeout(WHAPI_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
@@ -129,7 +149,7 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
 
 async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = false) {
   const { token } = getConfig();
-  const digits = phone.replace(/\D/g, '');
+  const digits = normalizePhone(phone);
   if (!token || !digits) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
@@ -137,7 +157,7 @@ async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = fal
   const plain = stripHtml(text);
   const to = `${digits}@s.whatsapp.net`;
   try {
-    const res  = await fetch(WHAPI_URL, {
+    const res  = await fetchWithTimeout(WHAPI_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
@@ -163,4 +183,4 @@ async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = fal
   }
 }
 
-module.exports = { sendMessage, sendDM, sendDirectMessage, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE };
+module.exports = { sendMessage, sendDM, sendDirectMessage, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE, normalizePhone };
