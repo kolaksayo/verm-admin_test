@@ -2,7 +2,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, DEFAULT_WELCOME_TEMPLATE } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, DEFAULT_WELCOME_TEMPLATE } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -149,17 +149,17 @@ Current Pot: {{current_pot}} | Potential: {{potential_pot}} ({{max_players}} slo
 Mode: {{mode}} | Code: {{code}}
 Creator: {{creator}}`,
 
-  game_bet_settled: `🏆 Challenge Settled!
+  game_bet_settled: `🏆 Challenge Settled, {{recipient}}!
 
 ⚽ {{home_team}} vs {{away_team}}
 🏆 {{league}}
 
+Your result: {{your_result}}
 🥇 Winner: {{winner}}
-💰 Earnings: {{earnings}}
+💰 Winner's earnings: {{earnings}}
 
 Stake: {{stake}}/player | Players: {{players_joined}}/{{max_players}}
-Pot: {{current_pot}} (potential was {{potential_pot}})
-Mode: {{mode}} | Code: {{code}}`,
+Net Pot: {{current_pot}} | Code: {{code}}`,
 
   rankings_weekly: `📊 Weekly Rankings
 
@@ -243,6 +243,8 @@ const RANKINGS_MACROS = [
 ];
 
 const SETTLED_MACROS = [
+  { key: '{{recipient}}',      desc: 'Recipient username (the player receiving this DM)' },
+  { key: '{{your_result}}',    desc: 'Result for this recipient — "Won 🏆" or "Lost"' },
   { key: '{{home_team}}',      desc: 'Home team name' },
   { key: '{{away_team}}',      desc: 'Away team name' },
   { key: '{{league}}',         desc: 'League name' },
@@ -865,6 +867,77 @@ async function pollSingleCountdowns(db) {
   }
 }
 
+function getParticipantUserIds(bet) {
+  if (Array.isArray(bet.participants) && bet.participants.length > 0) {
+    return bet.participants
+      .map((p) => p.user || p.userId || p._id)
+      .filter(Boolean)
+      .map(String);
+  }
+  const ids = [];
+  if (bet.createdBy)  ids.push(String(bet.createdBy));
+  if (bet.acceptedBy) ids.push(String(bet.acceptedBy));
+  return ids;
+}
+
+async function buildSettledBaseVars(db, bet) {
+  const multi        = isMultiplayer(bet);
+  const stakeAmt     = Number(bet.amount) || 0;
+  const feeDeducted  = Number(bet.totalFeesDeducted) || 0;
+  const playersJoined = multi
+    ? (bet.participants?.length || 0)
+    : (bet.participants?.length > 0 && bet.acceptedBy ? 2 : bet.participants?.length || 1);
+
+  const grossPot    = stakeAmt * playersJoined;
+  const netPot      = grossPot - feeDeducted;
+  const winnerPct   = (bet.winnerSplit?.[0] ?? 100) / 100;
+  const earnings    = netPot * winnerPct;
+
+  let winnerId = null;
+  if (!multi && bet.winnerId) {
+    winnerId = bet.winnerId;
+  } else if (multi && bet.participants?.length > 0) {
+    const sorted = [...bet.participants].sort((a, b) => (b.currentScore ?? 0) - (a.currentScore ?? 0));
+    winnerId = sorted[0]?.user;
+  }
+
+  const fixture = await resolveFixture(db, bet);
+
+  let winnerName = null;
+  try {
+    const wUser = await db.collection('users').findOne(
+      { _id: toOid(winnerId) },
+      { projection: { username: 1, displayName: 1, name: 1 } },
+    );
+    winnerName = wUser ? (wUser.username || wUser.displayName || wUser.name) : null;
+  } catch { /* ignore */ }
+
+  const maxPlayers  = Number(bet.capacity || bet.maxParticipants) || 0;
+  const currentPot  = netPot;
+  const potentialPot = stakeAmt * maxPlayers;
+  const betCode     = bet.bookingCode || bet._id.toString();
+
+  return {
+    baseVars: {
+      home_team:      fixture.homeTeam || '—',
+      away_team:      fixture.awayTeam || '—',
+      league:         fixture.league   || '—',
+      winner:         winnerName || String(winnerId || '').slice(-6),
+      earnings:       `$${earnings.toFixed(2)}`,
+      stake:          `$${stakeAmt.toFixed(2)}`,
+      current_pot:    `$${currentPot.toFixed(2)}`,
+      potential_pot:  `$${potentialPot.toFixed(2)}`,
+      total_pot:      `$${currentPot.toFixed(2)}`,
+      players_joined: playersJoined,
+      max_players:    maxPlayers || '—',
+      code:           betCode,
+      mode:           formatMode(bet),
+    },
+    winnerId: winnerId ? String(winnerId) : null,
+    betCode,
+  };
+}
+
 async function pollSettledBets(db) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const bets = await db.collection('game_bet')
@@ -882,71 +955,42 @@ async function pollSettledBets(db) {
     const template = getTemplate('game_bet_settled');
     if (!template) { markNotified(betId, 'settled'); continue; }
 
-    const multi      = isMultiplayer(bet);
-    const stakeAmt   = Number(bet.amount) || 0;
-    const feeDeducted = Number(bet.totalFeesDeducted) || 0;
-
-    // Player count: multiplayer uses participants array; single always has 2 (creator + acceptedBy)
-    const playersJoined = multi
-      ? (bet.participants?.length || 0)
-      : (bet.participants?.length > 0 && bet.acceptedBy ? 2 : bet.participants?.length || 1);
-
-    const grossPot     = stakeAmt * playersJoined;
-    const netPot       = grossPot - feeDeducted;
-    const winnerPct    = (bet.winnerSplit?.[0] ?? 100) / 100;
-    const earnings     = netPot * winnerPct;
-
-    // Determine winner:
-    // SINGLE → bet.winnerId is the explicit winner field
-    // MULTIPLAYER → no winnerId; find participant with highest currentScore
-    let winnerId = null;
-    if (!multi && bet.winnerId) {
-      winnerId = bet.winnerId;
-    } else if (multi && bet.participants?.length > 0) {
-      const sorted = [...bet.participants].sort((a, b) => (b.currentScore ?? 0) - (a.currentScore ?? 0));
-      winnerId = sorted[0]?.user;
-    }
-
+    const { baseVars, winnerId, betCode } = await buildSettledBaseVars(db, bet);
     if (!winnerId) { markNotified(betId, 'settled'); continue; }
 
-    const [fixture] = await Promise.all([resolveFixture(db, bet)]);
+    const participantIds = getParticipantUserIds(bet);
+    if (participantIds.length === 0) { markNotified(betId, 'settled'); continue; }
 
-    let winnerName = null;
-    try {
-      const wUser = await db.collection('users').findOne(
-        { _id: toOid(winnerId) },
-        { projection: { username: 1, displayName: 1, name: 1 } },
-      );
-      winnerName = wUser ? (wUser.username || wUser.displayName || wUser.name) : null;
-    } catch { /* ignore */ }
+    let allDone = true;
+    for (const userId of participantIds) {
+      const perKey = 'sdm_' + userId.slice(-10);
+      if (hasNotified(betId, perKey)) continue;
 
-    const maxPlayers   = Number(bet.capacity || bet.maxParticipants) || 0;
-    // current_pot: net (fees deducted) — this is the real money being split
-    const currentPot   = netPot;
-    // potential_pot: gross at full capacity — no fees since hypothetical
-    const potentialPot = stakeAmt * maxPlayers;
+      let user = null;
+      try {
+        user = await db.collection('users').findOne(
+          { _id: toOid(userId) },
+          { projection: { phone: 1, username: 1, displayName: 1, name: 1 } },
+        );
+      } catch { /* ignore */ }
 
-    const vars = {
-      home_team:      fixture.homeTeam || '—',
-      away_team:      fixture.awayTeam || '—',
-      league:         fixture.league   || '—',
-      winner:         winnerName || String(winnerId).slice(-6),
-      earnings:       `$${earnings.toFixed(2)}`,
-      stake:          `$${stakeAmt.toFixed(2)}`,
-      current_pot:    `$${currentPot.toFixed(2)}`,
-      potential_pot:  `$${potentialPot.toFixed(2)}`,
-      total_pot:      `$${currentPot.toFixed(2)}`, // backward-compat alias
-      players_joined: playersJoined,
-      max_players:    maxPlayers || '—',
-      code:           bet.bookingCode || betId,
-      mode:           formatMode(bet),
-    };
+      // No phone — mark done, don't retry
+      if (!user?.phone) { markNotified(betId, perKey); continue; }
 
-    const result = await notifyAll(renderTemplate(template, vars), 'game_bet_settled');
-    if (result.ok) {
-      markNotified(betId, 'settled');
-      console.log(`[GameBetWatcher] Settled notified: ${vars.code}`);
+      const recipient = user.username || user.displayName || user.name || userId.slice(-6);
+      const vars = { ...baseVars, recipient, your_result: userId === winnerId ? 'Won 🏆' : 'Lost' };
+      const result = await sendDirectMessage(user.phone, renderTemplate(template, vars), 'game_bet_settled');
+
+      if (result.ok) {
+        markNotified(betId, perKey);
+        console.log(`[GameBetWatcher] Settled DM → ${recipient} (${betCode})`);
+      } else {
+        allDone = false;
+        console.error(`[GameBetWatcher] Settled DM failed → ${recipient}:`, result.reason);
+      }
     }
+
+    if (allDone) markNotified(betId, 'settled');
   }
 }
 
@@ -1194,6 +1238,8 @@ module.exports = {
   pollNewUsers,
   getWelcomeConfig,
   hasUserDmSent,
+  buildSettledBaseVars,
+  getParticipantUserIds,
   // backward compat
   DEFAULT_TEMPLATE,
   GAME_BET_MACROS,
