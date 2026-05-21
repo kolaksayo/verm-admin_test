@@ -127,4 +127,40 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
   }
 }
 
-module.exports = { sendMessage, sendDM, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE };
+async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = false) {
+  const { token } = getConfig();
+  const digits = phone.replace(/\D/g, '');
+  if (!token || !digits) {
+    logSend(trigger, text, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+  const plain = stripHtml(text);
+  const to = `${digits}@s.whatsapp.net`;
+  try {
+    const res  = await fetch(WHAPI_URL, {
+      method:  'POST',
+      headers: {
+        'Accept':        'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ to, body: plain }),
+    });
+    const json = await res.json();
+    const ok   = res.ok && !json.error;
+    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    logSend(trigger, text, ok, errMsg);
+    if (!ok && !_isRetry) {
+      setTimeout(() => sendDirectMessage(phone, text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    logSend(trigger, text, false, err.message);
+    if (!_isRetry) {
+      setTimeout(() => sendDirectMessage(phone, text, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return { ok: false, reason: err.message };
+  }
+}
+
+module.exports = { sendMessage, sendDM, sendDirectMessage, isConfigured, getConfig, stripHtml, DEFAULT_WELCOME_TEMPLATE };

@@ -1,8 +1,9 @@
 const express = require('express');
-const { getConfig, sendDM, stripHtml, DEFAULT_WELCOME_TEMPLATE } = require('../whatsapp');
+const { getConfig, sendDM, sendDirectMessage, stripHtml, DEFAULT_WELCOME_TEMPLATE } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
-const { renderTemplate, hasUserDmSent } = require('../gameBetWatcher');
+const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
+const { ObjectId } = require('mongodb');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
@@ -143,6 +144,76 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });
+  }
+});
+
+// ── Test settled DM by booking code ───────────────────────────────────────────
+
+router.post('/test-settled', auth, async (req, res) => {
+  const { bookingCode } = req.body;
+  if (!bookingCode) return res.status(400).json({ error: 'bookingCode required' });
+
+  const { token } = getConfig();
+  if (!token) return res.status(400).json({ error: 'WhatsApp not configured' });
+
+  try {
+    const mongoDb = getDb();
+    const sqlDb   = getSQLite();
+    const get     = (k) => sqlDb.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+
+    // Find bet by booking code (case-insensitive)
+    const bet = await mongoDb.collection('game_bet').findOne({
+      $or: [
+        { bookingCode: bookingCode },
+        { bookingCode: bookingCode.toUpperCase() },
+        { title: bookingCode },
+      ],
+    });
+    if (!bet) return res.status(404).json({ error: `No bet found with booking code "${bookingCode}"` });
+
+    const template = get('whatsapp_welcome_template') || null;
+
+    // Use the settled template (stored or default)
+    const settledTpl = sqlDb.prepare('SELECT template, enabled FROM telegram_templates WHERE trigger = ?').get('game_bet_settled');
+    const { DEFAULT_TEMPLATES } = require('../gameBetWatcher');
+    const tplText = (settledTpl && settledTpl.enabled) ? settledTpl.template : DEFAULT_TEMPLATES.game_bet_settled;
+
+    const { baseVars, winnerId } = await buildSettledBaseVars(mongoDb, bet);
+    const participantIds = getParticipantUserIds(bet);
+
+    if (participantIds.length === 0) {
+      return res.json({ ok: false, error: 'No participants found on this bet', results: [] });
+    }
+
+    const results = [];
+    for (const userId of participantIds) {
+      let user = null;
+      try {
+        user = await mongoDb.collection('users').findOne(
+          { _id: new ObjectId(userId) },
+          { projection: { phone: 1, username: 1, displayName: 1, name: 1 } },
+        );
+      } catch { /* ignore */ }
+
+      const username  = user?.username || user?.displayName || user?.name || userId.slice(-6);
+      const phone     = user?.phone || null;
+
+      if (!phone) {
+        results.push({ username, phone: null, ok: false, reason: 'no_phone' });
+        continue;
+      }
+
+      const recipient = username;
+      const vars = { ...baseVars, recipient, your_result: userId === winnerId ? 'Won 🏆' : 'Lost' };
+      const result = await sendDirectMessage(phone, renderTemplate(tplText, vars), 'game_bet_settled');
+      results.push({ username, phone, ok: result.ok, reason: result.reason || null });
+    }
+
+    const allOk = results.every((r) => r.ok || r.reason === 'no_phone');
+    res.json({ ok: allOk, betCode: baseVars.code, results });
+  } catch (err) {
+    console.error('[dmSettings] test-settled error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

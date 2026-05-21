@@ -203,6 +203,8 @@ function TemplateEditor({ tpl, onSaved }) {
 // ── Preview vars ──────────────────────────────────────────────────────────────
 
 const PREVIEW_VARS = {
+  recipient:           'testuser',
+  your_result:         'Won 🏆',
   home_team:           'Arsenal',
   away_team:           'Chelsea',
   league:              'Premier League',
@@ -367,11 +369,14 @@ export default function NotificationsPage() {
   const [dmTestPhone, setDmTestPhone]         = useState('');
   const [dmTesting, setDmTesting]             = useState(false);
   const [dmTestResult, setDmTestResult]       = useState(null);
-  const [dmLogs, setDmLogs]                   = useState([]);
-  const [dmLogsLoading, setDmLogsLoading]     = useState(false);
-  const [dmRetryingId, setDmRetryingId]       = useState(null);
-  const [dmRetryResults, setDmRetryResults]   = useState({});
-  const dmTextareaRef                         = useRef(null);
+  const [dmLogs, setDmLogs]                         = useState([]);
+  const [dmLogsLoading, setDmLogsLoading]           = useState(false);
+  const [dmRetryingId, setDmRetryingId]             = useState(null);
+  const [dmRetryResults, setDmRetryResults]         = useState({});
+  const [settledTestCode, setSettledTestCode]       = useState('');
+  const [settledTesting, setSettledTesting]         = useState(false);
+  const [settledTestResults, setSettledTestResults] = useState(null);
+  const dmTextareaRef                               = useRef(null);
 
   // ── Settings tab state ────────────────────────────────────────────────────
   const [threshold, setThreshold]               = useState('7');
@@ -666,6 +671,20 @@ export default function NotificationsPage() {
       setDmRetryResults((prev) => ({ ...prev, [id]: err.response?.data?.error || 'fail' }));
     } finally {
       setDmRetryingId(null);
+    }
+  };
+
+  const handleSettledTest = async (e) => {
+    e.preventDefault();
+    if (!settledTestCode.trim()) return;
+    setSettledTesting(true); setSettledTestResults(null);
+    try {
+      const r = await api.post('/notifications/dm/test-settled', { bookingCode: settledTestCode.trim() });
+      setSettledTestResults(r.data);
+    } catch (err) {
+      setSettledTestResults({ ok: false, error: err.response?.data?.error || 'Request failed', results: [] });
+    } finally {
+      setSettledTesting(false);
     }
   };
 
@@ -1094,6 +1113,76 @@ export default function NotificationsPage() {
                 </div>
               )}
             </form>
+          </div>
+
+          {/* Settled notification test */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Test Settlement DM</p>
+            <p className="text-xs text-vs-text-3 mb-4">
+              Enter a booking code to send the settlement notification as individual WhatsApp DMs to each participant of that challenge.
+              Uses the saved "Challenge Settled" template from the Messages tab.
+            </p>
+            <form onSubmit={handleSettledTest} className="flex items-start gap-3 mb-4">
+              <div className="flex-1 max-w-xs">
+                <label className="text-xs text-vs-text-3 block mb-1">Booking Code</label>
+                <input
+                  type="text"
+                  value={settledTestCode}
+                  onChange={(e) => setSettledTestCode(e.target.value)}
+                  placeholder="e.g. GAME-ABCD"
+                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
+                />
+              </div>
+              <div className="mt-5">
+                <button type="submit" disabled={settledTesting || !settledTestCode.trim()}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                  {settledTesting ? 'Sending…' : 'Send Test'}
+                </button>
+              </div>
+            </form>
+
+            {settledTestResults && (
+              <div className="space-y-2">
+                {settledTestResults.error && (
+                  <p className="text-xs text-vs-danger">{settledTestResults.error}</p>
+                )}
+                {settledTestResults.betCode && (
+                  <p className="text-xs text-vs-text-3 mb-2">
+                    Bet: <span className="font-mono text-vs-text">{settledTestResults.betCode}</span>
+                  </p>
+                )}
+                {settledTestResults.results?.length > 0 && (
+                  <div className="rounded-lg border border-vs-border overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-vs-border bg-vs-elevated/60">
+                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">User</th>
+                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">Phone</th>
+                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">Result</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-vs-border">
+                        {settledTestResults.results.map((r, i) => (
+                          <tr key={i} className="hover:bg-vs-elevated/30">
+                            <td className="px-4 py-2 font-mono text-vs-text">{r.username}</td>
+                            <td className="px-4 py-2 font-mono text-vs-text-3">{r.phone || '—'}</td>
+                            <td className="px-4 py-2">
+                              {r.reason === 'no_phone' ? (
+                                <span className="text-vs-text-3">No phone</span>
+                              ) : r.ok ? (
+                                <span className="text-vs-success font-semibold">Sent</span>
+                              ) : (
+                                <span className="text-vs-danger">{r.reason || 'Failed'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* DM log table */}
