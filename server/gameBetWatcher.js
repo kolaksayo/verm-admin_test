@@ -80,7 +80,7 @@ Stake: {{stake}} | Code: {{code}}`,
 
   game_bet_multi_created: `🎯 New Multiplayer Challenge!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 🏆 {{league}}
 
 Players: {{current_players}}/{{max_players}} joined
@@ -93,7 +93,7 @@ Open the app to join!`,
 
   game_bet_multi_half: `⚡ Challenge Halfway There!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}}/{{max_players}} players joined ({{fill_percent}} filled)
 {{slots_remaining}} slots remaining
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
@@ -101,7 +101,7 @@ Code: {{code}}`,
 
   game_bet_multi_almost_3: `🔥 Almost Full — 3 Slots Left!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}}/{{max_players}} players joined
 Stake: {{stake}}
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
@@ -109,7 +109,7 @@ Code: {{code}}`,
 
   game_bet_multi_almost_1: `🚨 Last Spot Available!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}}/{{max_players}} players joined
 Stake: {{stake}}
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
@@ -117,7 +117,7 @@ Code: {{code}}`,
 
   game_bet_match_1hr: `⏰ Match in 1 Hour!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}} players in the challenge
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
@@ -125,7 +125,7 @@ Code: {{code}}`,
 
   game_bet_match_30min: `⏰ Match Kicks Off in 30 Minutes!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}} players ready
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
@@ -133,7 +133,7 @@ Code: {{code}}`,
 
   game_bet_match_15min: `🚀 Match Starting in 15 Minutes!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 {{current_players}} players competing
 Current Pot: {{current_pot}} | Potential: {{potential_pot}}
 Kickoff: {{kickoff_time}}
@@ -141,7 +141,7 @@ Code: {{code}}`,
 
   game_bet_large_stake: `💰 Large Stake Alert!
 
-⚽ {{home_team}} vs {{away_team}}
+{{fixtures_list}}
 🏆 {{league}}
 
 Stake: {{stake}} per player
@@ -197,8 +197,9 @@ const GAME_BET_MACROS = [
 ];
 
 const MULTI_BASE_MACROS = [
-  { key: '{{home_team}}',       desc: 'Home team name' },
-  { key: '{{away_team}}',       desc: 'Away team name' },
+  { key: '{{fixtures_list}}',   desc: 'All fixtures in the bet, one per line (• Home vs Away)' },
+  { key: '{{home_team}}',       desc: 'Home team name (first fixture)' },
+  { key: '{{away_team}}',       desc: 'Away team name (first fixture)' },
   { key: '{{league}}',          desc: 'League name' },
   { key: '{{stake}}',           desc: 'Stake per player (e.g. $10.00)' },
   { key: '{{max_players}}',     desc: 'Maximum number of participants' },
@@ -315,6 +316,59 @@ async function resolveFixture(db, bet) {
     return { homeTeam, awayTeam, league, kickoff };
   } catch {
     return { homeTeam: null, awayTeam: null, league: null, kickoff: null };
+  }
+}
+
+async function resolveAllFixtures(db, bet) {
+  // Collect unique fixture IDs from the bet-level ID and all participant fixtures
+  const ids = new Set();
+  if (bet.gameFixtureId) ids.add(String(bet.gameFixtureId));
+  if (Array.isArray(bet.participants)) {
+    for (const p of bet.participants) {
+      if (Array.isArray(p.fixtures)) {
+        for (const f of p.fixtures) {
+          if (f.gameFixtureId) ids.add(String(f.gameFixtureId));
+        }
+      }
+    }
+  }
+
+  const fallback = [{ homeTeam: null, awayTeam: null, league: null, kickoff: bet.possibleStartPeriod || null }];
+  if (!ids.size) return fallback;
+
+  try {
+    const oids    = [...ids].map(toOid).filter(Boolean);
+    const fxDocs  = await db.collection('football_fixtures').find({ _id: { $in: oids } }).toArray();
+
+    let league = null;
+    if (bet.gameLeagueId) {
+      const lg = await db.collection('football_leagues').findOne(
+        { _id: toOid(bet.gameLeagueId) }, { projection: { leagueName: 1, name: 1 } },
+      );
+      league = lg ? (lg.leagueName || lg.name) : null;
+    }
+
+    const fixtures = await Promise.all(fxDocs.map(async (fx) => {
+      const [homeTeam, awayTeam] = await Promise.all([
+        resolveTeamName(db, fx.homeTeam),
+        resolveTeamName(db, fx.awayTeam),
+      ]);
+      const kickoff = fx.firstPeriod || fx.date || fx.fixture?.date || bet.possibleStartPeriod || null;
+      return { homeTeam, awayTeam, league, kickoff };
+    }));
+
+    // Ensure the primary fixture (bet.gameFixtureId) is first
+    if (bet.gameFixtureId && fxDocs.length > 1) {
+      const primaryIdx = fxDocs.findIndex((fx) => String(fx._id) === String(bet.gameFixtureId));
+      if (primaryIdx > 0) {
+        const [primary] = fixtures.splice(primaryIdx, 1);
+        fixtures.unshift(primary);
+      }
+    }
+
+    return fixtures.length ? fixtures : fallback;
+  } catch {
+    return fallback;
   }
 }
 
@@ -585,7 +639,11 @@ function getLargeStakeThreshold() {
 
 // ── Vars builder ───────────────────────────────────────────────────────────────
 
-function buildMultiVars(bet, fixture, creator, currentPlayers) {
+function buildMultiVars(bet, fixtures, creator, currentPlayers) {
+  // Accept single fixture object (backward compat) or array
+  const fixturesArr  = Array.isArray(fixtures) ? fixtures : [fixtures];
+  const fixture      = fixturesArr[0] || {};
+
   const maxPlayers     = Number(bet.capacity || bet.maxParticipants) || 0;
   const slotsRemaining = Math.max(0, maxPlayers - currentPlayers);
   const fillPercent    = maxPlayers > 0
@@ -602,7 +660,12 @@ function buildMultiVars(bet, fixture, creator, currentPlayers) {
     ? `$${(stakeAmt * maxPlayers).toFixed(2)}`
     : null;
 
+  const fixturesList = fixturesArr
+    .map((f) => `• ${f.homeTeam || '—'} vs ${f.awayTeam || '—'}`)
+    .join('\n');
+
   return {
+    fixtures_list:   fixturesList     || '—',
     home_team:       fixture.homeTeam  || '—',
     away_team:       fixture.awayTeam  || '—',
     league:          fixture.league    || '—',
@@ -632,19 +695,21 @@ async function pollNewBets(db, since) {
   const threshold = getLargeStakeThreshold();
 
   for (const bet of newBets) {
-    const [creatorName, fixture] = await Promise.all([
+    const multi = isMultiplayer(bet);
+    const [creatorName, fixturesOrFixture] = await Promise.all([
       resolveCreator(db, bet),
-      resolveFixture(db, bet),
+      multi ? resolveAllFixtures(db, bet) : resolveFixture(db, bet),
     ]);
+    // Normalise: single-bet returns plain object; multi returns array
+    const fixture = multi ? fixturesOrFixture[0] || {} : fixturesOrFixture;
 
-    const multi      = isMultiplayer(bet);
     const triggerKey = multi ? 'game_bet_multi_created' : 'game_bet';
     const template   = getTemplate(triggerKey);
 
     if (template) {
       let vars;
       if (multi) {
-        vars = buildMultiVars(bet, fixture, creatorName, getCurrentPlayers(bet));
+        vars = buildMultiVars(bet, fixturesOrFixture, creatorName, getCurrentPlayers(bet));
       } else {
         const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
         vars = {
@@ -673,7 +738,7 @@ async function pollNewBets(db, since) {
       if (stakeAmt != null && stakeAmt > threshold) {
         const largeTemplate = getTemplate('game_bet_large_stake');
         if (largeTemplate) {
-          const vars    = buildMultiVars(bet, fixture, creatorName, getCurrentPlayers(bet));
+          const vars    = buildMultiVars(bet, fixturesOrFixture, creatorName, getCurrentPlayers(bet));
           const message = renderTemplate(largeTemplate, vars);
           const result  = await notifyAll(message, 'game_bet_large_stake');
           if (result.ok) {
@@ -707,11 +772,11 @@ async function pollFillProgress(db) {
     const fillRatio      = currentPlayers / max;
     const betId          = bet._id.toString();
 
-    const [creatorName, fixture] = await Promise.all([
+    const [creatorName, allFixtures] = await Promise.all([
       resolveCreator(db, bet),
-      resolveFixture(db, bet),
+      resolveAllFixtures(db, bet),
     ]);
-    const vars = buildMultiVars(bet, fixture, creatorName, currentPlayers);
+    const vars = buildMultiVars(bet, allFixtures, creatorName, currentPlayers);
 
     // 60% fill milestone
     if (fillRatio >= 0.6 && fillRatio < 1 && !hasNotified(betId, 'half')) {
@@ -768,10 +833,11 @@ async function pollMatchCountdowns(db) {
     const currentPlayers = getCurrentPlayers(bet);
     if (currentPlayers < 2) continue;
 
-    const fixture = await resolveFixture(db, bet);
-    if (!fixture.kickoff) continue;
+    const allFixtures = await resolveAllFixtures(db, bet);
+    const primaryFixture = allFixtures[0] || {};
+    if (!primaryFixture.kickoff) continue;
 
-    const kickoffMs = new Date(fixture.kickoff).getTime();
+    const kickoffMs = new Date(primaryFixture.kickoff).getTime();
     if (isNaN(kickoffMs)) continue;
 
     const minutesAway = (kickoffMs - Date.now()) / 60000;
@@ -782,7 +848,7 @@ async function pollMatchCountdowns(db) {
       hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
     });
     const vars = {
-      ...buildMultiVars(bet, fixture, creatorName, currentPlayers),
+      ...buildMultiVars(bet, allFixtures, creatorName, currentPlayers),
       minutes_until_match: Math.round(minutesAway),
       kickoff_time: kickoffTime,
     };
@@ -1254,4 +1320,12 @@ module.exports = {
   renderTemplate,
   getTemplate,
   resolveTeamName,
+  resolveFixture,
+  resolveAllFixtures,
+  resolveCreator,
+  buildMultiVars,
+  formatMode,
+  isMultiplayer,
+  getCurrentPlayers,
+  notifyAll,
 };

@@ -203,6 +203,7 @@ function TemplateEditor({ tpl, onSaved }) {
 // ── Preview vars ──────────────────────────────────────────────────────────────
 
 const PREVIEW_VARS = {
+  fixtures_list:       '• Arsenal vs Chelsea\n• Man City vs Liverpool',
   recipient:           'testuser',
   your_result:         'Won 🏆',
   home_team:           'Arsenal',
@@ -397,6 +398,12 @@ export default function NotificationsPage() {
   const [sendingRankings, setSendingRankings]   = useState(false);
   const [rankingsSendMsg, setRankingsSendMsg]   = useState('');
   const [rankingsChannels, setRankingsChannels] = useState({ telegram: true, whatsapp: true });
+
+  // ── Resend by booking code state ─────────────────────────────────────────
+  const [resendCode, setResendCode]             = useState('');
+  const [resendTrigger, setResendTrigger]       = useState('');
+  const [resendSending, setResendSending]       = useState(false);
+  const [resendResult, setResendResult]         = useState(null);
 
   // ── Logs + Messages state ─────────────────────────────────────────────────
   const [logChannel, setLogChannel]             = useState('all');
@@ -693,6 +700,25 @@ export default function NotificationsPage() {
       setSettledTestResults({ ok: false, error: err.response?.data?.error || 'Request failed', results: [] });
     } finally {
       setSettledTesting(false);
+    }
+  };
+
+  // ── Resend handler ───────────────────────────────────────────────────────
+
+  const handleResend = async (e) => {
+    e.preventDefault();
+    if (!resendCode.trim()) return;
+    setResendSending(true); setResendResult(null);
+    try {
+      const r = await api.post('/telegram/resend-for-bet', {
+        bookingCode: resendCode.trim(),
+        trigger:     resendTrigger || undefined,
+      });
+      setResendResult(r.data);
+    } catch (err) {
+      setResendResult({ ok: false, error: err.response?.data?.error || 'Request failed' });
+    } finally {
+      setResendSending(false);
     }
   };
 
@@ -1277,7 +1303,82 @@ export default function NotificationsPage() {
 
       {/* ── Messages tab ── */}
       {tab === 'Messages' && (
-        <MessagesTab templates={templates} loading={templatesLoading} onSaved={loadTemplates} />
+        <>
+          {/* Resend by booking code */}
+          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Resend Notification</p>
+            <p className="text-xs text-vs-text-3 mb-4">
+              Enter a booking code to manually re-send its notification to all configured channels (Telegram + WhatsApp).
+            </p>
+            <form onSubmit={handleResend} className="space-y-3">
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[180px]">
+                  <label className="text-xs text-vs-text-3 block mb-1">Booking Code</label>
+                  <input
+                    type="text"
+                    value={resendCode}
+                    onChange={(e) => { setResendCode(e.target.value); setResendResult(null); }}
+                    placeholder="e.g. GAME-ABCD"
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
+                  />
+                </div>
+                <div className="w-56 flex-shrink-0">
+                  <label className="text-xs text-vs-text-3 block mb-1">Trigger (optional — auto-detects)</label>
+                  <select
+                    value={resendTrigger}
+                    onChange={(e) => setResendTrigger(e.target.value)}
+                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-2 focus:ring-vs-purple"
+                  >
+                    <option value="">Auto-detect</option>
+                    <option value="game_bet">Single Bet — New</option>
+                    <option value="game_bet_multi_created">Multi — New</option>
+                    <option value="game_bet_multi_half">Multi — 60% Full</option>
+                    <option value="game_bet_multi_almost_3">Multi — 3 Slots Left</option>
+                    <option value="game_bet_multi_almost_1">Multi — Last Slot</option>
+                    <option value="game_bet_match_1hr">Countdown — 1hr</option>
+                    <option value="game_bet_match_30min">Countdown — 30min</option>
+                    <option value="game_bet_match_15min">Countdown — 15min</option>
+                    <option value="game_bet_large_stake">Large Stake</option>
+                  </select>
+                </div>
+                <button type="submit" disabled={resendSending || !resendCode.trim()}
+                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex-shrink-0">
+                  {resendSending ? 'Sending…' : 'Resend'}
+                </button>
+              </div>
+            </form>
+
+            {resendResult && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${resendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                    {resendResult.ok ? '✓ Sent' : '✗ Failed'}
+                  </span>
+                  {resendResult.code && (
+                    <span className="text-xs text-vs-text-3">
+                      · Bet: <span className="font-mono text-vs-text">{resendResult.code}</span>
+                    </span>
+                  )}
+                  {resendResult.trigger && (
+                    <span className="text-xs text-vs-text-3">
+                      · Trigger: <span className="font-mono text-vs-text">{resendResult.trigger}</span>
+                    </span>
+                  )}
+                  {(resendResult.error || resendResult.reason) && (
+                    <span className="text-xs text-vs-danger">{resendResult.error || resendResult.reason}</span>
+                  )}
+                </div>
+                {resendResult.message && (
+                  <div className="bg-vs-elevated rounded-lg px-3 py-2.5 text-xs font-mono text-vs-text-2 whitespace-pre-wrap border border-vs-border">
+                    {resendResult.message}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <MessagesTab templates={templates} loading={templatesLoading} onSaved={loadTemplates} />
+        </>
       )}
 
       {/* ── Logs tab ── */}

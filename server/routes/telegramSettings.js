@@ -16,6 +16,14 @@ const {
   getWatcherState,
   buildRankingsVars,
   getRankingsTopN,
+  resolveFixture,
+  resolveAllFixtures,
+  resolveCreator,
+  buildMultiVars,
+  formatMode,
+  isMultiplayer,
+  getCurrentPlayers,
+  notifyAll,
 } = require('../gameBetWatcher');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
@@ -366,6 +374,7 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
     }
 
     const sampleVars = {
+      fixtures_list:       `• ${homeTeam} vs ${awayTeam}`,
       home_team:           homeTeam,
       away_team:           awayTeam,
       league,
@@ -472,6 +481,74 @@ router.post('/rankings/send', auth, async (req, res) => {
 
     const [primary] = await Promise.allSettled(sends);
     res.json(primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/telegram/resend-for-bet — re-send a notification for a bet by booking code
+router.post('/resend-for-bet', auth, async (req, res) => {
+  const { bookingCode, trigger } = req.body;
+  if (!bookingCode?.trim()) return res.status(400).json({ ok: false, error: 'bookingCode is required' });
+
+  try {
+    const db  = getDb();
+    const bet = await db.collection('game_bet').findOne({ bookingCode: bookingCode.trim() });
+    if (!bet) return res.status(404).json({ ok: false, error: `No bet found with booking code: ${bookingCode.trim()}` });
+
+    const multi          = isMultiplayer(bet);
+    const defaultTrigger = multi ? 'game_bet_multi_created' : 'game_bet';
+    const useTrigger     = trigger || defaultTrigger;
+
+    const validTrigger = TRIGGERS.find((t) => t.trigger === useTrigger);
+    if (!validTrigger) return res.status(400).json({ ok: false, error: `Unknown trigger: ${useTrigger}` });
+
+    const currentPlayers = getCurrentPlayers(bet);
+    const [creatorName, allFixtures] = await Promise.all([
+      resolveCreator(db, bet),
+      resolveAllFixtures(db, bet),
+    ]);
+
+    let vars;
+    if (multi) {
+      vars = buildMultiVars(bet, allFixtures, creatorName, currentPlayers);
+      // Add countdown vars in case template uses them
+      const primaryFixture = allFixtures[0] || {};
+      if (primaryFixture.kickoff) {
+        const kickoffMs = new Date(primaryFixture.kickoff).getTime();
+        if (!isNaN(kickoffMs)) {
+          vars.minutes_until_match = Math.round((kickoffMs - Date.now()) / 60000);
+          vars.kickoff_time = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+          });
+        }
+      }
+    } else {
+      const fixture  = allFixtures[0] || {};
+      const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+      vars = {
+        home_team:  fixture.homeTeam || '—',
+        away_team:  fixture.awayTeam || '—',
+        league:     fixture.league   || '—',
+        stake:      stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
+        code:       bet.bookingCode  || bet._id.toString(),
+        creator:    creatorName      || '—',
+        mode:       formatMode(bet),
+        slots:      bet.capacity ?? bet.maxParticipants ?? '—',
+      };
+      if (fixture.kickoff) {
+        const kickoffMs = new Date(fixture.kickoff).getTime();
+        if (!isNaN(kickoffMs)) {
+          vars.kickoff_time        = new Date(kickoffMs).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' });
+          vars.minutes_until_match = Math.round((kickoffMs - Date.now()) / 60000);
+        }
+      }
+    }
+
+    const template = getTemplate(useTrigger) || validTrigger.default;
+    const message  = renderTemplate(template, vars);
+    const result   = await notifyAll(message, useTrigger);
+    res.json({ ...result, message, trigger: useTrigger, code: bet.bookingCode || bet._id.toString() });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
