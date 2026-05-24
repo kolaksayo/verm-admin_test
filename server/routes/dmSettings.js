@@ -149,6 +149,53 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
   }
 });
 
+// ── Retry all failed DMs ──────────────────────────────────────────────────────
+
+router.post('/retry-all-failed', auth, async (req, res) => {
+  try {
+    const sqlDb  = getSQLite();
+    const mongoDb = getDb();
+    const get    = (k) => sqlDb.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+
+    const failed = sqlDb.prepare('SELECT * FROM whatsapp_user_dms WHERE ok = 0 LIMIT 50').all();
+    if (failed.length === 0) return res.json({ ok: true, retried: 0, succeeded: 0, failed: 0 });
+
+    const template    = get('whatsapp_welcome_template') || DEFAULT_WELCOME_TEMPLATE;
+    const groupLink   = get('whatsapp_group_link')  || '(group link)';
+    const channelLink = get('whatsapp_channel_link') || '(channel link)';
+
+    let succeeded = 0;
+    let failedCount = 0;
+
+    for (const row of failed) {
+      let name = row.username || 'there';
+      if (row.trigger === 'user_registered' && row.user_id && row.user_id !== '__test__') {
+        try {
+          const user = await mongoDb.collection('users').findOne(
+            { _id: new ObjectId(row.user_id) },
+            { projection: { name: 1, username: 1, displayName: 1 } },
+          );
+          if (user) name = user.name || user.displayName || user.username || name;
+        } catch { /* use cached name */ }
+      }
+
+      const rendered = renderTemplate(template, {
+        name,
+        username:     row.username || '',
+        group_link:   groupLink,
+        channel_link: channelLink,
+      });
+
+      const result = await sendDM(row.user_id, row.phone, row.username, rendered, row.trigger);
+      if (result.ok) succeeded++; else failedCount++;
+    }
+
+    res.json({ ok: true, retried: failed.length, succeeded, failed: failedCount });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── Test settled DM by booking code ───────────────────────────────────────────
 
 router.post('/test-settled', auth, async (req, res) => {

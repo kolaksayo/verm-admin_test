@@ -577,18 +577,21 @@ async function pollNewUsers(db) {
   const { token } = getWAConfig();
   if (!token) return;
 
-  const since = readLastUserDmCheck();
-  const next  = new Date();
-
-  const newUsers = await db.collection('users')
-    .find({ createdAt: { $gt: since }, mobile: { $exists: true, $nin: ['', null] } })
+  // Fetch all users with a mobile number, oldest first so backfill processes
+  // historical users before newly registered ones. Limit to 50 per query;
+  // hasUserDmSent dedup skips already-sent rows quickly.
+  const candidates = await db.collection('users')
+    .find({ mobile: { $exists: true, $nin: ['', null] } })
     .sort({ createdAt: 1 })
     .limit(50)
     .toArray();
 
   const { template, groupLink, channelLink } = getWelcomeConfig();
+  let sent = 0;
+  const MAX_PER_POLL = 20; // avoid rate-limiting
 
-  for (const user of newUsers) {
+  for (const user of candidates) {
+    if (sent >= MAX_PER_POLL) break;
     const userId = user._id.toString();
     if (hasUserDmSent(userId, 'user_registered')) continue;
 
@@ -604,12 +607,13 @@ async function pollNewUsers(db) {
     const result = await sendDM(userId, user.mobile, username, rendered, 'user_registered');
     if (result.ok) {
       console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
+      sent++;
     } else {
       console.error(`[GameBetWatcher] Welcome DM failed for ${username || userId}:`, result.reason);
     }
   }
 
-  saveLastUserDmCheck(next);
+  saveLastUserDmCheck(new Date());
 }
 
 // ── Settings helpers ───────────────────────────────────────────────────────────

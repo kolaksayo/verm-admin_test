@@ -376,6 +376,8 @@ export default function NotificationsPage() {
   const [dmLogsLoading, setDmLogsLoading]           = useState(false);
   const [dmRetryingId, setDmRetryingId]             = useState(null);
   const [dmRetryResults, setDmRetryResults]         = useState({});
+  const [dmRetryAllSending, setDmRetryAllSending]   = useState(false);
+  const [dmRetryAllResult, setDmRetryAllResult]     = useState(null);
   const [settledTestCode, setSettledTestCode]       = useState('');
   const [settledTesting, setSettledTesting]         = useState(false);
   const [settledTestResults, setSettledTestResults] = useState(null);
@@ -673,6 +675,19 @@ export default function NotificationsPage() {
       setDmTestResult({ ok: false, msg: err.response?.data?.error || 'Request failed' });
     } finally {
       setDmTesting(false);
+    }
+  };
+
+  const handleDmRetryAll = async () => {
+    setDmRetryAllSending(true); setDmRetryAllResult(null);
+    try {
+      const r = await api.post('/notifications/dm/retry-all-failed');
+      setDmRetryAllResult(r.data);
+      await loadDmLogs();
+    } catch (err) {
+      setDmRetryAllResult({ ok: false, error: err.response?.data?.error || 'Request failed' });
+    } finally {
+      setDmRetryAllSending(false);
     }
   };
 
@@ -1235,8 +1250,19 @@ export default function NotificationsPage() {
 
           {/* DM log table */}
           <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-vs-border flex items-center gap-3">
+            <div className="px-5 py-3 border-b border-vs-border flex items-center gap-3 flex-wrap">
               <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mr-auto">DM Send Log</p>
+              {dmRetryAllResult && (
+                <span className={`text-xs ${dmRetryAllResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                  {dmRetryAllResult.ok
+                    ? `${dmRetryAllResult.retried} retried — ${dmRetryAllResult.succeeded} sent, ${dmRetryAllResult.failed} failed`
+                    : (dmRetryAllResult.error || 'Failed')}
+                </span>
+              )}
+              <button onClick={handleDmRetryAll} disabled={dmRetryAllSending}
+                className="text-xs text-vs-purple-light hover:text-vs-purple px-2 py-1 rounded border border-vs-purple/30 hover:bg-vs-purple/10 transition-colors disabled:opacity-40">
+                {dmRetryAllSending ? 'Retrying…' : 'Retry All Failed'}
+              </button>
               <button onClick={loadDmLogs}
                 className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
                 Refresh

@@ -153,7 +153,7 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
   }
 }
 
-async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = false) {
+async function sendDirectMessage(phone, text, trigger = 'manual') {
   const { token } = getConfig();
   const digits = normalizePhone(phone);
   if (!token || !digits) {
@@ -176,16 +176,10 @@ async function sendDirectMessage(phone, text, trigger = 'manual', _isRetry = fal
     const ok   = res.ok && !json.error;
     const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
-    if (!ok && !_isRetry) {
-      setTimeout(() => sendDirectMessage(phone, text, trigger, true).catch(() => {}), 5 * 60 * 1000);
-    }
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
     const reason = err.name === 'AbortError' ? 'timeout' : err.message;
     logSend(trigger, text, false, reason);
-    if (!_isRetry) {
-      setTimeout(() => sendDirectMessage(phone, text, trigger, true).catch(() => {}), 5 * 60 * 1000);
-    }
     return { ok: false, reason };
   }
 }
