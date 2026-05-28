@@ -45,8 +45,13 @@ router.patch('/me/password', auth, (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Session outdated — please log out and log in again' });
+  }
+
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (!bcrypt.compareSync(currentPassword, user.password)) {
     return res.status(401).json({ error: 'Current password is incorrect' });
@@ -93,8 +98,13 @@ router.post('/me/2fa/enable', auth, (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Code is required' });
 
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Session outdated — please log out and log in again' });
+  }
+
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (!user.two_factor_secret) {
     return res.status(400).json({ error: 'Run 2FA setup first' });
@@ -119,8 +129,13 @@ router.delete('/me/2fa', auth, (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Authenticator code is required' });
 
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Session outdated — please log out and log in again' });
+  }
+
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (!user.two_factor_enabled) {
     return res.status(400).json({ error: '2FA is not enabled' });

@@ -12,20 +12,20 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
     const db = getDb();
 
     const rows = await db.collection('walletusers').aggregate([
-      // Normalise the user reference to a single string field
+      // Normalise user/userId to a single string field without relying on
+      // BSON type ordering comparisons against null.
+      {
+        $addFields: {
+          _rawRef: { $ifNull: ['$user', '$userId'] },
+        },
+      },
       {
         $addFields: {
           _ref: {
             $cond: {
-              if:   { $gt: [{ $ifNull: ['$user', null] }, null] },
-              then: { $toString: '$user' },
-              else: {
-                $cond: {
-                  if:   { $gt: [{ $ifNull: ['$userId', null] }, null] },
-                  then: { $toString: '$userId' },
-                  else: null,
-                },
-              },
+              if: { $or: [{ $eq: ['$_rawRef', null] }, { $eq: ['$_rawRef', ''] }] },
+              then: null,
+              else: { $toString: '$_rawRef' },
             },
           },
         },
@@ -55,7 +55,7 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
         },
       },
       // Clean up temp fields
-      { $project: { _ref: 0, _linked: 0 } },
+      { $project: { _rawRef: 0, _ref: 0, _linked: 0 } },
       { $sort: { updatedAt: -1, createdAt: -1 } },
       { $limit: 500 },
     ]).toArray();

@@ -11,10 +11,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const status = err.response?.status;
+    const requestUrl = err.config?.url || '';
+    const isAuthRequest = requestUrl.startsWith('/auth/login') || requestUrl.startsWith('/auth/verify-2fa');
+
+    if (status === 401 && !isAuthRequest) {
       localStorage.removeItem('verm_admin_token');
       localStorage.removeItem('verm_admin_user');
-      window.location.href = '/login';
+
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
