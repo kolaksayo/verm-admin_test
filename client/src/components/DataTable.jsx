@@ -192,7 +192,14 @@ export default function DataTable({ docs, total, page, totalPages, limit, sort, 
                   ))}
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => setSelectedId(String(doc._id))}
+                      onClick={() => {
+                        if (collectionName === 'users' && onUserClick) {
+                          const displayName = doc.username || doc.name || doc.email || String(doc._id);
+                          onUserClick(String(doc._id), displayName);
+                        } else {
+                          setSelectedId(String(doc._id));
+                        }
+                      }}
                       className="text-xs text-vs-purple-light hover:text-vs-purple font-medium transition-colors"
                     >
                       View
