@@ -29,6 +29,14 @@ function stripHtml(text) {
   return text.replace(/<[^>]+>/g, '');
 }
 
+function interaktBody(fullPhoneNumber, message) {
+  return JSON.stringify({
+    fullPhoneNumber,
+    type: 'Text',
+    data: { message },
+  });
+}
+
 function logSend(trigger, text, ok, error = null) {
   const plain   = stripHtml(text);
   const preview = plain.slice(0, 200);
@@ -57,11 +65,11 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: groupId, message_type: 'Text', message: { type: 'Text', text: plain } }),
+      body: interaktBody(groupId, plain),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
-    const errMsg = ok ? null : (json.message || json.error || 'api_error');
+    const errMsg = ok ? null : (json.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
       setTimeout(() => sendMessage(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
@@ -141,11 +149,11 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: digits, message_type: 'Text', message: { type: 'Text', text: plain } }),
+      body: interaktBody(digits, plain),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
-    const errMsg = ok ? null : (json.message || json.error || 'api_error');
+    const errMsg = ok ? null : (json.message || 'api_error');
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
@@ -171,11 +179,11 @@ async function sendDirectMessage(phone, text, trigger = 'manual') {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: digits, message_type: 'Text', message: { type: 'Text', text: plain } }),
+      body: interaktBody(digits, plain),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
-    const errMsg = ok ? null : (json.message || json.error || 'api_error');
+    const errMsg = ok ? null : (json.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
@@ -202,11 +210,11 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: channelId, message_type: 'Text', message: { type: 'Text', text: plain } }),
+      body: interaktBody(channelId, plain),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
-    const errMsg = ok ? null : (json.message || json.error || 'api_error');
+    const errMsg = ok ? null : (json.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
       setTimeout(() => sendToChannel(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
