@@ -17,6 +17,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import CampaignsPage from './pages/CampaignsPage';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
+import AuditPage from './pages/AuditPage';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="telegram" element={<Navigate to="/notifications" replace />} />
         <Route path="social-data" element={<SocialData />} />
         <Route path="system-logs" element={<SystemLogs />} />
+        <Route path="audit" element={<AuditPage />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"

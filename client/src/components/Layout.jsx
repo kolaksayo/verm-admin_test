@@ -54,6 +54,7 @@ const NAV_GROUPS = [
     label: 'System',
     items: [
       { label: 'Logs', path: '/system-logs' },
+      { label: 'Audit', path: '/audit' },
       { name: 'currencytypes', label: 'Currency Types' },
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
       { label: 'Notifications', path: '/notifications' },
