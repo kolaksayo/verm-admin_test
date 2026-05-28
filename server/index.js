@@ -4,7 +4,7 @@ const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { connect } = require('./db');
+const { connect, connectWrite } = require('./db');
 
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
@@ -80,7 +80,8 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3001;
 
 connect()
-  .then(() => {
+  .then(async () => {
+    await connectWrite();
     app.listen(PORT, () => {
       console.log(`Verm Admin running on port ${PORT}`);
     });

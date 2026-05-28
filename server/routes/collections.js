@@ -1,6 +1,6 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
-const { getDb } = require('../db');
+const { getDb, getWriteDb } = require('../db');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
 
@@ -152,20 +152,21 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
   }
 
   try {
-    const db = getDb();
+    const rDb = getDb();
+    const wDb = getWriteDb();
     let oid;
     try { oid = new ObjectId(id); } catch { oid = id; }
 
-    const before = await db.collection(name).findOne({ _id: oid });
+    const before = await rDb.collection(name).findOne({ _id: oid });
     if (!before) return res.status(404).json({ error: 'Document not found' });
 
     // Strip _id to prevent mutation; merge updates onto existing doc
     const { _id: _stripped, ...safeUpdates } = updates;
     const after = { ...before, ...safeUpdates, _id: before._id };
 
-    await db.collection(name).replaceOne({ _id: oid }, after);
+    await wDb.collection(name).replaceOne({ _id: oid }, after);
 
-    await writeAuditLog(db, {
+    await writeAuditLog(wDb, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'update',
@@ -175,7 +176,7 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
       after,
     });
 
-    const refreshed = await db.collection(name).findOne({ _id: oid });
+    const refreshed = await rDb.collection(name).findOne({ _id: oid });
     res.json({ ok: true, doc: refreshed });
   } catch (err) {
     console.error(`Collection update error [${name}/${id}]:`, err);
@@ -194,16 +195,17 @@ router.delete('/:name/:id', auth, requireEditMode, async (req, res) => {
   }
 
   try {
-    const db = getDb();
+    const rDb = getDb();
+    const wDb = getWriteDb();
     let oid;
     try { oid = new ObjectId(id); } catch { oid = id; }
 
-    const before = await db.collection(name).findOne({ _id: oid });
+    const before = await rDb.collection(name).findOne({ _id: oid });
     if (!before) return res.status(404).json({ error: 'Document not found' });
 
-    await db.collection(name).deleteOne({ _id: oid });
+    await wDb.collection(name).deleteOne({ _id: oid });
 
-    await writeAuditLog(db, {
+    await writeAuditLog(wDb, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'delete',
