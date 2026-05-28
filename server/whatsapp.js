@@ -1,20 +1,23 @@
 const { getDb: getSQLite } = require('./sqlite');
 
-const WHAPI_URL = 'https://gate.whapi.cloud/messages/text';
+const INTERAKT_URL = 'https://api.interakt.ai/v1/public/message/';
 const FETCH_TIMEOUT_MS = 15000;
 
 function getConfig() {
   try {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
+    // Support both whatsapp_api_key (new) and whatsapp_api_token (legacy)
+    const apiKey = get('whatsapp_api_key') || get('whatsapp_api_token')
+      || process.env.WHATSAPP_API_KEY || process.env.WHATSAPP_API_TOKEN || '';
     return {
-      token:     get('whatsapp_api_token')  || process.env.WHATSAPP_API_TOKEN  || '',
+      apiKey,
       groupId:   get('whatsapp_group_id')   || process.env.WHATSAPP_GROUP_ID   || '',
       channelId: get('whatsapp_channel_id') || process.env.WHATSAPP_CHANNEL_ID || '',
     };
   } catch {
     return {
-      token:     process.env.WHATSAPP_API_TOKEN  || '',
+      apiKey:    process.env.WHATSAPP_API_KEY || process.env.WHATSAPP_API_TOKEN || '',
       groupId:   process.env.WHATSAPP_GROUP_ID   || '',
       channelId: process.env.WHATSAPP_CHANNEL_ID || '',
     };
@@ -38,27 +41,27 @@ function logSend(trigger, text, ok, error = null) {
 }
 
 async function sendMessage(text, trigger = 'manual', _isRetry = false) {
-  const { token, groupId } = getConfig();
+  const { apiKey, groupId } = getConfig();
   const plain = stripHtml(text);
 
-  if (!token || !groupId) {
+  if (!apiKey || !groupId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const res  = await fetchWithTimeout(WHAPI_URL, {
+    const res = await fetchWithTimeout(INTERAKT_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ to: groupId, body: plain }),
+      body: JSON.stringify({ receiver: groupId, message_type: 'text', message: { type: 'text', text: plain } }),
     });
-    const json = await res.json();
-    const ok   = res.ok && !json.error;
-    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    const json = await res.json().catch(() => ({}));
+    const ok   = res.ok && json.result !== false;
+    const errMsg = ok ? null : (json.message || json.error || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
       setTimeout(() => sendMessage(text, trigger, true).catch(() => {}), 5 * 60 * 1000);
@@ -97,8 +100,8 @@ function fetchWithTimeout(url, options) {
 }
 
 function isConfigured() {
-  const { token, groupId } = getConfig();
-  return !!(token && groupId);
+  const { apiKey, groupId } = getConfig();
+  return !!(apiKey && groupId);
 }
 
 const DEFAULT_WELCOME_TEMPLATE = `Welcome to Vermö! 🎉
@@ -123,27 +126,26 @@ function logUserDm(userId, phone, username, trigger, ok, error = null) {
 }
 
 async function sendDM(userId, phone, username, text, trigger = 'user_registered') {
-  const { token } = getConfig();
+  const { apiKey } = getConfig();
   const digits = normalizePhone(phone);
-  if (!token || !digits) {
+  if (!apiKey || !digits) {
     logUserDm(userId, phone, username, trigger, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
   const plain = stripHtml(text);
-  const to = `${digits}@s.whatsapp.net`;
   try {
-    const res = await fetchWithTimeout(WHAPI_URL, {
+    const res = await fetchWithTimeout(INTERAKT_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ to, body: plain }),
+      body: JSON.stringify({ receiver: digits, message_type: 'text', message: { type: 'text', text: plain } }),
     });
-    const json = await res.json();
-    const ok   = res.ok && !json.error;
-    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    const json = await res.json().catch(() => ({}));
+    const ok   = res.ok && json.result !== false;
+    const errMsg = ok ? null : (json.message || json.error || 'api_error');
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
@@ -154,27 +156,26 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
 }
 
 async function sendDirectMessage(phone, text, trigger = 'manual') {
-  const { token } = getConfig();
+  const { apiKey } = getConfig();
   const digits = normalizePhone(phone);
-  if (!token || !digits) {
+  if (!apiKey || !digits) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
   const plain = stripHtml(text);
-  const to = `${digits}@s.whatsapp.net`;
   try {
-    const res  = await fetchWithTimeout(WHAPI_URL, {
+    const res = await fetchWithTimeout(INTERAKT_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ to, body: plain }),
+      body: JSON.stringify({ receiver: digits, message_type: 'text', message: { type: 'text', text: plain } }),
     });
-    const json = await res.json();
-    const ok   = res.ok && !json.error;
-    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    const json = await res.json().catch(() => ({}));
+    const ok   = res.ok && json.result !== false;
+    const errMsg = ok ? null : (json.message || json.error || 'api_error');
     logSend(trigger, text, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
@@ -185,27 +186,27 @@ async function sendDirectMessage(phone, text, trigger = 'manual') {
 }
 
 async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
-  const { token, channelId } = getConfig();
+  const { apiKey, channelId } = getConfig();
   const plain = stripHtml(text);
 
-  if (!token || !channelId) {
+  if (!apiKey || !channelId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const res = await fetchWithTimeout(WHAPI_URL, {
+    const res = await fetchWithTimeout(INTERAKT_URL, {
       method:  'POST',
       headers: {
         'Accept':        'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ to: channelId, body: plain }),
+      body: JSON.stringify({ receiver: channelId, message_type: 'text', message: { type: 'text', text: plain } }),
     });
-    const json = await res.json();
-    const ok   = res.ok && !json.error;
-    const errMsg = ok ? null : (json.error?.message || json.message || 'api_error');
+    const json = await res.json().catch(() => ({}));
+    const ok   = res.ok && json.result !== false;
+    const errMsg = ok ? null : (json.message || json.error || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
       setTimeout(() => sendToChannel(text, trigger, true).catch(() => {}), 5 * 60 * 1000);

@@ -559,7 +559,7 @@ export default function NotificationsPage() {
     setWaSaving(true); setWaSaveMsg('');
     try {
       await api.post('/whatsapp/config', {
-        apiToken:  waToken     || undefined,
+        apiKey:    waToken     || undefined,
         groupId:   waGroupId   || undefined,
         channelId: waChannelId || undefined,
       });
@@ -935,14 +935,14 @@ export default function NotificationsPage() {
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">WhatsApp Configuration</p>
             <p className="text-xs text-vs-text-3 mb-4">
-              Powered by <span className="font-medium text-vs-text-2">whapi.cloud</span> — messages are sent alongside Telegram when both are configured.
+              Powered by <span className="font-medium text-vs-text-2">interakt.ai</span> — messages are sent alongside Telegram when both are configured.
             </p>
             <form onSubmit={handleWaSave} className="space-y-3">
               <div className="flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[220px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">API Token</label>
+                  <label className="text-xs text-vs-text-3 block mb-1">API Key</label>
                   <input type="password" value={waToken} onChange={(e) => setWaToken(e.target.value)}
-                    placeholder={waStatus?.tokenSet ? 'Already set — paste new to update' : 'Your whapi.cloud Bearer token'}
+                    placeholder={waStatus?.apiKeySet ? 'Already set — paste new to update' : 'Your Interakt API Key'}
                     className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                 </div>
                 <div className="flex-1 min-w-[200px]">
@@ -982,10 +982,10 @@ export default function NotificationsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${waStatus.tokenSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
-                    <span className="text-vs-text-3">API Token</span>
-                    <span className={`ml-auto font-medium ${waStatus.tokenSet ? 'text-vs-success' : 'text-vs-danger'}`}>
-                      {waStatus.tokenSet ? waStatus.tokenPreview : 'Missing'}
+                    <span className={`w-2 h-2 rounded-full ${waStatus.apiKeySet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                    <span className="text-vs-text-3">API Key</span>
+                    <span className={`ml-auto font-medium ${waStatus.apiKeySet ? 'text-vs-success' : 'text-vs-danger'}`}>
+                      {waStatus.apiKeySet ? waStatus.apiKeyPreview : 'Missing'}
                     </span>
                   </div>
                   <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
@@ -1031,10 +1031,9 @@ export default function NotificationsPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">How to get your credentials</p>
             <ol className="space-y-3 text-sm text-vs-text-2">
               {[
-                <>Sign up at <span className="font-mono text-vs-purple-light">whapi.cloud</span> and create a channel instance.</>,
-                <>Connect your WhatsApp number by scanning the QR code shown in the dashboard.</>,
-                <>Copy your <strong>API Token</strong> (Bearer token) from the channel settings page.</>,
-                <>Get the <strong>Group ID</strong> by sending a message to your group and checking the webhook or message logs — it looks like <span className="font-mono">120363xxxxxxxxxx@g.us</span>.</>,
+                <>Sign up at <span className="font-mono text-vs-purple-light">app.interakt.ai</span> and connect your WhatsApp Business number.</>,
+                <>Go to <strong>Developer Settings</strong> and copy your <strong>API Key</strong>.</>,
+                <>Get the <strong>Group ID</strong> from your WhatsApp group info — it looks like <span className="font-mono">120363xxxxxxxxxx@g.us</span>.</>,
                 <>Paste both values into the form above and click <strong>Save</strong>.</>,
               ].map((step, i) => (
                 <li key={i} className="flex gap-3">
