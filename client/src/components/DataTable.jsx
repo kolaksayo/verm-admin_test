@@ -36,7 +36,7 @@ const PRIORITY_COLUMNS = {
   game_bet_leaderboard: ['user', 'gameBet', 'rank', 'points', 'correctPredictions', 'totalPredictions'],
   users: ['username', 'email', 'mobile', 'name', 'isVerified', 'isActive', 'createdAt'],
   transactions: ['type', 'amount', 'user', 'currencyType', 'status', 'createdAt'],
-  walletusers: ['user', 'currencyType', 'balance', 'updatedAt'],
+  walletusers: ['user', 'userEmail', 'userMobile', 'currencyType', 'balance', 'updatedAt'],
 };
 
 function pickColumns(docs, collectionName) {

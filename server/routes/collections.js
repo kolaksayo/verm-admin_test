@@ -26,6 +26,77 @@ router.get('/', auth, (req, res) => {
   res.json(ALLOWED_COLLECTIONS);
 });
 
+// Enriched walletusers handler — joins email and mobile from the users collection
+async function fetchWalletUsers(db, { page, limit, search, sortField, sortOrder }) {
+  const safeSearch = search ? search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+
+  // Normalise the user reference to a comparable string
+  const addRef = {
+    $addFields: {
+      _ref: {
+        $cond: {
+          if:   { $gt: [{ $ifNull: ['$user', null] }, null] },
+          then: { $toString: '$user' },
+          else: {
+            $cond: {
+              if:   { $gt: [{ $ifNull: ['$userId', null] }, null] },
+              then: { $toString: '$userId' },
+              else: null,
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const lookupUser = {
+    $lookup: {
+      from: 'users',
+      let:  { ref: '$_ref' },
+      pipeline: [
+        { $match: { $expr: { $eq: [{ $toString: '$_id' }, '$$ref'] } } },
+        { $project: { email: 1, mobile: 1 } },
+      ],
+      as: '_user',
+    },
+  };
+
+  const addUserFields = {
+    $addFields: {
+      userEmail:  { $ifNull: [{ $arrayElemAt: ['$_user.email',  0] }, null] },
+      userMobile: { $ifNull: [{ $arrayElemAt: ['$_user.mobile', 0] }, null] },
+    },
+  };
+
+  const cleanUp = { $project: { _ref: 0, _user: 0 } };
+
+  // Build optional search match
+  let matchStage = null;
+  if (safeSearch) {
+    const regex = { $regex: safeSearch, $options: 'i' };
+    const conditions = [{ userEmail: regex }, { userMobile: regex }];
+    // Also match by ObjectId if the term looks like one
+    if (search.length === 24) {
+      try { conditions.push({ _id: new ObjectId(search) }); } catch {}
+    }
+    matchStage = { $match: { $or: conditions } };
+  }
+
+  const base = [addRef, lookupUser, addUserFields, cleanUp, ...(matchStage ? [matchStage] : [])];
+
+  const [countResult, docs] = await Promise.all([
+    db.collection('walletusers').aggregate([...base, { $count: 'n' }]).toArray(),
+    db.collection('walletusers').aggregate([
+      ...base,
+      { $sort: { [sortField]: sortOrder } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+    ]).toArray(),
+  ]);
+
+  return { docs, total: countResult[0]?.n || 0, page, limit, totalPages: Math.ceil((countResult[0]?.n || 0) / limit) };
+}
+
 router.get('/:name', auth, async (req, res) => {
   const { name } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
@@ -40,6 +111,13 @@ router.get('/:name', auth, async (req, res) => {
 
   try {
     const db = getDb();
+
+    // walletusers gets a special enriched path that joins user email + mobile
+    if (name === 'walletusers') {
+      const result = await fetchWalletUsers(db, { page, limit, search, sortField, sortOrder });
+      return res.json(result);
+    }
+
     const collection = db.collection(name);
 
     let query = {};
