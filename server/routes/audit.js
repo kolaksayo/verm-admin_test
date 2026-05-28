@@ -67,4 +67,35 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
   }
 });
 
+// GET /api/audit/activity-log
+// Admin action log — every edit/delete performed by admins in edit mode
+router.get('/activity-log', auth, async (req, res) => {
+  try {
+    const db = getDb();
+    const limit = Math.min(500, parseInt(req.query.limit) || 100);
+    const filterUser       = req.query.user       || null;
+    const filterCollection = req.query.collection || null;
+
+    const query = {};
+    if (filterUser)       query.adminUser  = filterUser;
+    if (filterCollection) query.collection = filterCollection;
+
+    const rows = await db.collection('adminauditlogs')
+      .find(query)
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .toArray();
+
+    const [users, collections] = await Promise.all([
+      db.collection('adminauditlogs').distinct('adminUser'),
+      db.collection('adminauditlogs').distinct('collection'),
+    ]);
+
+    res.json({ rows, users, collections });
+  } catch (err) {
+    console.error('[audit] activity-log error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -76,8 +76,39 @@ const linkClass = ({ isActive }) =>
       : 'text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
   }`;
 
+function ElevationBanner({ expiry, onDrop }) {
+  const [minsLeft, setMinsLeft] = useState(null);
+
+  const tick = useCallback(() => {
+    if (!expiry) return;
+    const secs = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+    setMinsLeft(secs > 0 ? Math.ceil(secs / 60) : 0);
+  }, [expiry]);
+
+  useEffect(() => {
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [tick]);
+
+  return (
+    <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
+      <span className="text-amber-400 font-medium">
+        ⚠ Edit mode active — all changes are logged.
+        {minsLeft != null && <span className="opacity-70 ml-1">({minsLeft} min remaining)</span>}
+      </span>
+      <button
+        onClick={onDrop}
+        className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 font-medium transition-colors"
+      >
+        Drop access
+      </button>
+    </div>
+  );
+}
+
 export default function Layout() {
-  const { user, role, logout } = useAuth();
+  const { user, role, logout, editMode, elevationExpiry, dropElevation } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -240,6 +271,10 @@ export default function Layout() {
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
         </header>
+
+        {editMode && (
+          <ElevationBanner expiry={elevationExpiry} onDrop={dropElevation} />
+        )}
 
         <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">
           <Outlet />

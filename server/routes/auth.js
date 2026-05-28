@@ -79,4 +79,50 @@ router.get('/me', authMiddleware, (req, res) => {
   res.json({ username: req.user.username, role: req.user.role });
 });
 
+const EDIT_DURATION_MINUTES = 30;
+
+// POST /auth/elevate — request temporary edit access
+router.post('/elevate', authMiddleware, (req, res) => {
+  const { role, id, username } = req.user;
+  if (!['superadmin', 'admin'].includes(role)) {
+    return res.status(403).json({ error: 'Edit access requires admin role or higher' });
+  }
+
+  const { reason } = req.body;
+  const db = getDb();
+
+  // Drop any existing active session for this user first
+  db.prepare(
+    "UPDATE admin_edit_sessions SET dropped_at = datetime('now'), drop_reason = 'superseded' WHERE user_id = ? AND dropped_at IS NULL"
+  ).run(id);
+
+  const result = db.prepare(`
+    INSERT INTO admin_edit_sessions (user_id, username, reason, expires_at)
+    VALUES (?, ?, ?, datetime('now', '+${EDIT_DURATION_MINUTES} minutes'))
+  `).run(id, username, reason || null);
+
+  const session = db.prepare('SELECT * FROM admin_edit_sessions WHERE id = ?').get(result.lastInsertRowid);
+  res.json({ ok: true, sessionId: session.id, expiresAt: session.expires_at });
+});
+
+// POST /auth/drop-elevation — end edit session
+router.post('/drop-elevation', authMiddleware, (req, res) => {
+  const db = getDb();
+  db.prepare(
+    "UPDATE admin_edit_sessions SET dropped_at = datetime('now'), drop_reason = 'user_dropped' WHERE user_id = ? AND dropped_at IS NULL"
+  ).run(req.user.id);
+  res.json({ ok: true });
+});
+
+// GET /auth/elevation-status — check if current user has active edit session
+router.get('/elevation-status', authMiddleware, (req, res) => {
+  const db = getDb();
+  const session = db.prepare(
+    "SELECT id, reason, elevated_at, expires_at FROM admin_edit_sessions WHERE user_id = ? AND dropped_at IS NULL AND expires_at > datetime('now') LIMIT 1"
+  ).get(req.user.id);
+
+  if (!session) return res.json({ active: false });
+  res.json({ active: true, sessionId: session.id, reason: session.reason, elevatedAt: session.elevated_at, expiresAt: session.expires_at });
+});
+
 module.exports = router;

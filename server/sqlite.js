@@ -78,6 +78,19 @@ function getDb() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_wud_user_trigger
         ON whatsapp_user_dms(user_id, trigger);
+
+      CREATE TABLE IF NOT EXISTS admin_edit_sessions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        username    TEXT    NOT NULL,
+        reason      TEXT,
+        elevated_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        expires_at  TEXT    NOT NULL,
+        dropped_at  TEXT,
+        drop_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_edit_sessions_user
+        ON admin_edit_sessions(user_id, dropped_at);
     `);
 
     // Safe additive migrations
