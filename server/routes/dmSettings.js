@@ -77,8 +77,8 @@ router.post('/test', auth, async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
-  const { token } = getConfig();
-  if (!token) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
+  const { apiKey } = getConfig();
+  if (!apiKey) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
 
   try {
     const db  = getSQLite();
@@ -202,8 +202,8 @@ router.post('/test-settled', auth, async (req, res) => {
   const { bookingCode } = req.body;
   if (!bookingCode) return res.status(400).json({ error: 'bookingCode required' });
 
-  const { token } = getConfig();
-  if (!token) return res.status(400).json({ error: 'WhatsApp not configured' });
+  const { apiKey } = getConfig();
+  if (!apiKey) return res.status(400).json({ error: 'WhatsApp not configured' });
 
   try {
     const mongoDb = getDb();
