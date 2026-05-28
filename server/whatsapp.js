@@ -57,7 +57,7 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: groupId, message_type: 'text', message: { type: 'text', text: plain } }),
+      body: JSON.stringify({ receiver: groupId, message_type: 'Text', message: { type: 'Text', text: plain } }),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
@@ -141,7 +141,7 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: digits, message_type: 'text', message: { type: 'text', text: plain } }),
+      body: JSON.stringify({ receiver: digits, message_type: 'Text', message: { type: 'Text', text: plain } }),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
@@ -171,7 +171,7 @@ async function sendDirectMessage(phone, text, trigger = 'manual') {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: digits, message_type: 'text', message: { type: 'text', text: plain } }),
+      body: JSON.stringify({ receiver: digits, message_type: 'Text', message: { type: 'Text', text: plain } }),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
@@ -202,7 +202,7 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
         'Authorization': `Basic ${apiKey}`,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ receiver: channelId, message_type: 'text', message: { type: 'text', text: plain } }),
+      body: JSON.stringify({ receiver: channelId, message_type: 'Text', message: { type: 'Text', text: plain } }),
     });
     const json = await res.json().catch(() => ({}));
     const ok   = res.ok && json.result !== false;
