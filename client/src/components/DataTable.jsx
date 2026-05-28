@@ -35,7 +35,7 @@ const PRIORITY_COLUMNS = {
   game_bet: ['bookingCode', 'betMode', 'status', 'createdBy', 'capacity', 'createdAt'],
   game_bet_leaderboard: ['user', 'gameBet', 'rank', 'points', 'correctPredictions', 'totalPredictions'],
   users: ['username', 'email', 'mobile', 'name', 'isVerified', 'isActive', 'createdAt'],
-  transactions: ['type', 'amount', 'user', 'currencyType', 'status', 'createdAt'],
+  transactions: ['type', 'amount', 'description', 'user', 'status', 'createdAt'],
   walletusers: ['user', 'userEmail', 'userMobile', 'currencyType', 'balance', 'updatedAt'],
 };
 

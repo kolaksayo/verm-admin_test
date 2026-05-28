@@ -97,6 +97,82 @@ async function fetchWalletUsers(db, { page, limit, search, sortField, sortOrder 
   return { docs, total: countResult[0]?.n || 0, page, limit, totalPages: Math.ceil((countResult[0]?.n || 0) / limit) };
 }
 
+// Transactions handler — explicit description/type/status search + SQLite admin credits
+async function fetchTransactions(db, { page, limit, search, sortField, sortOrder }) {
+  const safeSearch = search ? search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+
+  // Build MongoDB query
+  let mongoQuery = {};
+  if (search) {
+    if (search.length === 24) {
+      try { mongoQuery = { _id: new ObjectId(search) }; } catch {}
+    }
+    if (!mongoQuery._id) {
+      mongoQuery = {
+        $or: [
+          { description: { $regex: safeSearch, $options: 'i' } },
+          { type:        { $regex: safeSearch, $options: 'i' } },
+          { status:      { $regex: safeSearch, $options: 'i' } },
+        ],
+      };
+    }
+  }
+
+  // Fetch matching admin credits from SQLite
+  // Include them when: no search, or search matches "admin", "top up", "credit"
+  const lc = search.toLowerCase();
+  const adminCreditDocs = (() => {
+    try {
+      const matchesAdminCredit = !search ||
+        'admin top up'.includes(lc) ||
+        lc.includes('admin') ||
+        lc.includes('top up');
+      if (!matchesAdminCredit) return [];
+      return getSQLite().prepare(
+        `SELECT * FROM admin_credits ORDER BY created_at DESC LIMIT 500`
+      ).all().map((r) => ({
+        _id:         `admin-credit-${r.id}`,
+        type:        'CREDIT',
+        description: 'Admin TOP UP',
+        amount:      r.amount,
+        status:      'COMPLETED',
+        createdAt:   r.created_at,
+        adminUser:   r.admin_user,
+        notes:       r.notes || undefined,
+      }));
+    } catch { return []; }
+  })();
+
+  const [mongoTotal, mongoDocs] = await Promise.all([
+    db.collection('transactions').countDocuments(mongoQuery),
+    db.collection('transactions')
+      .find(mongoQuery)
+      .sort({ [sortField]: sortOrder })
+      .skip((page - 1) * limit)
+      .limit(page === 1 ? limit - Math.min(adminCreditDocs.length, limit) : limit)
+      .toArray(),
+  ]);
+
+  // Page 1: prepend admin credits (sorted by date with mongo docs), cap at limit
+  let docs;
+  if (page === 1 && adminCreditDocs.length > 0) {
+    const merged = [...adminCreditDocs, ...mongoDocs];
+    if (sortField === 'createdAt') {
+      merged.sort((a, b) => {
+        const av = new Date(a.createdAt).getTime();
+        const bv = new Date(b.createdAt).getTime();
+        return sortOrder === 1 ? av - bv : bv - av;
+      });
+    }
+    docs = merged.slice(0, limit);
+  } else {
+    docs = mongoDocs;
+  }
+
+  const total = mongoTotal + adminCreditDocs.length;
+  return { docs, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
 router.get('/:name', auth, async (req, res) => {
   const { name } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
@@ -115,6 +191,12 @@ router.get('/:name', auth, async (req, res) => {
     // walletusers gets a special enriched path that joins user email + mobile
     if (name === 'walletusers') {
       const result = await fetchWalletUsers(db, { page, limit, search, sortField, sortOrder });
+      return res.json(result);
+    }
+
+    // transactions gets explicit description/type/status search + SQLite admin credits merged in
+    if (name === 'transactions') {
+      const result = await fetchTransactions(db, { page, limit, search, sortField, sortOrder });
       return res.json(result);
     }
 

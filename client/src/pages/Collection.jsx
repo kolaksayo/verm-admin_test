@@ -101,7 +101,7 @@ export default function Collection({ collectionName }) {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by ID or field value…"
+              placeholder={name === 'transactions' ? 'Search by description, type, status…' : 'Search by ID or field value…'}
               className="w-72 px-4 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
             />
             <button
