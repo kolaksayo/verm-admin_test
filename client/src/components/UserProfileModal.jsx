@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 function formatDate(val) {
   if (!val) return '—';
@@ -103,6 +104,118 @@ function TransactionList({ userId, type, description }) {
   );
 }
 
+// ── Admin credit panel ────────────────────────────────────────────────────────
+
+function CreditPanel({ wallet, userId, onSuccess }) {
+  const { role, editMode, requestElevation } = useAuth();
+  const canCredit = ['superadmin', 'admin'].includes(role);
+  const [open, setOpen]       = useState(false);
+  const [amount, setAmount]   = useState('');
+  const [notes, setNotes]     = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState('');
+  const [elevating, setElevating] = useState(false);
+  const [elevReason, setElevReason] = useState('');
+  const [elevErr, setElevErr] = useState('');
+
+  if (!canCredit) return null;
+
+  const handleCredit = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { setMsg('Enter a valid amount'); return; }
+    setSaving(true); setMsg('');
+    try {
+      const res = await api.post('/admin-credit', { walletId: wallet.id, userId, amount: amt, notes });
+      setMsg(`Credited ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })} — new balance: ${res.data.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+      setAmount(''); setNotes('');
+      onSuccess();
+    } catch (err) {
+      setMsg(err.response?.data?.error || 'Credit failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleElevate = async () => {
+    setElevating(true); setElevErr('');
+    try { await requestElevation(elevReason); }
+    catch (err) { setElevErr(err.response?.data?.error || 'Failed'); }
+    finally { setElevating(false); }
+  };
+
+  return (
+    <div className="mt-1">
+      {!open ? (
+        <button
+          onClick={() => { setOpen(true); setMsg(''); }}
+          className="text-xs text-vs-purple-light hover:text-vs-purple font-medium transition-colors"
+        >
+          + Credit
+        </button>
+      ) : (
+        <div className="mt-2 rounded-lg border border-vs-border bg-vs-card p-3 space-y-2">
+          {!editMode ? (
+            <div className="space-y-2">
+              <p className="text-xs text-amber-400 font-medium">Edit access required to credit a wallet.</p>
+              <input
+                type="text"
+                value={elevReason}
+                onChange={(e) => setElevReason(e.target.value)}
+                placeholder="Reason (optional)"
+                className="w-full px-2 py-1.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleElevate}
+                  disabled={elevating}
+                  className="px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded transition-colors disabled:opacity-50"
+                >
+                  {elevating ? 'Requesting…' : 'Request Edit Access'}
+                </button>
+                <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
+              </div>
+              {elevErr && <p className="text-xs text-vs-danger">{elevErr}</p>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-amber-400">Edit mode active — credit will be logged.</p>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => { setAmount(e.target.value); setMsg(''); }}
+                  placeholder="Amount"
+                  className="w-28 px-2 py-1.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple"
+                />
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notes (optional)"
+                  className="flex-1 px-2 py-1.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple"
+                />
+              </div>
+              <div className="flex gap-2 items-center">
+                <button
+                  onClick={handleCredit}
+                  disabled={saving || !amount}
+                  className="px-3 py-1.5 text-xs bg-vs-success/20 hover:bg-vs-success/30 text-vs-success border border-vs-success/30 font-semibold rounded transition-colors disabled:opacity-50"
+                >
+                  {saving ? 'Crediting…' : 'Apply Credit'}
+                </button>
+                <button onClick={() => { setOpen(false); setMsg(''); }} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
+                {msg && <span className={`text-xs ${msg.includes('Credited') ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 const TABS = ['Overview', 'Transactions', 'Competitions'];
@@ -122,7 +235,7 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
   const [descriptions, setDescriptions] = useState([]);
   const [descLoading, setDescLoading] = useState(false);
 
-  useEffect(() => {
+  const loadProfile = useCallback(() => {
     setLoading(true);
     setError('');
     api.get(`/user-profile/${userId}`)
@@ -130,6 +243,8 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
       .catch((err) => setError(err.response?.data?.error || 'Failed to load profile'))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
 
   // Fetch distinct descriptions whenever credit/debit subtab is selected
   useEffect(() => {
@@ -291,18 +406,21 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
               {profile.wallets.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-2">Wallets</p>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {profile.wallets.map((w, i) => (
-                      <div key={i} className="flex justify-between items-center bg-vs-elevated rounded-lg px-4 py-3 border border-vs-border">
-                        <span className="text-sm text-vs-text-3">
-                          {w.currency?.name || 'Unknown'}
-                          {w.currency?.symbol ? ` (${w.currency.symbol})` : ''}
-                        </span>
-                        <span className="text-sm font-bold text-vs-text">
-                          {typeof w.balance === 'number'
-                            ? w.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                            : w.balance}
-                        </span>
+                      <div key={i} className="bg-vs-elevated rounded-lg px-4 py-3 border border-vs-border">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-vs-text-3">
+                            {w.currency?.name || 'Unknown'}
+                            {w.currency?.symbol ? ` (${w.currency.symbol})` : ''}
+                          </span>
+                          <span className="text-sm font-bold text-vs-text">
+                            {typeof w.balance === 'number'
+                              ? w.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                              : w.balance}
+                          </span>
+                        </div>
+                        <CreditPanel wallet={w} userId={userId} onSuccess={loadProfile} />
                       </div>
                     ))}
                   </div>

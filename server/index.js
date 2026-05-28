@@ -24,6 +24,7 @@ const whatsappSettingsRoutes  = require('./routes/whatsappSettings');
 const dmSettingsRoutes        = require('./routes/dmSettings');
 const campaignRoutes          = require('./routes/campaigns');
 const auditRoutes             = require('./routes/audit');
+const adminCreditRoutes       = require('./routes/adminCredit');
 const navBadgesRoutes = require('./routes/navBadges');
 
 const { startWatcher } = require('./gameBetWatcher');
@@ -69,6 +70,7 @@ app.use('/api/whatsapp',         whatsappSettingsRoutes);
 app.use('/api/notifications/dm', dmSettingsRoutes);
 app.use('/api/campaigns',        campaignRoutes);
 app.use('/api/audit',            auditRoutes);
+app.use('/api/admin-credit',     adminCreditRoutes);
 app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');

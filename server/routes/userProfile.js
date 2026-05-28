@@ -126,6 +126,7 @@ router.get('/:id', auth, async (req, res) => {
         isActive: user.isActive ?? true,
       },
       wallets: wallets.map((w) => ({
+        id: w._id.toString(),
         currency: w.currencyType
           ? (currencyMap[w.currencyType.toString()] || { name: String(w.currencyType) })
           : { name: 'Unknown' },

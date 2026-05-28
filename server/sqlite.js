@@ -107,6 +107,23 @@ function getDb() {
         ON admin_activity_logs(admin_user);
       CREATE INDEX IF NOT EXISTS idx_activity_logs_col
         ON admin_activity_logs(collection);
+
+      CREATE TABLE IF NOT EXISTS admin_credits (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user     TEXT    NOT NULL,
+        session_id     INTEGER,
+        user_id        TEXT    NOT NULL,
+        wallet_id      TEXT    NOT NULL,
+        currency_name  TEXT,
+        amount         REAL    NOT NULL,
+        balance_before REAL    NOT NULL,
+        balance_after  REAL    NOT NULL,
+        description    TEXT    NOT NULL DEFAULT 'Admin Credit',
+        notes          TEXT,
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_credits_user
+        ON admin_credits(user_id);
     `);
 
     // Safe additive migrations
