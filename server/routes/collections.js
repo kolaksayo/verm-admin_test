@@ -1,6 +1,7 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb, getWriteDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
 
@@ -121,18 +122,21 @@ router.get('/:name/:id', auth, async (req, res) => {
   }
 });
 
-async function writeAuditLog(db, { adminUser, sessionId, action, collection, documentId, before, after }) {
+function writeAuditLog(_, { adminUser, sessionId, action, collection, documentId, before, after }) {
   try {
-    await db.collection('adminauditlogs').insertOne({
+    getSQLite().prepare(`
+      INSERT INTO admin_activity_logs
+        (admin_user, session_id, action, collection, document_id, before_json, after_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
       adminUser,
-      sessionId,
+      sessionId || null,
       action,
       collection,
-      documentId: String(documentId),
-      before: before || null,
-      after:  after  || null,
-      timestamp: new Date(),
-    });
+      String(documentId),
+      before ? JSON.stringify(before) : null,
+      after  ? JSON.stringify(after)  : null,
+    );
   } catch { /* non-fatal */ }
 }
 
@@ -166,7 +170,7 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
 
     await wDb.collection(name).replaceOne({ _id: oid }, after);
 
-    await writeAuditLog(wDb, {
+    await writeAuditLog(null, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'update',
@@ -205,7 +209,7 @@ router.delete('/:name/:id', auth, requireEditMode, async (req, res) => {
 
     await wDb.collection(name).deleteOne({ _id: oid });
 
-    await writeAuditLog(wDb, {
+    await writeAuditLog(null, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'delete',

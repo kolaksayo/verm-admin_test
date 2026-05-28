@@ -91,6 +91,22 @@ function getDb() {
       );
       CREATE INDEX IF NOT EXISTS idx_edit_sessions_user
         ON admin_edit_sessions(user_id, dropped_at);
+
+      CREATE TABLE IF NOT EXISTS admin_activity_logs (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user   TEXT    NOT NULL,
+        session_id   INTEGER,
+        action       TEXT    NOT NULL,
+        collection   TEXT    NOT NULL,
+        document_id  TEXT    NOT NULL,
+        before_json  TEXT,
+        after_json   TEXT,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_user
+        ON admin_activity_logs(admin_user);
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_col
+        ON admin_activity_logs(collection);
     `);
 
     // Safe additive migrations

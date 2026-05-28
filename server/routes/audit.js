@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
@@ -69,27 +70,37 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
 
 // GET /api/audit/activity-log
 // Admin action log — every edit/delete performed by admins in edit mode
-router.get('/activity-log', auth, async (req, res) => {
+router.get('/activity-log', auth, (req, res) => {
   try {
-    const db = getDb();
+    const sqlite = getSQLite();
     const limit = Math.min(500, parseInt(req.query.limit) || 100);
     const filterUser       = req.query.user       || null;
     const filterCollection = req.query.collection || null;
 
-    const query = {};
-    if (filterUser)       query.adminUser  = filterUser;
-    if (filterCollection) query.collection = filterCollection;
+    const conditions = [];
+    const params = [];
+    if (filterUser)       { conditions.push('admin_user = ?');  params.push(filterUser); }
+    if (filterCollection) { conditions.push('collection = ?');  params.push(filterCollection); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const rows = await db.collection('adminauditlogs')
-      .find(query)
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .toArray();
+    const rawRows = sqlite.prepare(
+      `SELECT * FROM admin_activity_logs ${where} ORDER BY id DESC LIMIT ?`
+    ).all(...params, limit);
 
-    const [users, collections] = await Promise.all([
-      db.collection('adminauditlogs').distinct('adminUser'),
-      db.collection('adminauditlogs').distinct('collection'),
-    ]);
+    const rows = rawRows.map((r) => ({
+      _id:        r.id,
+      adminUser:  r.admin_user,
+      sessionId:  r.session_id,
+      action:     r.action,
+      collection: r.collection,
+      documentId: r.document_id,
+      before:     r.before_json ? JSON.parse(r.before_json) : null,
+      after:      r.after_json  ? JSON.parse(r.after_json)  : null,
+      timestamp:  r.created_at,
+    }));
+
+    const users       = sqlite.prepare('SELECT DISTINCT admin_user FROM admin_activity_logs ORDER BY admin_user').all().map((r) => r.admin_user);
+    const collections = sqlite.prepare('SELECT DISTINCT collection FROM admin_activity_logs ORDER BY collection').all().map((r) => r.collection);
 
     res.json({ rows, users, collections });
   } catch (err) {
