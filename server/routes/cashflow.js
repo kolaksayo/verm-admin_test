@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
@@ -167,6 +168,46 @@ router.get('/summary', auth, async (req, res) => {
       db.collection('transactions').distinct('type'),
     ]);
 
+    // ── Admin credits from SQLite ─────────────────────────────────────────────
+    let adminCredits = { count: 0, totalUSD: 0, daily: [], weekly: [], monthly: [] };
+    try {
+      const sqlite = getSQLite();
+      const acFrom = dateFrom.toISOString().slice(0, 19).replace('T', ' ');
+      const acTo   = dateTo ? dateTo.toISOString().slice(0, 19).replace('T', ' ') : null;
+      const acWhere = acTo
+        ? `created_at >= '${acFrom}' AND created_at <= '${acTo}'`
+        : `created_at >= '${acFrom}'`;
+
+      const acTotal = sqlite.prepare(
+        `SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM admin_credits WHERE ${acWhere}`
+      ).get();
+      adminCredits.count    = acTotal.cnt;
+      adminCredits.totalUSD = acTotal.total;
+
+      const acDaily = sqlite.prepare(
+        `SELECT strftime('%Y', created_at) as year,
+                strftime('%m', created_at) as month,
+                strftime('%d', created_at) as day,
+                COUNT(*) as count, SUM(amount) as totalUSD
+           FROM admin_credits WHERE ${acWhere}
+           GROUP BY year, month, day ORDER BY year, month, day`
+      ).all();
+      adminCredits.daily = acDaily.map((r) => ({
+        year: +r.year, month: +r.month, day: +r.day, count: r.count, totalUSD: r.totalUSD,
+      }));
+
+      const acMonthly = sqlite.prepare(
+        `SELECT strftime('%Y', created_at) as year,
+                strftime('%m', created_at) as month,
+                COUNT(*) as count, SUM(amount) as totalUSD
+           FROM admin_credits WHERE ${acWhere}
+           GROUP BY year, month ORDER BY year, month`
+      ).all();
+      adminCredits.monthly = acMonthly.map((r) => ({
+        year: +r.year, month: +r.month, count: r.count, totalUSD: r.totalUSD,
+      }));
+    } catch { /* non-fatal */ }
+
     // ── Bank balance ──────────────────────────────────────────────────────────
     const dep  = depositAgg[0] || {};
     const wit  = withdrawalAgg[0] || {};
@@ -230,6 +271,10 @@ router.get('/summary', auth, async (req, res) => {
           totalUSD: bet.totalFees ?? 0,
           betCount: bet.betCount ?? 0,
         },
+        adminCredits: {
+          count: adminCredits.count,
+          totalUSD: adminCredits.totalUSD,
+        },
         bankBalance: {
           totalDepositNGN: totalDepNGN, bankFeesOnDeposits: totalDepFees,
           netDepositNGN: netDepNGN, estimatedWithdrawalNGN: estWithdrawalNGN,
@@ -240,16 +285,19 @@ router.get('/summary', auth, async (req, res) => {
         deposits: depDaily.map(serDep),
         withdrawals: witDaily.map(serWit),
         betFees: betFeeDaily.map(serBet),
+        adminCredits: adminCredits.daily,
       },
       weekly: {
         deposits: depWeekly.map(serDep),
         withdrawals: witWeekly.map(serWit),
         betFees: betFeeWeekly.map(serBet),
+        adminCredits: [],
       },
       monthly: {
         deposits: depMonthly.map(serDep),
         withdrawals: witMonthly.map(serWit),
         betFees: betFeeMonthly.map(serBet),
+        adminCredits: adminCredits.monthly,
       },
       typeBreakdown: typeBreakdown.map((t) => ({
         type: t._id?.type || 'unknown',

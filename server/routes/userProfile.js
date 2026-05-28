@@ -1,6 +1,7 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
@@ -113,6 +114,23 @@ router.get('/:id', auth, async (req, res) => {
         correct: null,
         total: null,
       }));
+
+    // Merge SQLite admin credits into the MongoDB transaction aggregation
+    try {
+      const acRow = getSQLite().prepare(
+        `SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
+           FROM admin_credits WHERE user_id = ?`
+      ).get(String(userId));
+      if (acRow && acRow.cnt > 0) {
+        const creditEntry = txAgg.find((t) => (t._id || '').toString().toUpperCase() === 'CREDIT');
+        if (creditEntry) {
+          creditEntry.total  += acRow.cnt;
+          creditEntry.amount += acRow.total;
+        } else {
+          txAgg.push({ _id: 'CREDIT', total: acRow.cnt, amount: acRow.total, last: null, first: null });
+        }
+      }
+    } catch { /* non-fatal */ }
 
     res.json({
       user: {

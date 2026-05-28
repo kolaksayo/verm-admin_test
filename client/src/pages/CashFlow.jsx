@@ -53,7 +53,7 @@ function dayKey(year, month, day) {
 // ── Build unified timeline for a given period ────────────────────────────────
 
 function buildTimeline(period, data) {
-  const { deposits, withdrawals, betFees } = data[period];
+  const { deposits, withdrawals, betFees, adminCredits = [] } = data[period];
 
   let keyFn, labelFn;
   if (period === 'monthly') {
@@ -71,23 +71,27 @@ function buildTimeline(period, data) {
     ...deposits.map(keyFn),
     ...withdrawals.map(keyFn),
     ...betFees.map(keyFn),
+    ...adminCredits.map(keyFn),
   ]);
   const sortedKeys = [...allKeys].sort();
 
   const depMap = Object.fromEntries(deposits.map((m) => [keyFn(m), m]));
   const witMap = Object.fromEntries(withdrawals.map((m) => [keyFn(m), m]));
   const betMap = Object.fromEntries(betFees.map((m) => [keyFn(m), m]));
+  const acMap  = Object.fromEntries(adminCredits.map((m) => [keyFn(m), m]));
 
   return sortedKeys.map((key) => ({
-    label:       labelFn(depMap[key] || witMap[key] || betMap[key] || {}),
-    depFeeNGN:   depMap[key]?.feeNGN ?? 0,
-    depCount:    depMap[key]?.count ?? 0,
-    depAvgRate:  depMap[key]?.avgRateCharged ?? null,
-    witFeeNGN:   witMap[key]?.feeNGN ?? 0,
-    witCount:    witMap[key]?.count ?? 0,
-    witAvgRate:  witMap[key]?.avgRatePaid ?? null,
-    betFeeUSD:   betMap[key]?.fees ?? 0,
-    betCount:    betMap[key]?.count ?? 0,
+    label:        labelFn(depMap[key] || witMap[key] || betMap[key] || acMap[key] || {}),
+    depFeeNGN:    depMap[key]?.feeNGN ?? 0,
+    depCount:     depMap[key]?.count ?? 0,
+    depAvgRate:   depMap[key]?.avgRateCharged ?? null,
+    witFeeNGN:    witMap[key]?.feeNGN ?? 0,
+    witCount:     witMap[key]?.count ?? 0,
+    witAvgRate:   witMap[key]?.avgRatePaid ?? null,
+    betFeeUSD:    betMap[key]?.fees ?? 0,
+    betCount:     betMap[key]?.count ?? 0,
+    adminCredUSD: acMap[key]?.totalUSD ?? 0,
+    adminCredCnt: acMap[key]?.count ?? 0,
   }));
 }
 
@@ -97,6 +101,7 @@ function TimelineTable({ rows, periodLabel }) {
   const maxDep = Math.max(...rows.map((r) => r.depFeeNGN), 1);
   const maxWit = Math.max(...rows.map((r) => r.witFeeNGN), 1);
   const maxBet = Math.max(...rows.map((r) => r.betFeeUSD), 0.01);
+  const maxAC  = Math.max(...rows.map((r) => r.adminCredUSD ?? 0), 0.01);
 
   if (rows.length === 0) {
     return (
@@ -119,6 +124,7 @@ function TimelineTable({ rows, periodLabel }) {
             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Withdrawals</th>
             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3 hidden lg:table-cell">Avg Rate Paid</th>
             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-purple">Bet Fees ($)</th>
+            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-success">Admin Credits ($)</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-vs-border">
@@ -147,6 +153,16 @@ function TimelineTable({ rows, periodLabel }) {
                   <MiniBar value={row.betFeeUSD} max={maxBet} accent="bg-vs-purple" />
                 </div>
               </td>
+              <td className="px-4 py-3 text-right">
+                {(row.adminCredUSD ?? 0) > 0 ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-vs-success font-semibold">{fmtUSD(row.adminCredUSD)}</span>
+                    <MiniBar value={row.adminCredUSD} max={maxAC} accent="bg-vs-success" />
+                  </div>
+                ) : (
+                  <span className="text-vs-text-3 opacity-30">—</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -160,6 +176,7 @@ function TimelineTable({ rows, periodLabel }) {
             <td className="px-4 py-3 text-right text-vs-text-3 hidden lg:table-cell">{rows.reduce((s, r) => s + r.witCount, 0)}</td>
             <td className="px-4 py-3 hidden lg:table-cell" />
             <td className="px-4 py-3 text-right font-bold text-vs-purple">{fmtUSD(rows.reduce((s, r) => s + r.betFeeUSD, 0))}</td>
+            <td className="px-4 py-3 text-right font-bold text-vs-success">{fmtUSD(rows.reduce((s, r) => s + (r.adminCredUSD ?? 0), 0))}</td>
           </tr>
         </tfoot>
       </table>
@@ -293,6 +310,7 @@ export default function CashFlow() {
   const dep  = summary.depositFees;
   const wit  = summary.withdrawalFees;
   const bet  = summary.betFees;
+  const ac   = summary.adminCredits || { count: 0, totalUSD: 0 };
 
   const maxTxCount = Math.max(...typeBreakdown.map((t) => t.count), 1);
 
@@ -358,7 +376,7 @@ export default function CashFlow() {
       <RevenueTrendChart data={data} period={tab === 'types' ? 'monthly' : tab} />
 
       {/* Revenue summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
 
         {/* Deposit fees */}
         <div className="bg-vs-card border border-vs-border rounded-xl p-5">
@@ -408,6 +426,19 @@ export default function CashFlow() {
           <div className="mt-3 text-xs">
             <p className="text-vs-text-3">Source</p>
             <p className="font-semibold text-vs-text font-mono text-xs">totalFeesDeducted per bet</p>
+          </div>
+        </div>
+
+        {/* Admin credits */}
+        <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Admin TOP UP Credits</p>
+          <p className="text-3xl font-bold text-vs-success">{fmtUSD(ac.totalUSD)}</p>
+          <p className="text-xs text-vs-text-3 mt-1">
+            {ac.count.toLocaleString()} manual credit{ac.count !== 1 ? 's' : ''} · logged locally
+          </p>
+          <div className="mt-3 text-xs">
+            <p className="text-vs-text-3">Source</p>
+            <p className="font-semibold text-vs-text font-mono text-xs">admin_credits (SQLite)</p>
           </div>
         </div>
       </div>
