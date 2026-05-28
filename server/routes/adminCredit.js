@@ -55,7 +55,7 @@ router.post('/', auth, requireEditMode, async (req, res) => {
     getSQLite().prepare(`
       INSERT INTO admin_credits
         (admin_user, session_id, user_id, wallet_id, currency_name, amount, balance_before, balance_after, description, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Admin Credit', ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Admin TOP UP', ?)
     `).run(
       req.user.username,
       req.editSessionId || null,

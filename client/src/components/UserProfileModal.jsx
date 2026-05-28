@@ -39,16 +39,53 @@ function TransactionList({ userId, type, description }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    const params = { page, limit: 20 };
-    if (type) params.type = type;
-    if (description) params.description = description;
-    api.get(`/user-profile/${userId}/transactions`, { params })
-      .then((res) => {
-        setDocs(res.data.docs);
-        setTotal(res.data.total);
-        setTotalPages(res.data.totalPages);
+
+    // Admin credits come from SQLite; show them when viewing credit/all and
+    // either no description filter or the filter is explicitly "Admin TOP UP"
+    const showAdminCredits = (!type || type === 'credit') &&
+      (!description || description === 'Admin TOP UP');
+    const adminCreditPromise = showAdminCredits
+      ? api.get(`/admin-credit/history/${userId}`).then((r) => r.data).catch(() => [])
+      : Promise.resolve([]);
+
+    // If description filter is exclusively "Admin TOP UP" skip the MongoDB call
+    const mongoPromise = description === 'Admin TOP UP'
+      ? Promise.resolve({ docs: [], total: 0, totalPages: 1 })
+      : (() => {
+          const params = { page, limit: 20 };
+          if (type) params.type = type;
+          if (description) params.description = description;
+          return api.get(`/user-profile/${userId}/transactions`, { params })
+            .then((r) => r.data)
+            .catch(() => null);
+        })();
+
+    Promise.all([mongoPromise, adminCreditPromise])
+      .then(([mongo, adminCredits]) => {
+        if (!mongo) { setError('Failed to load transactions'); return; }
+
+        // Map admin credits to transaction shape
+        const adminDocs = adminCredits.map((c) => ({
+          _id:        `ac-${c.id}`,
+          type:       'CREDIT',
+          description: c.description,   // 'Admin TOP UP'
+          amount:     c.amount,
+          currency:   c.currencyName ? { name: c.currencyName } : null,
+          createdAt:  c.createdAt,
+          isAdminCredit: true,
+          adminUser:  c.adminUser,
+          notes:      c.notes,
+        }));
+
+        // Merge: admin credits only appear on page 1 (they're few)
+        const merged = page === 1
+          ? [...adminDocs, ...mongo.docs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          : mongo.docs;
+
+        setDocs(merged);
+        setTotal(mongo.total + (page === 1 ? adminDocs.length : 0));
+        setTotalPages(mongo.totalPages || 1);
       })
-      .catch(() => setError('Failed to load transactions'))
       .finally(() => setLoading(false));
   }, [userId, type, description, page]);
 
@@ -76,6 +113,9 @@ function TransactionList({ userId, type, description }) {
                 )}
               </div>
               {t.description && <p className="text-xs text-vs-text-3 mt-1 truncate">{t.description}</p>}
+              {t.isAdminCredit && t.adminUser && (
+                <p className="text-xs text-vs-purple-light opacity-70 mt-0.5">by {t.adminUser}{t.notes ? ` · ${t.notes}` : ''}</p>
+              )}
               {t.reference && <p className="text-xs text-vs-text-3 mt-0.5 font-mono truncate opacity-60">{t.reference}</p>}
               {t.status && !/^(success|completed|paid)$/i.test(t.status) && (
                 <span className="inline-block mt-1 text-xs px-1.5 py-0.5 rounded bg-vs-warning/10 text-vs-warning capitalize">{t.status}</span>
@@ -251,10 +291,16 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
     setDescFilter('');
     if (!txSubtab) { setDescriptions([]); return; }
     setDescLoading(true);
-    api.get(`/user-profile/${userId}/transaction-descriptions`, { params: { type: txSubtab } })
-      .then((res) => setDescriptions(res.data))
-      .catch(() => setDescriptions([]))
-      .finally(() => setDescLoading(false));
+    const mongoDesc = api.get(`/user-profile/${userId}/transaction-descriptions`, { params: { type: txSubtab } })
+      .then((res) => res.data).catch(() => []);
+    // Also check for admin credits (only relevant on credit subtab)
+    const adminDesc = txSubtab === 'credit'
+      ? api.get(`/admin-credit/history/${userId}`).then((r) => r.data.length > 0 ? ['Admin TOP UP'] : []).catch(() => [])
+      : Promise.resolve([]);
+    Promise.all([mongoDesc, adminDesc]).then(([md, ad]) => {
+      const merged = [...new Set([...md, ...ad])].sort();
+      setDescriptions(merged);
+    }).finally(() => setDescLoading(false));
   }, [userId, txSubtab]);
 
   const totalTx = (profile?.transactions || []).reduce((s, t) => s + t.total, 0);
