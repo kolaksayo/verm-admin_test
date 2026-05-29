@@ -118,23 +118,23 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
     }
   }
 
-  // Fetch matching admin credits from SQLite
-  // Include them when: no search, or search matches "admin", "top up", "credit"
+  // Fetch matching admin adjustments (credits + debits) from SQLite
   const lc = search.toLowerCase();
-  const adminCreditDocs = (() => {
+  const adminAdjDocs = (() => {
     try {
-      const matchesAdminCredit = !search ||
-        'admin top up'.includes(lc) ||
-        lc.includes('admin') ||
-        lc.includes('top up');
-      if (!matchesAdminCredit) return [];
+      const matchesAdmin = !search ||
+        'admin top up'.includes(lc) || 'admin debit'.includes(lc) ||
+        lc.includes('admin') || lc.includes('top up') ||
+        lc.includes('debit') || lc.includes('credit');
+      if (!matchesAdmin) return [];
       return getSQLite().prepare(
         `SELECT * FROM admin_credits ORDER BY created_at DESC LIMIT 500`
       ).all().map((r) => ({
         _id:         `admin-credit-${r.id}`,
-        type:        'CREDIT',
-        description: 'Admin TOP UP',
+        type:        r.tx_type || 'CREDIT',
+        description: r.description,
         amount:      r.amount,
+        user:        r.user_id,   // maps to the DataTable reference lookup → shows username
         status:      'COMPLETED',
         createdAt:   r.created_at,
         adminUser:   r.admin_user,
@@ -149,14 +149,14 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
       .find(mongoQuery)
       .sort({ [sortField]: sortOrder })
       .skip((page - 1) * limit)
-      .limit(page === 1 ? limit - Math.min(adminCreditDocs.length, limit) : limit)
+      .limit(page === 1 ? limit - Math.min(adminAdjDocs.length, limit) : limit)
       .toArray(),
   ]);
 
-  // Page 1: prepend admin credits (sorted by date with mongo docs), cap at limit
+  // Page 1: merge admin adjustments with mongo docs sorted by date, cap at limit
   let docs;
-  if (page === 1 && adminCreditDocs.length > 0) {
-    const merged = [...adminCreditDocs, ...mongoDocs];
+  if (page === 1 && adminAdjDocs.length > 0) {
+    const merged = [...adminAdjDocs, ...mongoDocs];
     if (sortField === 'createdAt') {
       merged.sort((a, b) => {
         const av = new Date(a.createdAt).getTime();
@@ -169,7 +169,7 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
     docs = mongoDocs;
   }
 
-  const total = mongoTotal + adminCreditDocs.length;
+  const total = mongoTotal + adminAdjDocs.length;
   return { docs, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 

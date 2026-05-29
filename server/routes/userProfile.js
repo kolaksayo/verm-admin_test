@@ -115,19 +115,21 @@ router.get('/:id', auth, async (req, res) => {
         total: null,
       }));
 
-    // Merge SQLite admin credits into the MongoDB transaction aggregation
+    // Merge SQLite admin adjustments into the MongoDB transaction aggregation
     try {
-      const acRow = getSQLite().prepare(
-        `SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
-           FROM admin_credits WHERE user_id = ?`
-      ).get(String(userId));
-      if (acRow && acRow.cnt > 0) {
-        const creditEntry = txAgg.find((t) => (t._id || '').toString().toUpperCase() === 'CREDIT');
-        if (creditEntry) {
-          creditEntry.total  += acRow.cnt;
-          creditEntry.amount += acRow.total;
+      const acRows = getSQLite().prepare(
+        `SELECT tx_type, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
+           FROM admin_credits WHERE user_id = ?
+           GROUP BY tx_type`
+      ).all(String(userId));
+      for (const row of acRows) {
+        const txType = (row.tx_type || 'CREDIT').toUpperCase();
+        const entry = txAgg.find((t) => (t._id || '').toString().toUpperCase() === txType);
+        if (entry) {
+          entry.total  += row.cnt;
+          entry.amount += row.total;
         } else {
-          txAgg.push({ _id: 'CREDIT', total: acRow.cnt, amount: acRow.total, last: null, first: null });
+          txAgg.push({ _id: txType, total: row.cnt, amount: row.total, last: null, first: null });
         }
       }
     } catch { /* non-fatal */ }

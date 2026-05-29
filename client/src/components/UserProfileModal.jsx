@@ -40,16 +40,20 @@ function TransactionList({ userId, type, description }) {
   const load = useCallback(() => {
     setLoading(true);
 
-    // Admin credits come from SQLite; show them when viewing credit/all and
-    // either no description filter or the filter is explicitly "Admin TOP UP"
-    const showAdminCredits = (!type || type === 'credit') &&
-      (!description || description === 'Admin TOP UP');
-    const adminCreditPromise = showAdminCredits
+    // Admin adjustments from SQLite — show for matching type/description filter
+    const adminTopUpMatch = !description || description === 'Admin TOP UP';
+    const adminDebitMatch = !description || description === 'Admin Debit';
+    const showAdminHistory =
+      (!type && (adminTopUpMatch || adminDebitMatch)) ||
+      (type === 'credit' && adminTopUpMatch) ||
+      (type === 'debit'  && adminDebitMatch);
+    const adminCreditPromise = showAdminHistory
       ? api.get(`/admin-credit/history/${userId}`).then((r) => r.data).catch(() => [])
       : Promise.resolve([]);
 
-    // If description filter is exclusively "Admin TOP UP" skip the MongoDB call
-    const mongoPromise = description === 'Admin TOP UP'
+    // Skip MongoDB if filter exclusively targets admin-only descriptions
+    const adminOnlyFilter = description === 'Admin TOP UP' || description === 'Admin Debit';
+    const mongoPromise = adminOnlyFilter
       ? Promise.resolve({ docs: [], total: 0, totalPages: 1 })
       : (() => {
           const params = { page, limit: 20 };
@@ -61,23 +65,31 @@ function TransactionList({ userId, type, description }) {
         })();
 
     Promise.all([mongoPromise, adminCreditPromise])
-      .then(([mongo, adminCredits]) => {
+      .then(([mongo, adminHistory]) => {
         if (!mongo) { setError('Failed to load transactions'); return; }
 
-        // Map admin credits to transaction shape
-        const adminDocs = adminCredits.map((c) => ({
-          _id:        `ac-${c.id}`,
-          type:       'CREDIT',
-          description: c.description,   // 'Admin TOP UP'
-          amount:     c.amount,
-          currency:   c.currencyName ? { name: c.currencyName } : null,
-          createdAt:  c.createdAt,
-          isAdminCredit: true,
-          adminUser:  c.adminUser,
-          notes:      c.notes,
+        // Filter admin rows by type if a type tab is active
+        const filteredAdmin = adminHistory.filter((c) => {
+          const txType = (c.txType || 'CREDIT').toUpperCase();
+          if (type === 'credit' && txType !== 'CREDIT') return false;
+          if (type === 'debit'  && txType !== 'DEBIT')  return false;
+          return true;
+        });
+
+        // Map to transaction shape
+        const adminDocs = filteredAdmin.map((c) => ({
+          _id:         `ac-${c.id}`,
+          type:        c.txType || 'CREDIT',
+          description: c.description,
+          amount:      c.amount,
+          currency:    c.currencyName ? { name: c.currencyName } : null,
+          createdAt:   c.createdAt,
+          isAdminAdjustment: true,
+          adminUser:   c.adminUser,
+          notes:       c.notes,
         }));
 
-        // Merge: admin credits only appear on page 1 (they're few)
+        // Merge: admin adjustments only appear on page 1 (they're few)
         const merged = page === 1
           ? [...adminDocs, ...mongo.docs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           : mongo.docs;
@@ -113,7 +125,7 @@ function TransactionList({ userId, type, description }) {
                 )}
               </div>
               {t.description && <p className="text-xs text-vs-text-3 mt-1 truncate">{t.description}</p>}
-              {t.isAdminCredit && t.adminUser && (
+              {t.isAdminAdjustment && t.adminUser && (
                 <p className="text-xs text-vs-purple-light opacity-70 mt-0.5">by {t.adminUser}{t.notes ? ` · ${t.notes}` : ''}</p>
               )}
               {t.reference && <p className="text-xs text-vs-text-3 mt-0.5 font-mono truncate opacity-60">{t.reference}</p>}
@@ -144,33 +156,37 @@ function TransactionList({ userId, type, description }) {
   );
 }
 
-// ── Admin credit panel ────────────────────────────────────────────────────────
+// ── Wallet adjustment panel (credit + debit) ─────────────────────────────────
 
-function CreditPanel({ wallet, userId, onSuccess }) {
+function AdjustmentPanel({ wallet, userId, onSuccess }) {
   const { role, editMode, requestElevation } = useAuth();
-  const canCredit = ['superadmin', 'admin'].includes(role);
-  const [open, setOpen]       = useState(false);
-  const [amount, setAmount]   = useState('');
-  const [notes, setNotes]     = useState('');
-  const [saving, setSaving]   = useState(false);
-  const [msg, setMsg]         = useState('');
+  const canAdjust = ['superadmin', 'admin'].includes(role);
+  const [mode, setMode]         = useState(null); // null | 'credit' | 'debit'
+  const [amount, setAmount]     = useState('');
+  const [notes, setNotes]       = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState('');
   const [elevating, setElevating] = useState(false);
   const [elevReason, setElevReason] = useState('');
-  const [elevErr, setElevErr] = useState('');
+  const [elevErr, setElevErr]   = useState('');
 
-  if (!canCredit) return null;
+  if (!canAdjust) return null;
 
-  const handleCredit = async () => {
+  const close = () => { setMode(null); setAmount(''); setNotes(''); setMsg(''); setElevErr(''); };
+
+  const handleSubmit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setMsg('Enter a valid amount'); return; }
     setSaving(true); setMsg('');
     try {
-      const res = await api.post('/admin-credit', { walletId: wallet.id, userId, amount: amt, notes });
-      setMsg(`Credited ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })} — new balance: ${res.data.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+      const endpoint = mode === 'credit' ? '/admin-credit' : '/admin-credit/debit';
+      const res = await api.post(endpoint, { walletId: wallet.id, userId, amount: amt, notes });
+      const verb = mode === 'credit' ? 'Credited' : 'Debited';
+      setMsg(`${verb} ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })} — new balance: ${res.data.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
       setAmount(''); setNotes('');
       onSuccess();
     } catch (err) {
-      setMsg(err.response?.data?.error || 'Credit failed');
+      setMsg(err.response?.data?.error || `${mode === 'credit' ? 'Credit' : 'Debit'} failed`);
     } finally {
       setSaving(false);
     }
@@ -184,19 +200,31 @@ function CreditPanel({ wallet, userId, onSuccess }) {
   };
 
   return (
-    <div className="mt-1">
-      {!open ? (
-        <button
-          onClick={() => { setOpen(true); setMsg(''); }}
-          className="text-xs text-vs-purple-light hover:text-vs-purple font-medium transition-colors"
-        >
-          + Credit
-        </button>
+    <div className="mt-2">
+      {!mode ? (
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setMode('credit'); setMsg(''); }}
+            className="text-xs text-vs-success hover:text-vs-success/80 font-medium transition-colors"
+          >
+            + Credit
+          </button>
+          <span className="text-vs-border text-xs">·</span>
+          <button
+            onClick={() => { setMode('debit'); setMsg(''); }}
+            className="text-xs text-vs-danger hover:text-vs-danger/80 font-medium transition-colors"
+          >
+            − Debit
+          </button>
+        </div>
       ) : (
-        <div className="mt-2 rounded-lg border border-vs-border bg-vs-card p-3 space-y-2">
+        <div className={`mt-1 rounded-lg border p-3 space-y-2 ${mode === 'credit' ? 'border-vs-success/30 bg-vs-success/5' : 'border-vs-danger/30 bg-vs-danger/5'}`}>
+          <p className={`text-xs font-semibold ${mode === 'credit' ? 'text-vs-success' : 'text-vs-danger'}`}>
+            {mode === 'credit' ? 'Add Credit' : 'Remove Credit'} · {wallet.currency?.name || 'Wallet'}
+          </p>
           {!editMode ? (
             <div className="space-y-2">
-              <p className="text-xs text-amber-400 font-medium">Edit access required to credit a wallet.</p>
+              <p className="text-xs text-amber-400">Edit access required.</p>
               <input
                 type="text"
                 value={elevReason}
@@ -205,25 +233,20 @@ function CreditPanel({ wallet, userId, onSuccess }) {
                 className="w-full px-2 py-1.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple"
               />
               <div className="flex gap-2">
-                <button
-                  onClick={handleElevate}
-                  disabled={elevating}
-                  className="px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded transition-colors disabled:opacity-50"
-                >
+                <button onClick={handleElevate} disabled={elevating}
+                  className="px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded transition-colors disabled:opacity-50">
                   {elevating ? 'Requesting…' : 'Request Edit Access'}
                 </button>
-                <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
+                <button onClick={close} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
               </div>
               {elevErr && <p className="text-xs text-vs-danger">{elevErr}</p>}
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-amber-400">Edit mode active — credit will be logged.</p>
+              <p className="text-xs text-amber-400">Edit mode active — adjustment will be logged.</p>
               <div className="flex gap-2">
                 <input
-                  type="number"
-                  min="0.01"
-                  step="any"
+                  type="number" min="0.01" step="any"
                   value={amount}
                   onChange={(e) => { setAmount(e.target.value); setMsg(''); }}
                   placeholder="Amount"
@@ -237,16 +260,20 @@ function CreditPanel({ wallet, userId, onSuccess }) {
                   className="flex-1 px-2 py-1.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple"
                 />
               </div>
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-2 items-center flex-wrap">
                 <button
-                  onClick={handleCredit}
+                  onClick={handleSubmit}
                   disabled={saving || !amount}
-                  className="px-3 py-1.5 text-xs bg-vs-success/20 hover:bg-vs-success/30 text-vs-success border border-vs-success/30 font-semibold rounded transition-colors disabled:opacity-50"
+                  className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors disabled:opacity-50 ${
+                    mode === 'credit'
+                      ? 'bg-vs-success/20 hover:bg-vs-success/30 text-vs-success border border-vs-success/30'
+                      : 'bg-vs-danger/20 hover:bg-vs-danger/30 text-vs-danger border border-vs-danger/30'
+                  }`}
                 >
-                  {saving ? 'Crediting…' : 'Apply Credit'}
+                  {saving ? 'Saving…' : mode === 'credit' ? 'Apply Credit' : 'Apply Debit'}
                 </button>
-                <button onClick={() => { setOpen(false); setMsg(''); }} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
-                {msg && <span className={`text-xs ${msg.includes('Credited') ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</span>}
+                <button onClick={close} className="px-3 py-1.5 text-xs bg-vs-elevated hover:bg-vs-hover text-vs-text-3 rounded transition-colors">Cancel</button>
+                {msg && <span className={`text-xs ${msg.includes('Credited') || msg.includes('Debited') ? (mode === 'credit' ? 'text-vs-success' : 'text-vs-danger') : 'text-vs-danger'}`}>{msg}</span>}
               </div>
             </div>
           )}
@@ -293,9 +320,16 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
     setDescLoading(true);
     const mongoDesc = api.get(`/user-profile/${userId}/transaction-descriptions`, { params: { type: txSubtab } })
       .then((res) => res.data).catch(() => []);
-    // Also check for admin credits (only relevant on credit subtab)
-    const adminDesc = txSubtab === 'credit'
-      ? api.get(`/admin-credit/history/${userId}`).then((r) => r.data.length > 0 ? ['Admin TOP UP'] : []).catch(() => [])
+    // Also inject admin adjustment description pills from SQLite
+    const adminDesc = (txSubtab === 'credit' || txSubtab === 'debit')
+      ? api.get(`/admin-credit/history/${userId}`).then((r) => {
+          const pills = [];
+          const hasCredit = r.data.some((x) => (x.txType || 'CREDIT') === 'CREDIT');
+          const hasDebit  = r.data.some((x) => x.txType === 'DEBIT');
+          if (txSubtab === 'credit' && hasCredit) pills.push('Admin TOP UP');
+          if (txSubtab === 'debit'  && hasDebit)  pills.push('Admin Debit');
+          return pills;
+        }).catch(() => [])
       : Promise.resolve([]);
     Promise.all([mongoDesc, adminDesc]).then(([md, ad]) => {
       const merged = [...new Set([...md, ...ad])].sort();
@@ -466,7 +500,7 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
                               : w.balance}
                           </span>
                         </div>
-                        <CreditPanel wallet={w} userId={userId} onSuccess={loadProfile} />
+                        <AdjustmentPanel wallet={w} userId={userId} onSuccess={loadProfile} />
                       </div>
                     ))}
                   </div>
