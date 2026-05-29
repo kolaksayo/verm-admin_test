@@ -603,6 +603,7 @@ async function pollNewUsers(db) {
     } else {
       console.error(`[GameBetWatcher] Welcome DM failed for ${username || userId}:`, result.reason);
     }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
   saveLastUserDmCheck(new Date());
