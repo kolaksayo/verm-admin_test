@@ -23,11 +23,11 @@ router.get('/status', auth, (req, res) => {
     channelIdSet:         !!channelId,
     whapiTokenPreview:    whapiToken    ? whapiToken.slice(0, 8)    + '…' : null,
     interaktKeyPreview:   interaktApiKey ? interaktApiKey.slice(0, 8) + '…' : null,
-    // legacy fields — kept for backward compat
-    apiKeySet:            !!whapiToken,
-    apiKeyPreview:        whapiToken ? whapiToken.slice(0, 8) + '…' : null,
     groupId:              groupId    || null,
     channelId:            channelId  || null,
+    // Legacy fields kept so existing UI code doesn't break
+    apiKeySet:            !!whapiToken,
+    apiKeyPreview:        whapiToken ? whapiToken.slice(0, 8) + '…' : null,
     enabled:              getWhatsAppEnabled(sqlite),
   });
 });
@@ -37,24 +37,24 @@ router.get('/config', auth, (req, res) => {
   const { whapiToken, interaktApiKey, interaktTemplateName, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
-    apiToken:              whapiToken     ? whapiToken.slice(0, 8)     + '…' + whapiToken.slice(-4)     : '',
-    apiKey:                interaktApiKey ? interaktApiKey.slice(0, 8) + '…' + interaktApiKey.slice(-4) : '',
-    interaktTemplateName:  interaktTemplateName || '',
-    groupId:               groupId    || '',
-    channelId:             channelId  || '',
-    enabled:               getWhatsAppEnabled(sqlite),
+    apiToken:             whapiToken     ? whapiToken.slice(0, 8)     + '…' + whapiToken.slice(-4)     : '',
+    apiKey:               interaktApiKey ? interaktApiKey.slice(0, 8) + '…' + interaktApiKey.slice(-4) : '',
+    interaktTemplateName: interaktTemplateName || '',
+    groupId:              groupId    || '',
+    channelId:            channelId  || '',
+    enabled:              getWhatsAppEnabled(sqlite),
   });
 });
 
 // POST /api/whatsapp/config
 router.post('/config', auth, (req, res) => {
   const { apiToken, apiKey, interaktTemplateName, groupId, channelId, enabled } = req.body;
-  const hasApiToken   = apiToken             != null && String(apiToken).trim()             !== '';
-  const hasApiKey     = apiKey               != null && String(apiKey).trim()               !== '';
+  const hasApiToken   = apiToken   != null && String(apiToken).trim()   !== '';
+  const hasApiKey     = apiKey     != null && String(apiKey).trim()     !== '';
   const hasTemplate   = interaktTemplateName != null && String(interaktTemplateName).trim() !== '';
-  const hasGroupId    = groupId              != null && String(groupId).trim()              !== '';
-  const hasChannelId  = channelId            != null && String(channelId).trim()            !== '';
-  const hasEnabled    = enabled              != null;
+  const hasGroupId    = groupId    != null && String(groupId).trim()    !== '';
+  const hasChannelId  = channelId  != null && String(channelId).trim()  !== '';
+  const hasEnabled    = enabled    != null;
 
   if (!hasApiToken && !hasApiKey && !hasTemplate && !hasGroupId && !hasChannelId && !hasEnabled) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
@@ -82,7 +82,7 @@ router.post('/config', auth, (req, res) => {
 // POST /api/whatsapp/test
 router.post('/test', auth, async (req, res) => {
   if (!isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'WhatsApp not configured — save your whapi.cloud API Token and Group ID first.' });
+    return res.status(400).json({ ok: false, error: 'WhatsApp not configured — save your whapi.cloud Token and Group ID first.' });
   }
   const result = await sendMessage('✅ VermoSports Admin\n\nWhatsApp notifications are configured and working!', 'test');
   res.json(result);
