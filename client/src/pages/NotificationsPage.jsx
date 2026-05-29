@@ -344,19 +344,21 @@ export default function NotificationsPage() {
   const [saveMsg, setSaveMsg]           = useState('');
 
   // ── WhatsApp group state ──────────────────────────────────────────────────
-  const [waStatus, setWaStatus]         = useState(null);
-  const [waEnabled, setWaEnabled]       = useState(true);
-  const [togglingWa, setTogglingWa]     = useState(false);
-  const [waToken, setWaToken]           = useState('');
-  const [waGroupId, setWaGroupId]       = useState('');
-  const [waChannelId, setWaChannelId]   = useState('');
-  const [waSaving, setWaSaving]         = useState(false);
-  const [waSaveMsg, setWaSaveMsg]       = useState('');
-  const [waTesting, setWaTesting]       = useState(false);
-  const [waTestResult, setWaTestResult] = useState(null);
-  const [waMessage, setWaMessage]       = useState('');
-  const [waSending, setWaSending]       = useState(false);
-  const [waSendResult, setWaSendResult] = useState(null);
+  const [waStatus, setWaStatus]                 = useState(null);
+  const [waEnabled, setWaEnabled]               = useState(true);
+  const [togglingWa, setTogglingWa]             = useState(false);
+  const [waToken, setWaToken]                   = useState(''); // whapi.cloud token
+  const [waInteraktKey, setWaInteraktKey]       = useState(''); // Interakt.ai API key
+  const [waInteraktTemplate, setWaInteraktTemplate] = useState(''); // Interakt template name
+  const [waGroupId, setWaGroupId]               = useState('');
+  const [waChannelId, setWaChannelId]           = useState('');
+  const [waSaving, setWaSaving]                 = useState(false);
+  const [waSaveMsg, setWaSaveMsg]               = useState('');
+  const [waTesting, setWaTesting]               = useState(false);
+  const [waTestResult, setWaTestResult]         = useState(null);
+  const [waMessage, setWaMessage]               = useState('');
+  const [waSending, setWaSending]               = useState(false);
+  const [waSendResult, setWaSendResult]         = useState(null);
 
   // ── Direct Messages state ─────────────────────────────────────────────────
   const [dmEnabled, setDmEnabled]             = useState(false);
@@ -447,7 +449,7 @@ export default function NotificationsPage() {
       setDmGroupLink(r.data.groupLink || '');
       setDmChannelLink(r.data.channelLink || '');
       setDmCountryCode(r.data.countryCode || '');
-      setDmTemplate(r.data.welcomeTemplate || DEFAULT_DM_TEMPLATE);
+      if (r.data.welcomePreview) setDmTemplate(r.data.welcomePreview);
     }).catch(() => {});
   }, []);
 
@@ -471,8 +473,9 @@ export default function NotificationsPage() {
       if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
     }).catch(() => {});
     api.get('/whatsapp/config').then((r) => {
-      if (r.data.groupId)   setWaGroupId(r.data.groupId);
-      if (r.data.channelId) setWaChannelId(r.data.channelId);
+      if (r.data.groupId)              setWaGroupId(r.data.groupId);
+      if (r.data.channelId)            setWaChannelId(r.data.channelId);
+      if (r.data.interaktTemplateName) setWaInteraktTemplate(r.data.interaktTemplateName);
     }).catch(() => {});
   }, [tab]);
 
@@ -559,12 +562,15 @@ export default function NotificationsPage() {
     setWaSaving(true); setWaSaveMsg('');
     try {
       await api.post('/whatsapp/config', {
-        apiKey:    waToken     || undefined,
-        groupId:   waGroupId   || undefined,
-        channelId: waChannelId || undefined,
+        apiToken:              waToken            || undefined,
+        apiKey:                waInteraktKey      || undefined,
+        interaktTemplateName:  waInteraktTemplate || undefined,
+        groupId:               waGroupId          || undefined,
+        channelId:             waChannelId        || undefined,
       });
       setWaSaveMsg('Saved!');
       setWaToken('');
+      setWaInteraktKey('');
       const r = await api.get('/whatsapp/status');
       setWaStatus(r.data);
       if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
@@ -935,33 +941,59 @@ export default function NotificationsPage() {
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">WhatsApp Configuration</p>
             <p className="text-xs text-vs-text-3 mb-4">
-              Powered by <span className="font-medium text-vs-text-2">interakt.ai</span> — messages are sent alongside Telegram when both are configured.
+              Dual-provider setup — <span className="font-medium text-vs-text-2">whapi.cloud</span> handles group/channel/DM messages;{' '}
+              <span className="font-medium text-vs-text-2">Interakt.ai</span> is used only for the WhatsApp-approved welcome template.
             </p>
-            <form onSubmit={handleWaSave} className="space-y-3">
-              <div className="flex flex-wrap gap-4">
-                <div className="flex-1 min-w-[220px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">API Key</label>
-                  <input type="password" value={waToken} onChange={(e) => setWaToken(e.target.value)}
-                    placeholder={waStatus?.apiKeySet ? 'Already set — paste new to update' : 'Your Interakt API Key'}
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">Group ID</label>
-                  <input type="text" value={waGroupId} onChange={(e) => setWaGroupId(e.target.value)}
-                    placeholder="120363xxxxxxxxxx@g.us"
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
-                  <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@g.us'}</span></p>
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">Channel ID</label>
-                  <input type="text" value={waChannelId} onChange={(e) => setWaChannelId(e.target.value)}
-                    placeholder="120363xxxxxxxxxx@newsletter"
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
-                  <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@newsletter'}</span></p>
+            <form onSubmit={handleWaSave} className="space-y-4">
+              {/* whapi.cloud */}
+              <div>
+                <p className="text-xs font-medium text-vs-text-2 mb-2">whapi.cloud — group, channel &amp; DM messages</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[220px]">
+                    <label className="text-xs text-vs-text-3 block mb-1">API Token</label>
+                    <input type="password" value={waToken} onChange={(e) => setWaToken(e.target.value)}
+                      placeholder={waStatus?.whapiTokenSet ? 'Already set — paste new to update' : 'whapi.cloud Bearer token'}
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs text-vs-text-3 block mb-1">Group ID</label>
+                    <input type="text" value={waGroupId} onChange={(e) => setWaGroupId(e.target.value)}
+                      placeholder="120363xxxxxxxxxx@g.us"
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
+                    <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@g.us'}</span></p>
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs text-vs-text-3 block mb-1">Channel ID</label>
+                    <input type="text" value={waChannelId} onChange={(e) => setWaChannelId(e.target.value)}
+                      placeholder="120363xxxxxxxxxx@newsletter"
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono" />
+                    <p className="text-xs text-vs-text-3 mt-1">Format: <span className="font-mono">{'<numbers>@newsletter'}</span></p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <button type="submit" disabled={waSaving || (!waToken.trim() && !waGroupId.trim() && !waChannelId.trim())}
+
+              {/* Interakt.ai */}
+              <div className="pt-1 border-t border-vs-border">
+                <p className="text-xs font-medium text-vs-text-2 mb-2 mt-3">Interakt.ai — welcome message template only</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[220px]">
+                    <label className="text-xs text-vs-text-3 block mb-1">Interakt.ai API Key</label>
+                    <input type="password" value={waInteraktKey} onChange={(e) => setWaInteraktKey(e.target.value)}
+                      placeholder={waStatus?.interaktApiKeySet ? 'Already set — paste new to update' : 'Interakt.ai Basic API Key'}
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs text-vs-text-3 block mb-1">Template Name</label>
+                    <input type="text" value={waInteraktTemplate} onChange={(e) => setWaInteraktTemplate(e.target.value)}
+                      placeholder="welcome_to_vermosports"
+                      className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                    <p className="text-xs text-vs-text-3 mt-1">Must match exactly as approved in WhatsApp Business Manager</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <button type="submit" disabled={waSaving || (!waToken.trim() && !waInteraktKey.trim() && !waInteraktTemplate.trim() && !waGroupId.trim() && !waChannelId.trim())}
                   className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                   {waSaving ? 'Saving…' : 'Save'}
                 </button>
@@ -973,38 +1005,56 @@ export default function NotificationsPage() {
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Connection Status</p>
             {waStatus ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${waStatus.configured ? 'bg-vs-success' : 'bg-vs-danger'}`} />
-                  <span className={`text-sm font-medium ${waStatus.configured ? 'text-vs-success' : 'text-vs-danger'}`}>
-                    {waStatus.configured ? 'Configured & Active' : 'Not Configured'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${waStatus.apiKeySet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
-                    <span className="text-vs-text-3">API Key</span>
-                    <span className={`ml-auto font-medium ${waStatus.apiKeySet ? 'text-vs-success' : 'text-vs-danger'}`}>
-                      {waStatus.apiKeySet ? waStatus.apiKeyPreview : 'Missing'}
+              <div className="space-y-4">
+                {/* whapi.cloud status */}
+                <div>
+                  <p className="text-xs font-medium text-vs-text-2 mb-2">whapi.cloud (group/channel/DMs)</p>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${waStatus.configured ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                    <span className={`text-sm font-medium ${waStatus.configured ? 'text-vs-success' : 'text-vs-danger'}`}>
+                      {waStatus.configured ? 'Configured & Active' : 'Not Configured'}
                     </span>
                   </div>
-                  <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${waStatus.groupIdSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
-                    <span className="text-vs-text-3">Group ID</span>
-                    <span className={`ml-auto font-mono text-xs ${waStatus.groupIdSet ? 'text-vs-success' : 'text-vs-danger'}`}>
-                      {waStatus.groupId || 'Missing'}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${waStatus.whapiTokenSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                      <span className="text-vs-text-3">API Token</span>
+                      <span className={`ml-auto font-medium ${waStatus.whapiTokenSet ? 'text-vs-success' : 'text-vs-danger'}`}>
+                        {waStatus.whapiTokenSet ? waStatus.whapiTokenPreview : 'Missing'}
+                      </span>
+                    </div>
+                    <div className="bg-vs-elevated rounded-lg px-4 py-3 flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${waStatus.groupIdSet ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                      <span className="text-vs-text-3">Group ID</span>
+                      <span className={`ml-auto font-mono text-xs ${waStatus.groupIdSet ? 'text-vs-success' : 'text-vs-danger'}`}>
+                        {waStatus.groupId || 'Missing'}
+                      </span>
+                    </div>
+                  </div>
+                  {waStatus.configured && (
+                    <div className="pt-2 flex items-center gap-3">
+                      <button onClick={handleWaTest} disabled={waTesting}
+                        className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                        {waTesting ? 'Sending…' : 'Send Test Message'}
+                      </button>
+                      {waTestResult && <p className={`text-xs ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Interakt.ai status */}
+                <div className="pt-3 border-t border-vs-border">
+                  <p className="text-xs font-medium text-vs-text-2 mb-2">Interakt.ai (welcome template)</p>
+                  <div className="flex items-center gap-3">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${waStatus.welcomeConfigured ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+                    <span className={`text-sm font-medium ${waStatus.welcomeConfigured ? 'text-vs-success' : 'text-vs-danger'}`}>
+                      {waStatus.welcomeConfigured ? 'Configured' : 'Not Configured'}
                     </span>
+                    {waStatus.interaktApiKeySet && (
+                      <span className="ml-auto text-xs font-mono text-vs-text-3">{waStatus.interaktKeyPreview}</span>
+                    )}
                   </div>
                 </div>
-                {waStatus.configured && (
-                  <div className="pt-1 flex items-center gap-3">
-                    <button onClick={handleWaTest} disabled={waTesting}
-                      className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                      {waTesting ? 'Sending…' : 'Send Test Message'}
-                    </button>
-                    {waTestResult && <p className={`text-xs ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
-                  </div>
-                )}
               </div>
             ) : <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />}
           </div>
@@ -1029,19 +1079,38 @@ export default function NotificationsPage() {
 
           <div className="bg-vs-card border border-vs-border rounded-xl p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">How to get your credentials</p>
-            <ol className="space-y-3 text-sm text-vs-text-2">
-              {[
-                <>Sign up at <span className="font-mono text-vs-purple-light">app.interakt.ai</span> and connect your WhatsApp Business number.</>,
-                <>Go to <strong>Developer Settings</strong> and copy your <strong>API Key</strong>.</>,
-                <>Get the <strong>Group ID</strong> from your WhatsApp group info — it looks like <span className="font-mono">120363xxxxxxxxxx@g.us</span>.</>,
-                <>Paste both values into the form above and click <strong>Save</strong>.</>,
-              ].map((step, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
+            <div className="space-y-5 text-sm text-vs-text-2">
+              <div>
+                <p className="text-xs font-medium text-vs-text mb-2">whapi.cloud (group / channel / DMs)</p>
+                <ol className="space-y-2">
+                  {[
+                    <>Sign up at <span className="font-mono text-vs-purple-light">app.whapi.cloud</span> and create a channel.</>,
+                    <>Copy the <strong>Bearer Token</strong> from your channel settings and paste it into the API Token field.</>,
+                    <>Get the <strong>Group ID</strong> from your WhatsApp group info — it ends in <span className="font-mono">@g.us</span>.</>,
+                  ].map((step, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-vs-text mb-2">Interakt.ai (welcome template only)</p>
+                <ol className="space-y-2">
+                  {[
+                    <>Sign up at <span className="font-mono text-vs-purple-light">app.interakt.ai</span> and connect your WhatsApp Business number.</>,
+                    <>Go to <strong>Developer Settings</strong> and copy your <strong>API Key</strong>.</>,
+                    <>Ensure your template <span className="font-mono">welcome_to_vermosports</span> is approved in WhatsApp Business Manager.</>,
+                  ].map((step, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -1112,49 +1181,28 @@ export default function NotificationsPage() {
             </form>
           </div>
 
-          {/* Welcome template */}
+          {/* Approved welcome template (read-only) */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Welcome Message Template</p>
-            <p className="text-xs text-vs-text-3 mb-3">Sent automatically to each new user. HTML is not supported.</p>
-
-            <div className="mb-3">
-              <p className="text-xs text-vs-text-3 mb-2">Available macros — click to insert at cursor:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DM_MACROS.map((m) => (
-                  <button key={m.key} onClick={() => insertDmMacro(m.key)}
-                    title={m.desc}
-                    className="px-2 py-0.5 text-xs font-mono rounded bg-vs-elevated border border-vs-border text-vs-purple-light hover:bg-vs-purple/15 transition-colors">
-                    {m.key}
-                  </button>
-                ))}
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Welcome Message Template</p>
+                <p className="text-xs text-vs-text-3">This is the WhatsApp-approved template sent via Interakt.ai. It cannot be edited here — changes must be submitted through WhatsApp Business Manager.</p>
               </div>
+              <span className="flex-shrink-0 px-2 py-0.5 text-xs rounded-full bg-vs-success/15 text-vs-success border border-vs-success/30">Approved</span>
             </div>
-
-            <textarea
-              ref={dmTextareaRef}
-              value={dmTemplate}
-              onChange={(e) => setDmTemplate(e.target.value)}
-              rows={10}
-              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm font-mono text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-y"
-            />
-
-            <div className="flex items-center gap-3 mt-3">
-              <button onClick={handleSaveDmTemplate} disabled={dmSavingTemplate}
-                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                {dmSavingTemplate ? 'Saving…' : 'Save Template'}
-              </button>
-              <button onClick={() => { setDmTemplate(DEFAULT_DM_TEMPLATE); setDmTemplateMsg(''); }}
-                className="px-3 py-2 text-xs text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors">
-                Reset to Default
-              </button>
-              {dmTemplateMsg && <p className={`text-xs ${dmTemplateMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmTemplateMsg}</p>}
-            </div>
+            <pre className="w-full px-4 py-3 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text-2 whitespace-pre-wrap font-sans select-all">
+              {dmTemplate}
+            </pre>
+            <p className="text-xs text-vs-text-3 mt-2">
+              <span className="font-mono text-vs-purple-light">{'{{1}}'}</span> is substituted with the user&apos;s display name at send time.
+              Template name: <span className="font-mono text-vs-text-2">welcome_to_vermosports</span>
+            </p>
           </div>
 
           {/* Test DM */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Send Test DM</p>
-            <p className="text-xs text-vs-text-3 mb-4">Enter a phone number to receive a preview of the welcome message. Uses the saved template and links.</p>
+            <p className="text-xs text-vs-text-3 mb-4">Send the approved welcome template via Interakt.ai to a phone number. Requires Interakt.ai API Key to be configured.</p>
             <form onSubmit={handleDmTest} className="flex items-start gap-3">
               <div className="flex-1 max-w-xs">
                 <label className="text-xs text-vs-text-3 block mb-1">Phone Number</label>

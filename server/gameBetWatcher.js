@@ -2,7 +2,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, DEFAULT_WELCOME_TEMPLATE } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, isWelcomeConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -563,19 +563,18 @@ function getWelcomeConfig() {
   try {
     const get = (k) => getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
     return {
-      template:    get('whatsapp_welcome_template') || DEFAULT_WELCOME_TEMPLATE,
       groupLink:   get('whatsapp_group_link')  || '',
       channelLink: get('whatsapp_channel_link') || '',
     };
   } catch {
-    return { template: DEFAULT_WELCOME_TEMPLATE, groupLink: '', channelLink: '' };
+    return { groupLink: '', channelLink: '' };
   }
 }
 
 async function pollNewUsers(db) {
   if (!isWADmEnabled()) return;
-  const { token } = getWAConfig();
-  if (!token) return;
+  const { interaktApiKey } = getWAConfig();
+  if (!interaktApiKey) return;
 
   // Fetch all users with a mobile number, oldest first so backfill processes
   // historical users before newly registered ones. Limit to 50 per query;
@@ -586,7 +585,6 @@ async function pollNewUsers(db) {
     .limit(50)
     .toArray();
 
-  const { template, groupLink, channelLink } = getWelcomeConfig();
   let sent = 0;
   const MAX_PER_POLL = 20; // avoid rate-limiting
 
@@ -595,16 +593,10 @@ async function pollNewUsers(db) {
     const userId = user._id.toString();
     if (hasUserDmSent(userId, 'user_registered')) continue;
 
-    const name     = user.name || user.displayName || user.username || 'there';
-    const username = user.username || '';
-    const rendered = renderTemplate(template, {
-      name,
-      username,
-      group_link:   groupLink   || '(group link not set)',
-      channel_link: channelLink || '(channel link not set)',
-    });
+    const username = user.username || user.name || user.displayName || 'there';
 
-    const result = await sendDM(userId, user.mobile, username, rendered, 'user_registered');
+    // sendDM routes 'user_registered' to the Interakt.ai approved template
+    const result = await sendDM(userId, user.mobile, username, null, 'user_registered');
     if (result.ok) {
       console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
       sent++;
