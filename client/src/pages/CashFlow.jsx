@@ -394,7 +394,7 @@ export default function CashFlow() {
       <RevenueTrendChart data={data} period={tab === 'types' ? 'monthly' : tab} />
 
       {/* Revenue summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
 
         {/* Deposit fees */}
         <div className="bg-vs-card border border-vs-border rounded-xl p-5">
@@ -447,26 +447,22 @@ export default function CashFlow() {
           </div>
         </div>
 
-        {/* Admin credits */}
+        {/* Admin credits & debits */}
         <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Admin TOP UP Credits</p>
-          <p className="text-3xl font-bold text-vs-success">{fmtUSD(ac.totalUSD)}</p>
-          <p className="text-xs text-vs-text-3 mt-1">
-            {ac.count.toLocaleString()} manual credit{ac.count !== 1 ? 's' : ''} · logged locally
-          </p>
-          <div className="mt-3 text-xs">
-            <p className="text-vs-text-3">Source</p>
-            <p className="font-semibold text-vs-text font-mono text-xs">admin_credits (SQLite)</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Admin Adjustments</p>
+          <div className="flex items-end gap-4 mb-1">
+            <div>
+              <p className="text-[10px] text-vs-text-3 uppercase tracking-wider mb-0.5">Credits</p>
+              <p className="text-2xl font-bold text-vs-success">{fmtUSD(ac.totalUSD)}</p>
+              <p className="text-xs text-vs-text-3">{ac.count.toLocaleString()} credit{ac.count !== 1 ? 's' : ''}</p>
+            </div>
+            <span className="text-vs-text-3 text-lg mb-1">·</span>
+            <div>
+              <p className="text-[10px] text-vs-text-3 uppercase tracking-wider mb-0.5">Debits</p>
+              <p className="text-2xl font-bold text-vs-danger">{fmtUSD(ad.totalUSD)}</p>
+              <p className="text-xs text-vs-text-3">{ad.count.toLocaleString()} debit{ad.count !== 1 ? 's' : ''}</p>
+            </div>
           </div>
-        </div>
-
-        {/* Admin debits */}
-        <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Admin Debits</p>
-          <p className="text-3xl font-bold text-vs-danger">{fmtUSD(ad.totalUSD)}</p>
-          <p className="text-xs text-vs-text-3 mt-1">
-            {ad.count.toLocaleString()} manual debit{ad.count !== 1 ? 's' : ''} · logged locally
-          </p>
           <div className="mt-3 text-xs">
             <p className="text-vs-text-3">Source</p>
             <p className="font-semibold text-vs-text font-mono text-xs">admin_credits (SQLite)</p>
