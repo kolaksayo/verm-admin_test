@@ -282,8 +282,43 @@ router.get('/:name/:id', auth, async (req, res) => {
   }
 });
 
-function writeAuditLog(_, { adminUser, sessionId, action, collection, documentId, before, after }) {
+async function resolveUserContext(rDb, doc) {
+  if (!rDb || !doc) return null;
+  const userRef = doc.user || doc.userId;
+  if (!userRef) return null;
   try {
+    const oid = new ObjectId(String(userRef));
+    const u = await rDb.collection('users').findOne(
+      { _id: oid },
+      { projection: { username: 1, email: 1, name: 1, mobile: 1, phone: 1 } },
+    );
+    if (!u) return null;
+    return {
+      _resolvedUser: {
+        userId:   String(userRef),
+        username: u.username || null,
+        name:     u.name     || null,
+        email:    u.email    || null,
+        phone:    u.mobile   || u.phone || null,
+      },
+    };
+  } catch { return null; }
+}
+
+async function writeAuditLog(rDb, { adminUser, sessionId, action, collection, documentId, before, after }) {
+  try {
+    let enrichBefore = before;
+    let enrichAfter  = after;
+
+    // For wallet edits, attach resolved user profile so the audit log is self-contained
+    if (collection === 'walletusers' && rDb) {
+      const ctx = await resolveUserContext(rDb, before || after);
+      if (ctx) {
+        if (before) enrichBefore = { ...before, ...ctx };
+        if (after)  enrichAfter  = { ...after,  ...ctx };
+      }
+    }
+
     getSQLite().prepare(`
       INSERT INTO admin_activity_logs
         (admin_user, session_id, action, collection, document_id, before_json, after_json)
@@ -294,8 +329,8 @@ function writeAuditLog(_, { adminUser, sessionId, action, collection, documentId
       action,
       collection,
       String(documentId),
-      before ? JSON.stringify(before) : null,
-      after  ? JSON.stringify(after)  : null,
+      enrichBefore ? JSON.stringify(enrichBefore) : null,
+      enrichAfter  ? JSON.stringify(enrichAfter)  : null,
     );
   } catch { /* non-fatal */ }
 }
@@ -330,7 +365,7 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
 
     await wDb.collection(name).replaceOne({ _id: oid }, after);
 
-    await writeAuditLog(null, {
+    await writeAuditLog(rDb, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'update',
@@ -369,7 +404,7 @@ router.delete('/:name/:id', auth, requireEditMode, async (req, res) => {
 
     await wDb.collection(name).deleteOne({ _id: oid });
 
-    await writeAuditLog(null, {
+    await writeAuditLog(rDb, {
       adminUser:  req.user.username,
       sessionId:  req.editSessionId,
       action:     'delete',

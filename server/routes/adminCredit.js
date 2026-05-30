@@ -46,6 +46,33 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
     } catch {}
   }
 
+  // Resolve user profile for richer audit context
+  let userProfile = null;
+  try {
+    const userOid = new ObjectId(String(userId));
+    const u = await rDb.collection('users').findOne(
+      { _id: userOid },
+      { projection: { username: 1, email: 1, name: 1, mobile: 1, phone: 1, isVerified: 1 } },
+    );
+    if (u) {
+      userProfile = {
+        userId:     String(userId),
+        username:   u.username  || null,
+        name:       u.name      || null,
+        email:      u.email     || null,
+        phone:      u.mobile    || u.phone || null,
+        isVerified: u.isVerified ?? null,
+      };
+    }
+  } catch { /* non-fatal — log without user details */ }
+
+  const walletContext = {
+    walletId:     String(walletId),
+    currency:     currencyName || String(wallet.currencyType || ''),
+    [balanceField]: null, // placeholder filled per before/after below
+    ...(userProfile || { userId: String(userId) }),
+  };
+
   const sqlite = getSQLite();
 
   sqlite.prepare(`
@@ -75,8 +102,18 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
     req.editSessionId || null,
     action,
     String(walletId),
-    JSON.stringify({ [balanceField]: balanceBefore }),
-    JSON.stringify({ [balanceField]: balanceAfter }),
+    JSON.stringify({ ...walletContext, [balanceField]: balanceBefore }),
+    JSON.stringify({
+      ...walletContext,
+      [balanceField]: balanceAfter,
+      adjustment: {
+        type:        txType,
+        amount:      Math.abs(amount),
+        description,
+        notes:       notes || null,
+        adminUser:   req.user.username,
+      },
+    }),
   );
 
   return { balanceBefore, balanceAfter, amount: Math.abs(amount) };
