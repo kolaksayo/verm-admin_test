@@ -156,6 +156,69 @@ function TransactionList({ userId, type, description }) {
   );
 }
 
+// ── Welcome DM button ─────────────────────────────────────────────────────────
+
+function WelcomeDmButton({ userId }) {
+  const [status, setStatus]   = useState(null); // null | { sent, ok, error, sentAt }
+  const [sending, setSending] = useState(false);
+  const [result, setResult]   = useState(null);
+
+  useEffect(() => {
+    api.get(`/notifications/dm/user-status/${userId}`)
+      .then((r) => setStatus(r.data))
+      .catch(() => setStatus({ sent: false, ok: false, error: null, sentAt: null }));
+  }, [userId]);
+
+  const send = async () => {
+    setSending(true); setResult(null);
+    try {
+      const r = await api.post(`/notifications/dm/send-welcome/${userId}`);
+      setResult(r.data);
+      if (r.data.ok) setStatus({ sent: true, ok: true, error: null, sentAt: new Date().toISOString() });
+    } catch (err) {
+      const reason = err.response?.data?.reason || err.message || 'Failed';
+      setResult({ ok: false, reason });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!status) return <div className="h-8 w-40 animate-pulse bg-vs-elevated rounded-lg" />;
+
+  const alreadySent = status.ok === true;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={send}
+          disabled={alreadySent || sending}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+            alreadySent
+              ? 'bg-vs-success/15 text-vs-success cursor-default'
+              : 'bg-vs-purple hover:bg-vs-purple/90 text-white disabled:opacity-50'
+          }`}
+        >
+          {alreadySent ? '✓ Welcome DM Sent' : sending ? 'Sending…' : '📱 Send Welcome DM'}
+        </button>
+        {alreadySent && status.sentAt && (
+          <span className="text-xs text-vs-text-3">
+            {new Date(status.sentAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </span>
+        )}
+        {!alreadySent && status.sent && !status.ok && (
+          <span className="text-xs text-vs-danger">Last attempt failed: {status.error || 'unknown error'}</span>
+        )}
+      </div>
+      {result && (
+        <p className={`text-xs ${result.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+          {result.ok ? 'Sent successfully via Interakt' : `Failed: ${result.reason}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Wallet adjustment panel (credit + debit) ─────────────────────────────────
 
 function AdjustmentPanel({ wallet, userId, onSuccess }) {
@@ -472,6 +535,10 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
                 <InfoRow label="Verified" value={profile.user.isVerified ? 'Yes' : 'No'} />
                 <InfoRow label="Status" value={profile.user.isActive ? 'Active' : 'Inactive'} />
                 <InfoRow label="Joined" value={formatDate(profile.user.createdAt)} />
+                <div className="pt-3">
+                  <p className="text-xs text-vs-text-3 mb-2">WhatsApp Welcome Message</p>
+                  <WelcomeDmButton userId={userId} />
+                </div>
               </div>
 
               <div>

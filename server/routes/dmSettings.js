@@ -70,6 +70,56 @@ router.get('/logs', auth, (req, res) => {
   }
 });
 
+// ── Welcome DM status for a specific user ────────────────────────────────────
+
+router.get('/user-status/:userId', auth, (req, res) => {
+  try {
+    const row = getSQLite()
+      .prepare("SELECT ok, error, sent_at FROM whatsapp_user_dms WHERE user_id = ? AND trigger = 'user_registered'")
+      .get(req.params.userId);
+    if (!row) return res.json({ sent: false, ok: false, error: null, sentAt: null });
+    res.json({ sent: true, ok: row.ok === 1, error: row.error || null, sentAt: row.sent_at });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Send welcome DM to a specific user ───────────────────────────────────────
+
+router.post('/send-welcome/:userId', auth, async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const existing = getSQLite()
+      .prepare("SELECT ok FROM whatsapp_user_dms WHERE user_id = ? AND trigger = 'user_registered'")
+      .get(userId);
+    if (existing?.ok === 1) {
+      return res.status(409).json({ ok: false, reason: 'already_sent' });
+    }
+
+    const { ObjectId } = require('mongodb');
+    const mongoDb = getDb();
+    let userOid;
+    try { userOid = new ObjectId(userId); } catch {
+      return res.status(400).json({ ok: false, reason: 'invalid_user_id' });
+    }
+    const user = await mongoDb.collection('users').findOne(
+      { _id: userOid },
+      { projection: { mobile: 1, phone: 1, username: 1, name: 1, displayName: 1 } },
+    );
+    if (!user) return res.status(404).json({ ok: false, reason: 'user_not_found' });
+
+    const phone = user.mobile || user.phone || null;
+    if (!phone) return res.status(400).json({ ok: false, reason: 'no_phone' });
+
+    const username = user.username || user.name || user.displayName || 'there';
+    const result = await sendDM(userId, phone, username, null, 'user_registered');
+    res.json(result);
+  } catch (err) {
+    console.error('[dmSettings] send-welcome error:', err.message);
+    res.status(500).json({ ok: false, reason: err.message });
+  }
+});
+
 // ── Test ───────────────────────────────────────────────────────────────────────
 
 router.post('/test', auth, async (req, res) => {
