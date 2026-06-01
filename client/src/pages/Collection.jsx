@@ -7,6 +7,7 @@ import LeaderboardView from '../components/LeaderboardView';
 import UserProfileModal from '../components/UserProfileModal';
 import GameBetModal from '../components/GameBetModal';
 import UserRankingsView from '../components/UserRankingsView';
+import InfluencerDashboard from './InfluencerDashboard';
 
 function formatName(name) {
   return name
@@ -32,6 +33,7 @@ export default function Collection({ collectionName }) {
 
   const [profileUser, setProfileUser] = useState(null);
   const [gameBet, setGameBet] = useState(null);
+  const [referralsTab, setReferralsTab] = useState('records');
 
   const isCustom = CUSTOM_VIEWS.includes(name);
 
@@ -95,13 +97,39 @@ export default function Collection({ collectionName }) {
           )}
         </div>
 
-        {!isCustom && (
+        {!isCustom && name !== 'referrals' && (
           <form onSubmit={handleSearch} className="flex items-center gap-2">
             <input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={name === 'transactions' ? 'Search by description, type, status…' : 'Search by ID or field value…'}
+              className="w-72 px-4 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-vs-purple hover:bg-vs-purple-on text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Search
+            </button>
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}
+                className="px-3 py-2 text-sm text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </form>
+        )}
+        {name === 'referrals' && referralsTab === 'records' && (
+          <form onSubmit={handleSearch} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by ID or field value…"
               className="w-72 px-4 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
             />
             <button
@@ -129,11 +157,31 @@ export default function Collection({ collectionName }) {
         </div>
       )}
 
+      {name === 'referrals' && (
+        <div className="flex gap-1 mb-5 border-b border-vs-border">
+          {['records', 'influencers'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setReferralsTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                referralsTab === tab
+                  ? 'border-vs-purple text-vs-purple'
+                  : 'border-transparent text-vs-text-3 hover:text-vs-text-2'
+              }`}
+            >
+              {tab === 'records' ? 'Records' : 'Influencers'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {name === 'referrals' && referralsTab === 'influencers' && <InfluencerDashboard embedded />}
+
       {name === 'football_fixtures' && <FixturesView />}
       {name === 'game_bet_leaderboard' && <LeaderboardView onUserClick={handleUserClick} />}
       {name === 'game_bet_user_rankings' && <UserRankingsView onUserClick={handleUserClick} />}
 
-      {!isCustom && (
+      {!isCustom && !(name === 'referrals' && referralsTab === 'influencers') && (
         loading ? (
           <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">
             Loading…

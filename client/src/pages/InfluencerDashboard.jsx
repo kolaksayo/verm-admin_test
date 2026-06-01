@@ -60,7 +60,7 @@ function FunnelBar({ label, count, pct, accent, subLabel }) {
 
 const SORT_KEYS = ['referred', 'funded', 'bet', 'conversionRate', 'lastReferralAt'];
 
-export default function InfluencerDashboard() {
+export default function InfluencerDashboard({ embedded = false }) {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -116,7 +116,6 @@ export default function InfluencerDashboard() {
   if (loading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-vs-text mb-6">Influencer Dashboard</h1>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-vs-card rounded-xl border border-vs-border p-5 h-24 animate-pulse" />
@@ -129,9 +128,8 @@ export default function InfluencerDashboard() {
 
   if (error || !data) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-vs-text mb-6">Influencer Dashboard</h1>
-        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3">{error || 'No data'}</div>
+      <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3">
+        {error || 'No data'}
       </div>
     );
   }
@@ -145,13 +143,15 @@ export default function InfluencerDashboard() {
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-vs-text">Influencer Dashboard</h1>
-          <p className="text-sm text-vs-text-3 mt-1">Referral campaign — sign-up → fund → bet conversion funnel</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold text-vs-text">Influencer Dashboard</h1>
+            <p className="text-sm text-vs-text-3 mt-1">Referral campaign — sign-up → fund → bet conversion funnel</p>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-vs-text-3 whitespace-nowrap">From</label>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
@@ -174,6 +174,7 @@ export default function InfluencerDashboard() {
           </button>
         </div>
       </div>
+
 
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
