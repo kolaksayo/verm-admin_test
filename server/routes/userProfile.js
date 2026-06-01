@@ -140,7 +140,7 @@ router.get('/:id', auth, async (req, res) => {
         username: user.username,
         email: user.email,
         name: user.name,
-        phone: user.phone,
+        phone: user.mobile || user.phone,
         createdAt: user.createdAt,
         isVerified: user.isVerified,
         isActive: user.isActive ?? true,

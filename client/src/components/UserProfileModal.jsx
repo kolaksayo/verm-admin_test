@@ -219,6 +219,161 @@ function WelcomeDmButton({ userId }) {
   );
 }
 
+// ── Edit profile panel ────────────────────────────────────────────────────────
+
+function EditProfilePanel({ userId, user, onSuccess }) {
+  const { role, editMode, requestElevation } = useAuth();
+  const canEdit = ['superadmin', 'admin'].includes(role);
+
+  const [open, setOpen]         = useState(false);
+  const [fields, setFields]     = useState({});
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState('');
+  const [elevating, setElevating] = useState(false);
+  const [elevReason, setElevReason] = useState('');
+  const [elevErr, setElevErr]   = useState('');
+
+  if (!canEdit) return null;
+
+  const openForm = () => {
+    setFields({
+      name:       user.name       || '',
+      email:      user.email      || '',
+      username:   user.username   || '',
+      mobile:     user.phone      || '',  // profile maps mobile||phone → phone
+      isVerified: !!user.isVerified,
+      isActive:   user.isActive   ?? true,
+    });
+    setMsg(''); setElevErr('');
+    setOpen(true);
+  };
+
+  const close = () => { setOpen(false); setMsg(''); setElevErr(''); };
+
+  const handleSave = async () => {
+    // Build diff — only send fields that changed
+    const original = {
+      name:       user.name       || '',
+      email:      user.email      || '',
+      username:   user.username   || '',
+      mobile:     user.phone      || '',
+      isVerified: !!user.isVerified,
+      isActive:   user.isActive   ?? true,
+    };
+    const changed = {};
+    if (fields.name      !== original.name)      changed.name       = fields.name.trim();
+    if (fields.email     !== original.email)     changed.email      = fields.email.trim();
+    if (fields.username  !== original.username)  changed.username   = fields.username.trim();
+    if (fields.mobile    !== original.mobile)    { changed.mobile = fields.mobile.trim(); changed.phone = fields.mobile.trim(); }
+    if (fields.isVerified !== original.isVerified) changed.isVerified = fields.isVerified;
+    if (fields.isActive   !== original.isActive)   changed.isActive   = fields.isActive;
+
+    if (Object.keys(changed).length === 0) { setMsg('No changes to save.'); return; }
+
+    setSaving(true); setMsg('');
+    try {
+      await api.patch(`/collections/users/${userId}`, changed);
+      setMsg('Saved!');
+      onSuccess();
+      setTimeout(() => { close(); }, 1200);
+    } catch (err) {
+      setMsg(err.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleElevate = async () => {
+    setElevating(true); setElevErr('');
+    try { await requestElevation(elevReason); }
+    catch (err) { setElevErr(err.response?.data?.error || 'Failed'); }
+    finally { setElevating(false); }
+  };
+
+  const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
+
+  if (!open) {
+    return (
+      <button onClick={openForm}
+        className="text-xs text-vs-purple-light hover:text-vs-purple font-medium transition-colors mt-1">
+        Edit Profile
+      </button>
+    );
+  }
+
+  return (
+    <div className={`mt-3 rounded-xl border p-4 space-y-3 ${
+      editMode ? 'border-vs-purple/40 bg-vs-purple/5' : 'border-vs-border bg-vs-elevated/40'
+    }`}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-vs-text-2">Edit Profile</p>
+        <button onClick={close} className="text-vs-text-3 hover:text-vs-text text-sm leading-none">×</button>
+      </div>
+
+      {!editMode ? (
+        <div className="space-y-2">
+          <p className="text-xs text-vs-text-3">Edit mode required to save changes.</p>
+          <div className="flex gap-2">
+            <input value={elevReason} onChange={(e) => setElevReason(e.target.value)}
+              placeholder="Reason for edit…"
+              className="flex-1 px-2 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple" />
+            <button onClick={handleElevate} disabled={elevating || !elevReason.trim()}
+              className="px-3 py-1.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+              {elevating ? '…' : 'Unlock'}
+            </button>
+          </div>
+          {elevErr && <p className="text-xs text-vs-danger">{elevErr}</p>}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: 'Name',     key: 'name',     type: 'text'  },
+              { label: 'Username', key: 'username', type: 'text'  },
+              { label: 'Email',    key: 'email',    type: 'email' },
+              { label: 'Mobile',   key: 'mobile',   type: 'tel'   },
+            ].map(({ label, key, type }) => (
+              <div key={key}>
+                <label className="text-[10px] text-vs-text-3 block mb-0.5">{label}</label>
+                <input type={type} value={fields[key] || ''} onChange={(e) => set(key, e.target.value)}
+                  className="w-full px-2 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple" />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-4 pt-1">
+            {[
+              { label: 'Verified', key: 'isVerified' },
+              { label: 'Active',   key: 'isActive'   },
+            ].map(({ label, key }) => (
+              <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
+                <button type="button"
+                  onClick={() => set(key, !fields[key])}
+                  className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${fields[key] ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${fields[key] ? 'left-4' : 'left-0.5'}`} />
+                </button>
+                <span className="text-xs text-vs-text-3">{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <button onClick={handleSave} disabled={saving}
+              className="px-3 py-1.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button onClick={close}
+              className="px-3 py-1.5 text-xs text-vs-text-3 hover:text-vs-text border border-vs-border rounded-lg hover:bg-vs-elevated transition-colors">
+              Cancel
+            </button>
+            {msg && <p className={`text-xs ${msg === 'Saved!' || msg === 'No changes to save.' ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Wallet adjustment panel (credit + debit) ─────────────────────────────────
 
 function AdjustmentPanel({ wallet, userId, onSuccess }) {
@@ -535,6 +690,7 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
                 <InfoRow label="Verified" value={profile.user.isVerified ? 'Yes' : 'No'} />
                 <InfoRow label="Status" value={profile.user.isActive ? 'Active' : 'Inactive'} />
                 <InfoRow label="Joined" value={formatDate(profile.user.createdAt)} />
+                <EditProfilePanel userId={userId} user={profile.user} onSuccess={loadProfile} />
                 <div className="pt-3">
                   <p className="text-xs text-vs-text-3 mb-2">WhatsApp Welcome Message</p>
                   <WelcomeDmButton userId={userId} />
