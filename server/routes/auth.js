@@ -79,7 +79,7 @@ router.get('/me', authMiddleware, (req, res) => {
   res.json({ username: req.user.username, role: req.user.role });
 });
 
-const EDIT_DURATION_MINUTES = 30;
+const EDIT_DURATION_MINUTES = 10;
 
 // POST /auth/elevate — request temporary edit access
 router.post('/elevate', authMiddleware, (req, res) => {
@@ -102,7 +102,7 @@ router.post('/elevate', authMiddleware, (req, res) => {
   `).run(id, username, reason || null);
 
   const session = db.prepare('SELECT * FROM admin_edit_sessions WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ok: true, sessionId: session.id, expiresAt: session.expires_at });
+  res.json({ ok: true, sessionId: session.id, expiresAt: session.expires_at.replace(' ', 'T') + 'Z' });
 });
 
 // POST /auth/drop-elevation — end edit session
@@ -122,7 +122,7 @@ router.get('/elevation-status', authMiddleware, (req, res) => {
   ).get(req.user.id);
 
   if (!session) return res.json({ active: false });
-  res.json({ active: true, sessionId: session.id, reason: session.reason, elevatedAt: session.elevated_at, expiresAt: session.expires_at });
+  res.json({ active: true, sessionId: session.id, reason: session.reason, elevatedAt: session.elevated_at, expiresAt: session.expires_at.replace(' ', 'T') + 'Z' });
 });
 
 module.exports = router;

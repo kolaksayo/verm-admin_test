@@ -53,6 +53,8 @@ export const COLLECTION_REFERENCES = {
   ],
   referrals: [
     { field: 'referrer', collection: 'users', type: 'user' },
+    { field: 'referee', collection: 'users', type: 'user' },
     { field: 'referred', collection: 'users', type: 'user' },
+    { field: 'referredUser', collection: 'users', type: 'user' },
   ],
 };
