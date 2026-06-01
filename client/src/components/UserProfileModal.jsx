@@ -237,12 +237,13 @@ function EditProfilePanel({ userId, user, onSuccess }) {
 
   const openForm = () => {
     setFields({
-      name:       user.name       || '',
-      email:      user.email      || '',
-      username:   user.username   || '',
-      mobile:     user.phone      || '',  // profile maps mobile||phone → phone
-      isVerified: !!user.isVerified,
-      isActive:   user.isActive   ?? true,
+      name:         user.name         || '',
+      email:        user.email        || '',
+      username:     user.username     || '',
+      mobile:       user.phone        || '',  // profile maps mobile||phone → phone
+      referralCode: user.referralCode || '',
+      isVerified:   !!user.isVerified,
+      isActive:     user.isActive     ?? true,
     });
     setMsg(''); setElevErr('');
     setOpen(true);
@@ -253,20 +254,22 @@ function EditProfilePanel({ userId, user, onSuccess }) {
   const handleSave = async () => {
     // Build diff — only send fields that changed
     const original = {
-      name:       user.name       || '',
-      email:      user.email      || '',
-      username:   user.username   || '',
-      mobile:     user.phone      || '',
-      isVerified: !!user.isVerified,
-      isActive:   user.isActive   ?? true,
+      name:         user.name         || '',
+      email:        user.email        || '',
+      username:     user.username     || '',
+      mobile:       user.phone        || '',
+      referralCode: user.referralCode || '',
+      isVerified:   !!user.isVerified,
+      isActive:     user.isActive     ?? true,
     };
     const changed = {};
-    if (fields.name      !== original.name)      changed.name       = fields.name.trim();
-    if (fields.email     !== original.email)     changed.email      = fields.email.trim();
-    if (fields.username  !== original.username)  changed.username   = fields.username.trim();
-    if (fields.mobile    !== original.mobile)    { changed.mobile = fields.mobile.trim(); changed.phone = fields.mobile.trim(); }
-    if (fields.isVerified !== original.isVerified) changed.isVerified = fields.isVerified;
-    if (fields.isActive   !== original.isActive)   changed.isActive   = fields.isActive;
+    if (fields.name         !== original.name)         changed.name         = fields.name.trim();
+    if (fields.email        !== original.email)        changed.email        = fields.email.trim();
+    if (fields.username     !== original.username)     changed.username     = fields.username.trim();
+    if (fields.mobile       !== original.mobile)       { changed.mobile = fields.mobile.trim(); changed.phone = fields.mobile.trim(); }
+    if (fields.referralCode !== original.referralCode) changed.referralCode = fields.referralCode.trim();
+    if (fields.isVerified   !== original.isVerified)   changed.isVerified   = fields.isVerified;
+    if (fields.isActive     !== original.isActive)     changed.isActive     = fields.isActive;
 
     if (Object.keys(changed).length === 0) { setMsg('No changes to save.'); return; }
 
@@ -328,10 +331,11 @@ function EditProfilePanel({ userId, user, onSuccess }) {
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             {[
-              { label: 'Name',     key: 'name',     type: 'text'  },
-              { label: 'Username', key: 'username', type: 'text'  },
-              { label: 'Email',    key: 'email',    type: 'email' },
-              { label: 'Mobile',   key: 'mobile',   type: 'tel'   },
+              { label: 'Name',          key: 'name',         type: 'text'  },
+              { label: 'Username',      key: 'username',     type: 'text'  },
+              { label: 'Email',         key: 'email',        type: 'email' },
+              { label: 'Mobile',        key: 'mobile',       type: 'tel'   },
+              { label: 'Referral Code', key: 'referralCode', type: 'text'  },
             ].map(({ label, key, type }) => (
               <div key={key}>
                 <label className="text-[10px] text-vs-text-3 block mb-0.5">{label}</label>
@@ -687,6 +691,7 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
                 <InfoRow label="Username" value={profile.user.username} />
                 <InfoRow label="Name" value={profile.user.name} />
                 <InfoRow label="Phone" value={profile.user.phone} />
+                <InfoRow label="Referral Code" value={profile.user.referralCode} />
                 <InfoRow label="Verified" value={profile.user.isVerified ? 'Yes' : 'No'} />
                 <InfoRow label="Status" value={profile.user.isActive ? 'Active' : 'Inactive'} />
                 <InfoRow label="Joined" value={formatDate(profile.user.createdAt)} />

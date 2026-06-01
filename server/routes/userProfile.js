@@ -141,6 +141,7 @@ router.get('/:id', auth, async (req, res) => {
         email: user.email,
         name: user.name,
         phone: user.mobile || user.phone,
+        referralCode: user.referralCode || null,
         createdAt: user.createdAt,
         isVerified: user.isVerified,
         isActive: user.isActive ?? true,
