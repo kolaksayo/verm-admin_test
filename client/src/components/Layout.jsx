@@ -21,6 +21,7 @@ const NAV_GROUPS = [
       { name: 'walletusers', label: 'Wallet Users' },
       { label: 'Transactions', path: '/transactions', badgeKey: 'transactions' },
       { name: 'referrals', label: 'Referrals' },
+      { label: 'Influencers', path: '/influencers' },
       { name: 'contracts', label: 'Contracts' },
     ],
   },
