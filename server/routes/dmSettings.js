@@ -1,5 +1,5 @@
 const express = require('express');
-const { getConfig, isWelcomeConfigured, sendDM, sendDirectMessage, stripHtml } = require('../whatsapp');
+const { getConfig, sendDM, sendDirectMessage, stripHtml, isConfigured } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
@@ -126,7 +126,7 @@ router.post('/test', auth, async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
-  if (!isWelcomeConfigured()) return res.json({ ok: false, reason: 'interakt_not_configured' });
+  if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
 
   // Send via Interakt template with "Test User" as the name substitution
   const result = await sendDM('__test__', phone, 'Test User', null, 'user_registered');
@@ -145,7 +145,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
     let result;
     if (row.trigger === 'user_registered') {
       // Welcome retries use Interakt template
-      if (!isWelcomeConfigured()) return res.json({ ok: false, reason: 'interakt_not_configured' });
+      if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
       let name = row.username || 'there';
       if (row.user_id && row.user_id !== '__test__') {
         try {
