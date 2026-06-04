@@ -17,7 +17,11 @@ Stay updated with football competitions, rankings, match updates and important V
 
 18+ only. Play responsibly.`;
 
-// ── Config ─────────────────────────────────────────────────────────────────────
+function buildWelcomeText(name) {
+  return APPROVED_WELCOME_PREVIEW.replace(/\{\{name\}\}/g, name || 'there');
+}
+
+
 
 router.get('/config', auth, (req, res) => {
   try {
@@ -112,7 +116,7 @@ router.post('/send-welcome/:userId', auth, async (req, res) => {
     if (!phone) return res.status(400).json({ ok: false, reason: 'no_phone' });
 
     const username = user.username || user.name || user.displayName || 'there';
-    const result = await sendDM(userId, phone, username, null, 'user_registered');
+    const result = await sendDM(userId, phone, username, buildWelcomeText(username), 'user_registered');
     res.json(result);
   } catch (err) {
     console.error('[dmSettings] send-welcome error:', err.message);
@@ -128,8 +132,7 @@ router.post('/test', auth, async (req, res) => {
 
   if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
 
-  // Send via Interakt template with "Test User" as the name substitution
-  const result = await sendDM('__test__', phone, 'Test User', null, 'user_registered');
+  const result = await sendDM('__test__', phone, 'Test User', buildWelcomeText('Test User'), 'user_registered');
   res.json(result);
 });
 
@@ -143,9 +146,8 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'log entry not found' });
 
     let result;
+    if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
     if (row.trigger === 'user_registered') {
-      // Welcome retries use Interakt template
-      if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
       let name = row.username || 'there';
       if (row.user_id && row.user_id !== '__test__') {
         try {
@@ -157,21 +159,15 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
           if (user) name = user.name || user.displayName || user.username || name;
         } catch { /* use cached name */ }
       }
-      result = await sendDM(row.user_id, row.phone, name, null, 'user_registered');
+      result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
     } else {
-      // Other DM retries use whapi.cloud
-      const { whapiToken } = getConfig();
-      if (!whapiToken) return res.json({ ok: false, reason: 'whapi_not_configured' });
       const db2 = getSQLite();
       const get = (k) => db2.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
-      const groupLink   = get('whatsapp_group_link')  || '(group link)';
-      const channelLink = get('whatsapp_channel_link') || '(channel link)';
-      const tpl = get('whatsapp_welcome_template') || '{name}';
-      const rendered = renderTemplate(tpl, {
+      const rendered = renderTemplate(get('whatsapp_welcome_template') || '{{name}}', {
         name:         row.username || 'there',
         username:     row.username || '',
-        group_link:   groupLink,
-        channel_link: channelLink,
+        group_link:   get('whatsapp_group_link')   || '(group link)',
+        channel_link: get('whatsapp_channel_link') || '(channel link)',
       });
       result = await sendDM(row.user_id, row.phone, row.username, rendered, row.trigger);
     }
@@ -197,8 +193,8 @@ router.post('/retry-all-failed', auth, async (req, res) => {
 
     for (const row of failed) {
       let result;
+      if (!isConfigured()) { failedCount++; continue; }
       if (row.trigger === 'user_registered') {
-        if (!isWelcomeConfigured()) { failedCount++; continue; }
         let name = row.username || 'there';
         if (row.user_id && row.user_id !== '__test__') {
           try {
@@ -209,12 +205,10 @@ router.post('/retry-all-failed', auth, async (req, res) => {
             if (user) name = user.name || user.displayName || user.username || name;
           } catch { /* use cached name */ }
         }
-        result = await sendDM(row.user_id, row.phone, name, null, 'user_registered');
+        result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
       } else {
-        const { whapiToken } = getConfig();
-        if (!whapiToken) { failedCount++; continue; }
         const get = (k) => sqlDb.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
-        const rendered = renderTemplate(get('whatsapp_welcome_template') || '{name}', {
+        const rendered = renderTemplate(get('whatsapp_welcome_template') || '{{name}}', {
           name:         row.username || 'there',
           username:     row.username || '',
           group_link:   get('whatsapp_group_link')   || '(group link)',
@@ -237,8 +231,7 @@ router.post('/test-settled', auth, async (req, res) => {
   const { bookingCode } = req.body;
   if (!bookingCode) return res.status(400).json({ error: 'bookingCode required' });
 
-  const { whapiToken } = getConfig();
-  if (!whapiToken) return res.status(400).json({ error: 'whapi.cloud not configured' });
+  if (!isConfigured()) return res.status(400).json({ error: 'WhatsApp not configured' });
 
   try {
     const mongoDb = getDb();
