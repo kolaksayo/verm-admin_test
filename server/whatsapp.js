@@ -36,7 +36,7 @@ function fetchWithTimeout(url, options) {
 
 // ── Evolution API helper ──────────────────────────────────────────────────────
 
-async function evolutionPost(to, text, { url, apiKey, instance }) {
+async function evolutionPost(to, text, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   const res = await fetchWithTimeout(`${url}/message/sendText/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
