@@ -1,5 +1,5 @@
 const express = require('express');
-const { sendMessage, isConfigured, isWelcomeConfigured, getConfig } = require('../whatsapp');
+const { sendMessage, isConfigured, getConfig } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 
@@ -12,51 +12,47 @@ function getWhatsAppEnabled(sqlite) {
 
 // GET /api/whatsapp/status
 router.get('/status', auth, (req, res) => {
-  const { whapiToken, interaktApiKey, groupId, channelId } = getConfig();
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
-    configured:           isConfigured(),
-    welcomeConfigured:    isWelcomeConfigured(),
-    whapiTokenSet:        !!whapiToken,
-    interaktApiKeySet:    !!interaktApiKey,
-    groupIdSet:           !!groupId,
-    channelIdSet:         !!channelId,
-    whapiTokenPreview:    whapiToken    ? whapiToken.slice(0, 8)    + '…' : null,
-    interaktKeyPreview:   interaktApiKey ? interaktApiKey.slice(0, 8) + '…' : null,
-    groupId:              groupId    || null,
-    channelId:            channelId  || null,
-    // Legacy fields kept so existing UI code doesn't break
-    apiKeySet:            !!whapiToken,
-    apiKeyPreview:        whapiToken ? whapiToken.slice(0, 8) + '…' : null,
-    enabled:              getWhatsAppEnabled(sqlite),
+    configured:            isConfigured(),
+    evolutionUrlSet:       !!evolutionUrl,
+    evolutionApiKeySet:    !!evolutionApiKey,
+    evolutionInstanceSet:  !!evolutionInstance,
+    evolutionApiKeyPreview: evolutionApiKey ? evolutionApiKey.slice(0, 8) + '…' + evolutionApiKey.slice(-4) : null,
+    groupIdSet:            !!groupId,
+    channelIdSet:          !!channelId,
+    groupId:               groupId   || null,
+    channelId:             channelId || null,
+    enabled:               getWhatsAppEnabled(sqlite),
   });
 });
 
 // GET /api/whatsapp/config
 router.get('/config', auth, (req, res) => {
-  const { whapiToken, interaktApiKey, interaktTemplateName, groupId, channelId } = getConfig();
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
-    apiToken:             whapiToken     ? whapiToken.slice(0, 8)     + '…' + whapiToken.slice(-4)     : '',
-    apiKey:               interaktApiKey ? interaktApiKey.slice(0, 8) + '…' + interaktApiKey.slice(-4) : '',
-    interaktTemplateName: interaktTemplateName || '',
-    groupId:              groupId    || '',
-    channelId:            channelId  || '',
-    enabled:              getWhatsAppEnabled(sqlite),
+    evolutionUrl:      evolutionUrl      || '',
+    evolutionApiKey:   evolutionApiKey   ? evolutionApiKey.slice(0, 8) + '…' + evolutionApiKey.slice(-4) : '',
+    evolutionInstance: evolutionInstance || '',
+    groupId:           groupId           || '',
+    channelId:         channelId         || '',
+    enabled:           getWhatsAppEnabled(sqlite),
   });
 });
 
 // POST /api/whatsapp/config
 router.post('/config', auth, (req, res) => {
-  const { apiToken, apiKey, interaktTemplateName, groupId, channelId, enabled } = req.body;
-  const hasApiToken   = apiToken   != null && String(apiToken).trim()   !== '';
-  const hasApiKey     = apiKey     != null && String(apiKey).trim()     !== '';
-  const hasTemplate   = interaktTemplateName != null && String(interaktTemplateName).trim() !== '';
-  const hasGroupId    = groupId    != null && String(groupId).trim()    !== '';
-  const hasChannelId  = channelId  != null && String(channelId).trim()  !== '';
-  const hasEnabled    = enabled    != null;
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, enabled } = req.body;
+  const hasUrl      = evolutionUrl      != null && String(evolutionUrl).trim()      !== '';
+  const hasApiKey   = evolutionApiKey   != null && String(evolutionApiKey).trim()   !== '';
+  const hasInstance = evolutionInstance != null && String(evolutionInstance).trim() !== '';
+  const hasGroupId  = groupId           != null && String(groupId).trim()           !== '';
+  const hasChannel  = channelId         != null && String(channelId).trim()         !== '';
+  const hasEnabled  = enabled           != null;
 
-  if (!hasApiToken && !hasApiKey && !hasTemplate && !hasGroupId && !hasChannelId && !hasEnabled) {
+  if (!hasUrl && !hasApiKey && !hasInstance && !hasGroupId && !hasChannel && !hasEnabled) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -67,12 +63,12 @@ router.post('/config', auth, (req, res) => {
       VALUES (?, ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
-    if (hasApiToken)  upsert.run('whatsapp_api_token',          String(apiToken).trim());
-    if (hasApiKey)    upsert.run('whatsapp_api_key',            String(apiKey).trim());
-    if (hasTemplate)  upsert.run('whatsapp_interakt_template',  String(interaktTemplateName).trim());
-    if (hasGroupId)   upsert.run('whatsapp_group_id',           String(groupId).trim());
-    if (hasChannelId) upsert.run('whatsapp_channel_id',         String(channelId).trim());
-    if (hasEnabled)   upsert.run('whatsapp_enabled',            enabled ? '1' : '0');
+    if (hasUrl)      upsert.run('evolution_api_url',  String(evolutionUrl).trim());
+    if (hasApiKey)   upsert.run('evolution_api_key',  String(evolutionApiKey).trim());
+    if (hasInstance) upsert.run('evolution_instance', String(evolutionInstance).trim());
+    if (hasGroupId)  upsert.run('whatsapp_group_id',  String(groupId).trim());
+    if (hasChannel)  upsert.run('whatsapp_channel_id',String(channelId).trim());
+    if (hasEnabled)  upsert.run('whatsapp_enabled',   enabled ? '1' : '0');
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -82,7 +78,7 @@ router.post('/config', auth, (req, res) => {
 // POST /api/whatsapp/test
 router.post('/test', auth, async (req, res) => {
   if (!isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'WhatsApp not configured — save your whapi.cloud Token and Group ID first.' });
+    return res.status(400).json({ ok: false, error: 'WhatsApp not configured — save your Evolution API URL, API Key, Instance Name and Group ID first.' });
   }
   const result = await sendMessage('✅ VermoSports Admin\n\nWhatsApp notifications are configured and working!', 'test');
   res.json(result);

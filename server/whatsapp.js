@@ -1,34 +1,25 @@
 const { getDb: getSQLite } = require('./sqlite');
 
-const WHAPI_URL    = 'https://gate.whapi.cloud/messages/text';
-const INTERAKT_URL = 'https://api.interakt.ai/v1/public/message/';
 const FETCH_TIMEOUT_MS = 15000;
-
-const DEFAULT_INTERAKT_TEMPLATE = 'welcome_to_vermosports';
 
 function getConfig() {
   try {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
-    const whapiToken       = get('whatsapp_api_token') || process.env.WHATSAPP_API_TOKEN || '';
-    const interaktApiKey   = get('whatsapp_api_key')   || process.env.WHATSAPP_API_KEY   || '';
-    const interaktTemplateName = get('whatsapp_interakt_template')
-      || process.env.WHATSAPP_INTERAKT_TEMPLATE
-      || DEFAULT_INTERAKT_TEMPLATE;
     return {
-      whapiToken,
-      interaktApiKey,
-      interaktTemplateName,
-      groupId:   get('whatsapp_group_id')   || process.env.WHATSAPP_GROUP_ID   || '',
-      channelId: get('whatsapp_channel_id') || process.env.WHATSAPP_CHANNEL_ID || '',
+      evolutionUrl:      get('evolution_api_url')  || process.env.EVOLUTION_API_URL      || '',
+      evolutionApiKey:   get('evolution_api_key')  || process.env.EVOLUTION_API_KEY      || '',
+      evolutionInstance: get('evolution_instance') || process.env.EVOLUTION_INSTANCE     || '',
+      groupId:           get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID      || '',
+      channelId:         get('whatsapp_channel_id')|| process.env.WHATSAPP_CHANNEL_ID    || '',
     };
   } catch {
     return {
-      whapiToken:            process.env.WHATSAPP_API_TOKEN || '',
-      interaktApiKey:        process.env.WHATSAPP_API_KEY   || '',
-      interaktTemplateName:  process.env.WHATSAPP_INTERAKT_TEMPLATE || DEFAULT_INTERAKT_TEMPLATE,
-      groupId:               process.env.WHATSAPP_GROUP_ID   || '',
-      channelId:             process.env.WHATSAPP_CHANNEL_ID || '',
+      evolutionUrl:      process.env.EVOLUTION_API_URL      || '',
+      evolutionApiKey:   process.env.EVOLUTION_API_KEY      || '',
+      evolutionInstance: process.env.EVOLUTION_INSTANCE     || '',
+      groupId:           process.env.WHATSAPP_GROUP_ID      || '',
+      channelId:         process.env.WHATSAPP_CHANNEL_ID    || '',
     };
   }
 }
@@ -43,46 +34,16 @@ function fetchWithTimeout(url, options) {
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// ── whapi.cloud helper ────────────────────────────────────────────────────────
+// ── Evolution API helper ──────────────────────────────────────────────────────
 
-async function whapiPost(to, text, whapiToken) {
-  const res = await fetchWithTimeout(WHAPI_URL, {
-    method:  'POST',
-    headers: {
-      'Accept':        'application/json',
-      'Authorization': `Bearer ${whapiToken}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({ to, body: text }),
+async function evolutionPost(to, text, { url, apiKey, instance }) {
+  const res = await fetchWithTimeout(`${url}/message/sendText/${instance}`, {
+    method: 'POST',
+    headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number: to, text }),
   });
   const json = await res.json().catch(() => ({}));
-  const ok   = res.ok && json.sent !== false && !json.error;
-  return { ok, json };
-}
-
-// ── Interakt.ai template helper (welcome only) ────────────────────────────────
-
-async function interaktWelcome(phone, name, interaktApiKey, templateName) {
-  const res = await fetchWithTimeout(INTERAKT_URL, {
-    method:  'POST',
-    headers: {
-      'Accept':        'application/json',
-      'Authorization': `Basic ${interaktApiKey}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      fullPhoneNumber: phone,
-      type: 'Template',
-      template: {
-        name:         templateName,
-        languageCode: 'en',
-        headerValues: [],
-        bodyValues:   [name],
-      },
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  const ok   = res.ok && json.result !== false;
+  const ok = res.ok && !!(json.key?.id);
   return { ok, json };
 }
 
@@ -129,16 +90,16 @@ function normalizePhone(raw) {
 // ── Public send functions ─────────────────────────────────────────────────────
 
 async function sendMessage(text, trigger = 'manual', _isRetry = false) {
-  const { whapiToken, groupId } = getConfig();
+  const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!whapiToken || !groupId) {
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.groupId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await whapiPost(groupId, plain, whapiToken);
+    const { ok, json } = await evolutionPost(cfg.groupId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -156,16 +117,16 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
 }
 
 async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
-  const { whapiToken, channelId } = getConfig();
+  const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!whapiToken || !channelId) {
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.channelId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await whapiPost(channelId, plain, whapiToken);
+    const { ok, json } = await evolutionPost(cfg.channelId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -183,16 +144,15 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
 }
 
 async function sendDirectMessage(phone, text, trigger = 'manual') {
-  const { whapiToken } = getConfig();
+  const cfg = getConfig();
   const digits = normalizePhone(phone);
-  if (!whapiToken || !digits) {
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !digits) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
   const plain = stripHtml(text);
   try {
-    const to = `${digits}@s.whatsapp.net`;
-    const { ok, json } = await whapiPost(to, plain, whapiToken);
+    const { ok, json } = await evolutionPost(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
@@ -204,7 +164,7 @@ async function sendDirectMessage(phone, text, trigger = 'manual') {
 }
 
 async function sendDM(userId, phone, username, text, trigger = 'user_registered') {
-  const { whapiToken, interaktApiKey, interaktTemplateName } = getConfig();
+  const cfg = getConfig();
   const digits = normalizePhone(phone);
 
   if (!digits) {
@@ -212,34 +172,14 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
     return { ok: false, reason: 'no_phone' };
   }
 
-  // Welcome message → Interakt.ai template
-  if (trigger === 'user_registered') {
-    if (!interaktApiKey) {
-      logUserDm(userId, phone, username, trigger, false, 'not_configured');
-      return { ok: false, reason: 'not_configured' };
-    }
-    const name = username || 'there';
-    try {
-      const { ok, json } = await interaktWelcome(digits, name, interaktApiKey, interaktTemplateName);
-      const errMsg = ok ? null : (json.message || 'api_error');
-      logUserDm(userId, phone, username, trigger, ok, errMsg);
-      return ok ? { ok: true } : { ok: false, reason: errMsg };
-    } catch (err) {
-      const reason = err.name === 'AbortError' ? 'timeout' : err.message;
-      logUserDm(userId, phone, username, trigger, false, reason);
-      return { ok: false, reason };
-    }
-  }
-
-  // All other DMs → whapi.cloud
-  if (!whapiToken) {
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
     logUserDm(userId, phone, username, trigger, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
+
   const plain = stripHtml(text);
   try {
-    const to = `${digits}@s.whatsapp.net`;
-    const { ok, json } = await whapiPost(to, plain, whapiToken);
+    const { ok, json } = await evolutionPost(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
@@ -253,13 +193,8 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
 // ── Status checks ─────────────────────────────────────────────────────────────
 
 function isConfigured() {
-  const { whapiToken, groupId } = getConfig();
-  return !!(whapiToken && groupId);
-}
-
-function isWelcomeConfigured() {
-  const { interaktApiKey } = getConfig();
-  return !!interaktApiKey;
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId } = getConfig();
+  return !!(evolutionUrl && evolutionApiKey && evolutionInstance && groupId);
 }
 
 module.exports = {
@@ -268,7 +203,6 @@ module.exports = {
   sendDirectMessage,
   sendToChannel,
   isConfigured,
-  isWelcomeConfigured,
   getConfig,
   stripHtml,
   normalizePhone,

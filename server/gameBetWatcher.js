@@ -2,7 +2,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, isWelcomeConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -573,8 +573,6 @@ function getWelcomeConfig() {
 
 async function pollNewUsers(db) {
   if (!isWADmEnabled()) return;
-  const { interaktApiKey } = getWAConfig();
-  if (!interaktApiKey) return;
 
   // Fetch all users with a mobile number, oldest first so backfill processes
   // historical users before newly registered ones. Limit to 50 per query;
