@@ -316,14 +316,17 @@ function OrphanedWalletsTab() {
     }
   };
 
+  const ow = data?.orphanedWallets;
+  const nw = data?.usersWithoutWallets;
+
   return (
-    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-      <div className="flex items-start justify-between gap-4 mb-1">
+    <div className="bg-vs-card border border-vs-border rounded-xl p-5 space-y-6">
+      {/* Header + Run button */}
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-vs-text">Wallet Users Without a Linked Account</p>
+          <p className="text-sm font-semibold text-vs-text">Wallet Audit</p>
           <p className="text-xs text-vs-text-3 mt-0.5">
-            Wallet records whose <span className="font-mono">user</span> / <span className="font-mono">userId</span> field
-            is missing or references a user that no longer exists.
+            Checks for orphaned wallet records and users with no wallet. The system user is excluded from both checks.
           </p>
         </div>
         <button onClick={run} disabled={loading}
@@ -332,20 +335,30 @@ function OrphanedWalletsTab() {
         </button>
       </div>
 
-      {error && <p className="mt-3 text-xs text-vs-danger">{error}</p>}
+      {error && <p className="text-xs text-vs-danger">{error}</p>}
 
-      {data && !error && (
-        <div className="mt-4">
-          <div className="flex items-center gap-2 mb-4">
+      {!data && !loading && !error && (
+        <p className="text-xs text-vs-text-3">Click "Run Audit" to scan the database.</p>
+      )}
+
+      {/* ── Section 1: Orphaned wallets ───────────────────────────────────────── */}
+      {ow && (
+        <div>
+          <p className="text-sm font-semibold text-vs-text mb-1">Wallet Users Without a Linked Account</p>
+          <p className="text-xs text-vs-text-3 mb-3">
+            Wallet records whose <span className="font-mono">user</span> / <span className="font-mono">userId</span> field
+            is missing or references a user that no longer exists.
+          </p>
+          <div className="flex items-center gap-2 mb-3">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-              data.count === 0 ? 'bg-vs-success/15 text-vs-success' : 'bg-vs-warning/15 text-vs-warning'
+              ow.count === 0 ? 'bg-vs-success/15 text-vs-success' : 'bg-vs-warning/15 text-vs-warning'
             }`}>
-              {data.count === 0 ? '✓ No orphaned wallets found' : `${data.count} orphaned wallet${data.count !== 1 ? 's' : ''} found`}
+              {ow.count === 0 ? '✓ No orphaned wallets found' : `${ow.count} orphaned wallet${ow.count !== 1 ? 's' : ''} found`}
             </span>
-            {data.count >= 500 && <span className="text-xs text-vs-text-3">Showing first 500</span>}
+            {ow.count >= 500 && <span className="text-xs text-vs-text-3">Showing first 500</span>}
           </div>
 
-          {data.count > 0 && (
+          {ow.count > 0 && (
             <div className="rounded-lg border border-vs-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -360,7 +373,7 @@ function OrphanedWalletsTab() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-vs-border">
-                    {data.rows.map((row) => {
+                    {ow.rows.map((row) => {
                       const ref = row.user || row.userId;
                       const isMissing = !ref;
                       const balance = row.walletBalance ?? row.balance ?? null;
@@ -396,8 +409,51 @@ function OrphanedWalletsTab() {
         </div>
       )}
 
-      {!data && !loading && !error && (
-        <p className="mt-4 text-xs text-vs-text-3">Click "Run Audit" to scan the database.</p>
+      {/* ── Section 2: Users without wallets ─────────────────────────────────── */}
+      {nw && (
+        <div className="border-t border-vs-border pt-4">
+          <p className="text-sm font-semibold text-vs-text mb-1">Users Without Wallets</p>
+          <p className="text-xs text-vs-text-3 mb-3">
+            User accounts with no matching record in <span className="font-mono">walletusers</span>.
+          </p>
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+              nw.count === 0 ? 'bg-vs-success/15 text-vs-success' : 'bg-vs-warning/15 text-vs-warning'
+            }`}>
+              {nw.count === 0 ? '✓ All users have wallets' : `${nw.count} user${nw.count !== 1 ? 's' : ''} without a wallet`}
+            </span>
+            {nw.count >= 500 && <span className="text-xs text-vs-text-3">Showing first 500</span>}
+          </div>
+
+          {nw.count > 0 && (
+            <div className="rounded-lg border border-vs-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-vs-border bg-vs-elevated/60">
+                      <th className="text-left px-4 py-2.5 font-semibold uppercase tracking-wider text-vs-text-3">User ID</th>
+                      <th className="text-left px-4 py-2.5 font-semibold uppercase tracking-wider text-vs-text-3">Username</th>
+                      <th className="text-left px-4 py-2.5 font-semibold uppercase tracking-wider text-vs-text-3">Email</th>
+                      <th className="text-left px-4 py-2.5 font-semibold uppercase tracking-wider text-vs-text-3">Mobile / Phone</th>
+                      <th className="text-left px-4 py-2.5 font-semibold uppercase tracking-wider text-vs-text-3">Registered</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-vs-border">
+                    {nw.rows.map((row) => (
+                      <tr key={String(row._id)} className="hover:bg-vs-elevated/40 transition-colors">
+                        <td className="px-4 py-2.5 font-mono text-vs-text">{shortId(row._id)}</td>
+                        <td className="px-4 py-2.5 text-vs-text">{row.username || <span className="text-vs-text-3 italic">—</span>}</td>
+                        <td className="px-4 py-2.5 text-vs-text-3">{row.email || '—'}</td>
+                        <td className="px-4 py-2.5 text-vs-text-3">{row.mobile || row.phone || '—'}</td>
+                        <td className="px-4 py-2.5 text-vs-text-3 whitespace-nowrap">{timeAgo(row.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
