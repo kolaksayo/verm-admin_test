@@ -110,6 +110,13 @@ function getDb() {
       CREATE INDEX IF NOT EXISTS idx_activity_logs_user_col
         ON admin_activity_logs(admin_user, collection);
 
+      CREATE TABLE IF NOT EXISTS influencer_rates (
+        referral_code  TEXT PRIMARY KEY,
+        rate           REAL NOT NULL DEFAULT 0,
+        notes          TEXT,
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS admin_credits (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_user     TEXT    NOT NULL,

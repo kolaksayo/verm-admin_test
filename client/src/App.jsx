@@ -18,6 +18,7 @@ import CampaignsPage from './pages/CampaignsPage';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 import AuditPage from './pages/AuditPage';
+import InfluencerPortal from './pages/InfluencerPortal';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -70,6 +71,7 @@ function AppRoutes() {
           }
         />
       </Route>
+      <Route path="/influencer" element={<InfluencerPortal />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

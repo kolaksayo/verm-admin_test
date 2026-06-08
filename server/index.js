@@ -27,6 +27,7 @@ const auditRoutes             = require('./routes/audit');
 const adminCreditRoutes       = require('./routes/adminCredit');
 const navBadgesRoutes = require('./routes/navBadges');
 const influencerDashboardRoutes = require('./routes/influencerDashboard');
+const influencerPublicRoutes    = require('./routes/influencerPublic');
 
 const { startWatcher } = require('./gameBetWatcher');
 const { startSnapshotScheduler } = require('./rateSnapshotJob');
@@ -74,6 +75,7 @@ app.use('/api/audit',            auditRoutes);
 app.use('/api/admin-credit',     adminCreditRoutes);
 app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 app.use('/api/influencer-dashboard', influencerDashboardRoutes);
+app.use('/api/influencer-public',   searchLimiter, influencerPublicRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
