@@ -107,6 +107,8 @@ function getDb() {
         ON admin_activity_logs(admin_user);
       CREATE INDEX IF NOT EXISTS idx_activity_logs_col
         ON admin_activity_logs(collection);
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_user_col
+        ON admin_activity_logs(admin_user, collection);
 
       CREATE TABLE IF NOT EXISTS admin_credits (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,

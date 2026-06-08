@@ -88,7 +88,7 @@ router.post('/elevate', authMiddleware, (req, res) => {
     return res.status(403).json({ error: 'Edit access requires admin role or higher' });
   }
 
-  const { reason } = req.body;
+  const reason = req.body.reason ? String(req.body.reason).slice(0, 500).trim() || null : null;
   const db = getDb();
 
   // Drop any existing active session for this user first

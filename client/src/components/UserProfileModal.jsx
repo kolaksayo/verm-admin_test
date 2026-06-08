@@ -524,7 +524,7 @@ function DeleteUserPanel({ userId, username, onDeleted }) {
   const handleElevate = async () => {
     setElevating(true); setElevateError(null);
     try { await requestElevation('Delete user ' + (username || userId)); }
-    catch (e) { setElevateError(e.message || 'Failed'); }
+    catch (e) { setElevateError(e.response?.data?.error || e.message || 'Failed'); }
     finally { setElevating(false); }
   };
 

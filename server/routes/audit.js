@@ -192,8 +192,8 @@ router.get('/activity-log', auth, (req, res) => {
       action:     r.action,
       collection: r.collection,
       documentId: r.document_id,
-      before:     r.before_json ? JSON.parse(r.before_json) : null,
-      after:      r.after_json  ? JSON.parse(r.after_json)  : null,
+      before:     r.before_json ? (() => { try { return JSON.parse(r.before_json); } catch { return null; } })() : null,
+      after:      r.after_json  ? (() => { try { return JSON.parse(r.after_json);  } catch { return null; } })() : null,
       timestamp:  r.created_at,
     }));
 

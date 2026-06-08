@@ -31,7 +31,10 @@ router.get('/', auth, async (req, res) => {
       if (dateTo)   matchStage.createdAt.$lte = dateTo;
     }
     if (status) {
-      matchStage.status = { $regex: new RegExp(`^${status}$`, 'i') };
+      const ALLOWED_STATUSES = ['pending', 'success', 'failed', 'processing', 'reversed'];
+      if (ALLOWED_STATUSES.includes(status.toLowerCase())) {
+        matchStage.status = { $regex: new RegExp(`^${status}$`, 'i') };
+      }
     }
     if (search) {
       matchStage.$or = [

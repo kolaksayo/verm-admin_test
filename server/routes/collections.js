@@ -182,7 +182,9 @@ router.get('/:name', auth, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
   const search = req.query.search ? req.query.search.trim() : '';
-  const sortField = req.query.sort || '_id';
+  const ALLOWED_SORT_FIELDS = ['_id', 'createdAt', 'updatedAt', 'username', 'email', 'mobile',
+    'amount', 'balance', 'walletBalance', 'type', 'status', 'name', 'bookingCode', 'rank', 'points'];
+  const sortField = ALLOWED_SORT_FIELDS.includes(req.query.sort) ? req.query.sort : '_id';
   const sortOrder = req.query.order === 'asc' ? 1 : -1;
 
   try {

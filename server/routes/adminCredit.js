@@ -15,31 +15,41 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
   let walletOid;
   try { walletOid = new ObjectId(walletId); } catch { walletOid = walletId; }
 
-  const wallet = await rDb.collection('walletusers').findOne({ _id: walletOid });
-  if (!wallet) throw Object.assign(new Error('Wallet not found'), { status: 404 });
+  // Read from the write DB to get a fresh balance and determine field name
+  const walletSnap = await wDb.collection('walletusers').findOne({ _id: walletOid });
+  if (!walletSnap) throw Object.assign(new Error('Wallet not found'), { status: 404 });
 
-  const balanceBefore = wallet.walletBalance ?? wallet.balance ?? 0;
-  const balanceAfter  = parseFloat((balanceBefore + amount).toFixed(8));
+  const balanceField  = 'walletBalance' in walletSnap ? 'walletBalance' : 'balance';
 
-  if (txType === 'DEBIT' && balanceAfter < 0) {
+  // Atomic increment: for debits also guard that the current balance covers the amount
+  const matchFilter = txType === 'DEBIT'
+    ? { _id: walletOid, [balanceField]: { $gte: Math.abs(amount) } }
+    : { _id: walletOid };
+
+  const before = await wDb.collection('walletusers').findOneAndUpdate(
+    matchFilter,
+    { $inc: { [balanceField]: amount }, $set: { updatedAt: new Date() } },
+    { returnDocument: 'before' },
+  );
+
+  if (!before) {
+    const snap2 = await wDb.collection('walletusers').findOne({ _id: walletOid });
+    const cur = snap2 ? (snap2[balanceField] ?? 0) : 0;
     throw Object.assign(
-      new Error(`Insufficient balance — current: ${balanceBefore.toFixed(2)}, debit: ${Math.abs(amount).toFixed(2)}`),
+      new Error(`Insufficient balance — current: ${cur.toFixed(2)}, debit: ${Math.abs(amount).toFixed(2)}`),
       { status: 400 },
     );
   }
 
-  const balanceField = 'walletBalance' in wallet ? 'walletBalance' : 'balance';
-  await wDb.collection('walletusers').updateOne(
-    { _id: walletOid },
-    { $set: { [balanceField]: balanceAfter, updatedAt: new Date() } },
-  );
+  const balanceBefore = before[balanceField] ?? 0;
+  const balanceAfter  = parseFloat((balanceBefore + amount).toFixed(8));
 
   // Resolve currency name
   let currencyName = null;
-  if (wallet.currencyType) {
+  if (walletSnap.currencyType) {
     try {
       const curr = await rDb.collection('currencytypes').findOne(
-        { _id: new ObjectId(wallet.currencyType.toString()) },
+        { _id: new ObjectId(walletSnap.currencyType.toString()) },
         { projection: { name: 1 } },
       );
       if (curr) currencyName = curr.name;
@@ -68,7 +78,7 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
 
   const walletContext = {
     walletId:     String(walletId),
-    currency:     currencyName || String(wallet.currencyType || ''),
+    currency:     currencyName || String(walletSnap.currencyType || ''),
     [balanceField]: null, // placeholder filled per before/after below
     ...(userProfile || { userId: String(userId) }),
   };

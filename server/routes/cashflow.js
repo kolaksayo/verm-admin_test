@@ -176,35 +176,32 @@ router.get('/summary', auth, async (req, res) => {
       const sqlite = getSQLite();
       const acFrom = dateFrom.toISOString().slice(0, 19).replace('T', ' ');
       const acTo   = dateTo ? dateTo.toISOString().slice(0, 19).replace('T', ' ') : null;
-      const acWhere = acTo
-        ? `created_at >= '${acFrom}' AND created_at <= '${acTo}'`
-        : `created_at >= '${acFrom}'`;
+      const acBaseParams = acTo ? [acFrom, acTo] : [acFrom];
+      const acWhere = acTo ? `created_at >= ? AND created_at <= ?` : `created_at >= ?`;
 
-      const timelineSql = (typeFilter, groupBy) => {
-        const typeClause = typeFilter ? ` AND UPPER(COALESCE(tx_type,'CREDIT')) = '${typeFilter}'` : '';
+      const timelineSql = (groupBy) => {
         if (groupBy === 'day') return `
           SELECT strftime('%Y', created_at) as year, strftime('%m', created_at) as month,
                  strftime('%d', created_at) as day, COUNT(*) as count, SUM(amount) as totalUSD
-            FROM admin_credits WHERE ${acWhere}${typeClause}
+            FROM admin_credits WHERE ${acWhere} AND UPPER(COALESCE(tx_type,'CREDIT')) = ?
             GROUP BY year, month, day ORDER BY year, month, day`;
         return `
           SELECT strftime('%Y', created_at) as year, strftime('%m', created_at) as month,
                  COUNT(*) as count, SUM(amount) as totalUSD
-            FROM admin_credits WHERE ${acWhere}${typeClause}
+            FROM admin_credits WHERE ${acWhere} AND UPPER(COALESCE(tx_type,'CREDIT')) = ?
             GROUP BY year, month ORDER BY year, month`;
       };
 
       for (const [obj, txType] of [[adminCredits, 'CREDIT'], [adminDebits, 'DEBIT']]) {
-        const typeClause = ` AND UPPER(COALESCE(tx_type,'CREDIT')) = '${txType}'`;
         const total = sqlite.prepare(
-          `SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM admin_credits WHERE ${acWhere}${typeClause}`
-        ).get();
+          `SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM admin_credits WHERE ${acWhere} AND UPPER(COALESCE(tx_type,'CREDIT')) = ?`
+        ).get(...acBaseParams, txType);
         obj.count    = total.cnt;
         obj.totalUSD = total.total;
 
-        obj.daily = sqlite.prepare(timelineSql(txType, 'day')).all()
+        obj.daily = sqlite.prepare(timelineSql('day')).all(...acBaseParams, txType)
           .map((r) => ({ year: +r.year, month: +r.month, day: +r.day, count: r.count, totalUSD: r.totalUSD }));
-        obj.monthly = sqlite.prepare(timelineSql(txType, 'month')).all()
+        obj.monthly = sqlite.prepare(timelineSql('month')).all(...acBaseParams, txType)
           .map((r) => ({ year: +r.year, month: +r.month, count: r.count, totalUSD: r.totalUSD }));
       }
     } catch { /* non-fatal */ }

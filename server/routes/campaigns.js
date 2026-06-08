@@ -2,12 +2,13 @@ const express = require('express');
 const { sendMessage: sendTelegram } = require('../telegram');
 const { sendMessage: sendToGroup, sendToChannel } = require('../whatsapp');
 const auth = require('../middleware/auth');
+const { requireEditMode } = require('../middleware/auth');
 
 const router = express.Router();
 
 // ── Send ───────────────────────────────────────────────────────────────────────
 
-router.post('/send', auth, async (req, res) => {
+router.post('/send', auth, requireEditMode, async (req, res) => {
   const { content, channels = [] } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: 'content required' });
 

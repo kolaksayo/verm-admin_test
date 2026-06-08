@@ -20,7 +20,7 @@ function todayNigeria() {
 }
 
 // GET /api/dollar-naira-rate/current
-router.get('/current', async (req, res) => {
+router.get('/current', auth, async (req, res) => {
   try {
     const db     = getDb();
     const sqlite = getSQLite();
@@ -96,7 +96,7 @@ router.get('/sqlite', auth, (req, res) => {
 });
 
 // GET /api/dollar-naira-rate/sqlite/current — best rate from SQLite for right now
-router.get('/sqlite/current', (req, res) => {
+router.get('/sqlite/current', auth, (req, res) => {
   try {
     const sqlite = getSQLite();
     const today  = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
