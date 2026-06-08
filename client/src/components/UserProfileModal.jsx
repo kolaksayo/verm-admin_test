@@ -507,6 +507,90 @@ function AdjustmentPanel({ wallet, userId, onSuccess }) {
 
 // ── Main modal ────────────────────────────────────────────────────────────────
 
+// ── Delete user panel ─────────────────────────────────────────────────────────
+
+function DeleteUserPanel({ userId, username, onDeleted }) {
+  const { role, editMode, requestElevation } = useAuth();
+  const canDelete = ['superadmin', 'admin'].includes(role);
+  const [open, setOpen]       = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError]     = useState(null);
+  const [elevating, setElevating] = useState(false);
+  const [elevateError, setElevateError] = useState(null);
+
+  if (!canDelete) return null;
+
+  const handleElevate = async () => {
+    setElevating(true); setElevateError(null);
+    try { await requestElevation('Delete user ' + (username || userId)); }
+    catch (e) { setElevateError(e.message || 'Failed'); }
+    finally { setElevating(false); }
+  };
+
+  const handleDelete = async () => {
+    if (confirm !== 'DELETE') return;
+    setDeleting(true); setError(null);
+    try {
+      await api.delete(`/collections/users/${userId}`);
+      onDeleted();
+    } catch (e) {
+      setError(e.response?.data?.error || 'Delete failed');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-vs-border pt-4 mt-2">
+      {!open ? (
+        <button onClick={() => setOpen(true)}
+          className="text-xs text-vs-danger hover:text-vs-danger/80 transition-colors">
+          Delete this user…
+        </button>
+      ) : (
+        <div className="rounded-xl border border-vs-danger/30 bg-vs-danger/5 p-4 space-y-3">
+          <p className="text-sm font-semibold text-vs-danger">Delete User</p>
+          <p className="text-xs text-vs-text-3">
+            This permanently removes the user account. Their wallet and transaction records will remain but become orphaned.
+          </p>
+          {!editMode ? (
+            <div className="space-y-2">
+              <p className="text-xs text-vs-text-3">Edit access required to delete.</p>
+              <button onClick={handleElevate} disabled={elevating}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                {elevating ? 'Requesting…' : '🔓 Request Edit Access'}
+              </button>
+              {elevateError && <p className="text-xs text-vs-danger">{elevateError}</p>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-vs-text-3">
+                Type <span className="font-mono font-bold text-vs-text">DELETE</span> to confirm.
+              </p>
+              <input
+                type="text" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                placeholder="DELETE"
+                className="w-full px-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-danger/50"
+              />
+              <div className="flex gap-2">
+                <button onClick={handleDelete} disabled={deleting || confirm !== 'DELETE'}
+                  className="px-3 py-1.5 bg-vs-danger hover:bg-vs-danger/80 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-40">
+                  {deleting ? 'Deleting…' : 'Delete User'}
+                </button>
+                <button onClick={() => { setOpen(false); setConfirm(''); setError(null); }}
+                  className="px-3 py-1.5 text-xs text-vs-text-3 hover:text-vs-text transition-colors">
+                  Cancel
+                </button>
+              </div>
+              {error && <p className="text-xs text-vs-danger">{error}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TABS = ['Overview', 'Transactions', 'Competitions'];
 const TX_SUBTABS = [
   { key: '', label: 'All' },
@@ -734,6 +818,8 @@ export default function UserProfileModal({ userId, displayName, onClose }) {
                   </div>
                 </div>
               )}
+
+              <DeleteUserPanel userId={userId} username={profile.user.username} onDeleted={onClose} />
             </div>
           )}
 
