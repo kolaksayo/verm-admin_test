@@ -62,7 +62,6 @@ function AppRoutes() {
         <Route path="social-data" element={<SocialData />} />
         <Route path="system-logs" element={<SystemLogs />} />
         <Route path="audit" element={<AuditPage />} />
-        <Route path="influencers" element={<InfluencerDashboard />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"

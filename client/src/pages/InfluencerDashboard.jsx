@@ -290,7 +290,7 @@ export default function InfluencerDashboard({ embedded = false }) {
 
   return (
     <div>
-      {!embedded && <PortalSettingsPanel />}
+      <PortalSettingsPanel />
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         {!embedded && (
