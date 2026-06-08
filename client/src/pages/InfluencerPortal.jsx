@@ -112,10 +112,11 @@ export default function InfluencerPortal() {
               {/* Identity */}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-vs-purple/20 flex items-center justify-center text-vs-purple font-bold text-sm">
-                  {data.username?.[0]?.toUpperCase() || '?'}
+                  {(data.name || data.username)?.[0]?.toUpperCase() || '?'}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-vs-text">{data.username}</p>
+                  {data.name && <p className="text-sm font-semibold text-vs-text">{data.name}</p>}
+                  <p className={`${data.name ? 'text-xs text-vs-text-3' : 'text-sm font-semibold text-vs-text'}`}>{data.username}</p>
                   <p className="text-xs font-mono text-vs-text-3">{data.referralCode}</p>
                 </div>
               </div>

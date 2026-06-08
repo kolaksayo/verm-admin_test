@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
     // Find the user who owns this referral code
     const user = await db.collection('users').findOne(
       { referralCode: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-      { projection: { _id: 1, username: 1, referralCode: 1 } },
+      { projection: { _id: 1, username: 1, name: 1, referralCode: 1 } },
     );
     if (!user) return res.status(404).json({ error: 'Referral code not found' });
 
@@ -95,6 +95,7 @@ router.get('/', async (req, res) => {
     res.json({
       referralCode,
       username:     user.username,
+      name:         user.name || null,
       referred,
       funded:       showFunnel ? funded : null,
       bet:          showFunnel ? bet    : null,
