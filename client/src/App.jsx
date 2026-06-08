@@ -19,6 +19,7 @@ import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 import AuditPage from './pages/AuditPage';
 import InfluencerPortal from './pages/InfluencerPortal';
+import InfluencerDashboard from './pages/InfluencerDashboard';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -61,6 +62,7 @@ function AppRoutes() {
         <Route path="social-data" element={<SocialData />} />
         <Route path="system-logs" element={<SystemLogs />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="influencers" element={<InfluencerDashboard />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"
