@@ -16,7 +16,7 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
   try {
     const db = getDb();
 
-    const [orphanedRows, noWalletRows] = await Promise.all([
+    const [owResult, nwResult] = await Promise.all([
       // ── Check 1: wallets with missing or broken user reference ──────────────
       db.collection('walletusers').aggregate([
         // Normalise the user reference to a single string field
@@ -63,10 +63,15 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
             ],
           },
         },
-        // Clean up temp fields
+        // Clean up temp fields before facet
         { $project: { _ref: 0, _linked: 0 } },
-        { $sort: { updatedAt: -1, createdAt: -1 } },
-        { $limit: 500 },
+        // Split into true total count and capped rows in one pass
+        {
+          $facet: {
+            total: [{ $count: 'n' }],
+            rows:  [{ $sort: { updatedAt: -1, createdAt: -1 } }, { $limit: 500 }],
+          },
+        },
       ]).toArray(),
 
       // ── Check 2: users with no wallet record ─────────────────────────────────
@@ -97,14 +102,22 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
         // Keep only users with no wallet
         { $match: { '_wallets.0': { $exists: false } } },
         { $project: { _wallets: 0 } },
-        { $sort: { createdAt: -1 } },
-        { $limit: 500 },
+        // Split into true total count and capped rows in one pass
+        {
+          $facet: {
+            total: [{ $count: 'n' }],
+            rows:  [{ $sort: { createdAt: -1 } }, { $limit: 500 }],
+          },
+        },
       ]).toArray(),
     ]);
 
+    const owTotal = owResult[0]?.total[0]?.n ?? 0;
+    const nwTotal = nwResult[0]?.total[0]?.n ?? 0;
+
     res.json({
-      orphanedWallets:     { count: orphanedRows.length,  rows: orphanedRows },
-      usersWithoutWallets: { count: noWalletRows.length,  rows: noWalletRows },
+      orphanedWallets:     { count: owTotal, rows: owResult[0]?.rows ?? [] },
+      usersWithoutWallets: { count: nwTotal, rows: nwResult[0]?.rows ?? [] },
     });
   } catch (err) {
     console.error('[audit] orphaned-wallets error:', err.message);
