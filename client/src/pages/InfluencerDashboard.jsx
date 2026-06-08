@@ -73,7 +73,7 @@ function Toggle({ checked, onChange, label, disabled }) {
   );
 }
 
-function PortalSettingsPanel() {
+function PortalSettingsPanel({ onSettingsChange }) {
   const { editMode, requestElevation } = useAuth();
   const [settings, setSettings]     = useState(null);
   const [saving, setSaving]         = useState(false);
@@ -90,6 +90,7 @@ function PortalSettingsPanel() {
     try {
       await api.post('/influencer-dashboard/settings', patch);
       setSettings((s) => ({ ...s, ...patch }));
+      if (onSettingsChange) onSettingsChange(patch);
       setMsg('Saved');
       setTimeout(() => setMsg(''), 2000);
     } catch (e) {
@@ -290,7 +291,9 @@ export default function InfluencerDashboard({ embedded = false }) {
 
   return (
     <div>
-      <PortalSettingsPanel />
+      <PortalSettingsPanel onSettingsChange={(patch) => {
+        if (patch.showEarnings !== undefined) setShowEarnings(patch.showEarnings);
+      }} />
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         {!embedded && (
