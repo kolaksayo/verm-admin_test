@@ -1,67 +1,111 @@
 const express = require('express');
+const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+const SYSTEM_USER_ID = '692765c58c3db7d510b352c6';
+
 // GET /api/audit/orphaned-wallets
 // Wallet records whose user/userId reference is null/missing or points to a
-// non-existent user document.
+// non-existent user document, plus users who have no wallet at all.
+// The system user (SYSTEM_USER_ID) is excluded from both checks.
 router.get('/orphaned-wallets', auth, async (req, res) => {
   try {
     const db = getDb();
 
-    const rows = await db.collection('walletusers').aggregate([
-      // Normalise the user reference to a single string field
-      {
-        $addFields: {
-          _ref: {
-            $cond: {
-              if:   { $gt: [{ $ifNull: ['$user', null] }, null] },
-              then: { $toString: '$user' },
-              else: {
-                $cond: {
-                  if:   { $gt: [{ $ifNull: ['$userId', null] }, null] },
-                  then: { $toString: '$userId' },
-                  else: null,
+    const [orphanedRows, noWalletRows] = await Promise.all([
+      // ── Check 1: wallets with missing or broken user reference ──────────────
+      db.collection('walletusers').aggregate([
+        // Normalise the user reference to a single string field
+        {
+          $addFields: {
+            _ref: {
+              $cond: {
+                if:   { $gt: [{ $ifNull: ['$user', null] }, null] },
+                then: { $toString: '$user' },
+                else: {
+                  $cond: {
+                    if:   { $gt: [{ $ifNull: ['$userId', null] }, null] },
+                    then: { $toString: '$userId' },
+                    else: null,
+                  },
                 },
               },
             },
           },
         },
-      },
-      // Look up the referenced user
-      {
-        $lookup: {
-          from: 'users',
-          let:  { ref: '$_ref' },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: [{ $toString: '$_id' }, '$$ref'] },
+        // Exclude wallets belonging to the system user
+        { $match: { _ref: { $ne: SYSTEM_USER_ID } } },
+        // Look up the referenced user
+        {
+          $lookup: {
+            from: 'users',
+            let:  { ref: '$_ref' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: [{ $toString: '$_id' }, '$$ref'] },
+                },
               },
-            },
-          ],
-          as: '_linked',
+            ],
+            as: '_linked',
+          },
         },
-      },
-      // Keep only orphaned: null ref OR no matching user found
-      {
-        $match: {
-          $or: [
-            { _ref: null },
-            { '_linked.0': { $exists: false } },
-          ],
+        // Keep only orphaned: null ref OR no matching user found
+        {
+          $match: {
+            $or: [
+              { _ref: null },
+              { '_linked.0': { $exists: false } },
+            ],
+          },
         },
-      },
-      // Clean up temp fields
-      { $project: { _ref: 0, _linked: 0 } },
-      { $sort: { updatedAt: -1, createdAt: -1 } },
-      { $limit: 500 },
-    ]).toArray();
+        // Clean up temp fields
+        { $project: { _ref: 0, _linked: 0 } },
+        { $sort: { updatedAt: -1, createdAt: -1 } },
+        { $limit: 500 },
+      ]).toArray(),
 
-    res.json({ count: rows.length, rows });
+      // ── Check 2: users with no wallet record ─────────────────────────────────
+      db.collection('users').aggregate([
+        // Exclude the system user
+        { $match: { _id: { $ne: new ObjectId(SYSTEM_USER_ID) } } },
+        // Look up any wallet referencing this user
+        {
+          $lookup: {
+            from: 'walletusers',
+            let: { uid: { $toString: '$_id' } },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $or: [
+                      { $eq: [{ $toString: '$user'   }, '$$uid'] },
+                      { $eq: [{ $toString: '$userId' }, '$$uid'] },
+                    ],
+                  },
+                },
+              },
+              { $limit: 1 },
+            ],
+            as: '_wallets',
+          },
+        },
+        // Keep only users with no wallet
+        { $match: { '_wallets.0': { $exists: false } } },
+        { $project: { _wallets: 0 } },
+        { $sort: { createdAt: -1 } },
+        { $limit: 500 },
+      ]).toArray(),
+    ]);
+
+    res.json({
+      orphanedWallets:     { count: orphanedRows.length,  rows: orphanedRows },
+      usersWithoutWallets: { count: noWalletRows.length,  rows: noWalletRows },
+    });
   } catch (err) {
     console.error('[audit] orphaned-wallets error:', err.message);
     res.status(500).json({ error: err.message });
