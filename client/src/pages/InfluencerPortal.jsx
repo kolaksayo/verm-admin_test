@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
@@ -41,25 +42,34 @@ function FunnelStep({ step, label, count, pct, accent, isLast }) {
 }
 
 export default function InfluencerPortal() {
-  const [code, setCode]     = useState('');
+  const { code: urlCode } = useParams();
+  const [code, setCode]     = useState(urlCode ? urlCode.toUpperCase() : '');
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!code.trim()) return;
+  const fetchStats = async (c) => {
     setLoading(true);
     setError('');
     setData(null);
     try {
-      const res = await api.get('/influencer-public', { params: { code: code.trim() } });
+      const res = await api.get('/influencer-public', { params: { code: c.trim() } });
       setData(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong');
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (urlCode) fetchStats(urlCode.toUpperCase());
+  }, [urlCode]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) return;
+    fetchStats(code.toUpperCase());
   };
 
   const fundedPct = data?.referred > 0 ? Math.round((data.funded / data.referred) * 100) : 0;

@@ -73,6 +73,7 @@ function AppRoutes() {
         />
       </Route>
       <Route path="/influencer" element={<InfluencerPortal />} />
+      <Route path="/influencer/:code" element={<InfluencerPortal />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
