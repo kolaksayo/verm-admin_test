@@ -33,6 +33,7 @@ const { startWatcher } = require('./gameBetWatcher');
 const { startSnapshotScheduler } = require('./rateSnapshotJob');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Rate limiters
 const heavyLimiter = rateLimit({
