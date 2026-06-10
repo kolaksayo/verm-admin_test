@@ -15,6 +15,7 @@ function getDb() {
       CREATE TABLE IF NOT EXISTS admin_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE,
         password TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'viewer',
         two_factor_secret TEXT,
@@ -139,6 +140,7 @@ function getDb() {
     try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN message TEXT`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN channel TEXT NOT NULL DEFAULT 'telegram'`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_credits ADD COLUMN tx_type TEXT NOT NULL DEFAULT 'CREDIT'`); } catch { /* already exists */ }
+    try { db.exec(`ALTER TABLE admin_users ADD COLUMN email TEXT UNIQUE`); } catch { /* already exists */ }
   }
   return db;
 }

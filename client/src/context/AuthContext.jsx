@@ -60,8 +60,8 @@ export function AuthProvider({ children }) {
     return () => clearInterval(pollRef.current);
   }, [user, syncElevation]);
 
-  const login = async (username, password) => {
-    const res = await api.post('/auth/login', { username, password });
+  const login = async (email, password) => {
+    const res = await api.post('/auth/login', { email, password });
     if (res.data.requires2fa) {
       return { requires2fa: true, tempToken: res.data.tempToken };
     }

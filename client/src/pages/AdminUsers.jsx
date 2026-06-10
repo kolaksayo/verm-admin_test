@@ -42,7 +42,7 @@ export default function AdminUsers() {
   const [editUser, setEditUser] = useState(null);
   const [deleteUser, setDeleteUser] = useState(null);
 
-  const [form, setForm] = useState({ username: '', password: '', role: 'viewer' });
+  const [form, setForm] = useState({ email: '', username: '', password: '', role: 'viewer' });
   const [editRole, setEditRole] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -65,7 +65,7 @@ export default function AdminUsers() {
     try {
       await api.post('/admin-users', form);
       setShowCreate(false);
-      setForm({ username: '', password: '', role: 'viewer' });
+      setForm({ email: '', username: '', password: '', role: 'viewer' });
       load();
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to create user');
@@ -134,7 +134,7 @@ export default function AdminUsers() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Username</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">2FA</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
@@ -151,7 +151,7 @@ export default function AdminUsers() {
             {users.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3 font-medium text-gray-800">
-                  {u.username}
+                  {u.email || u.username}
                   {u.username === currentUser && (
                     <span className="ml-2 text-xs text-gray-400">(you)</span>
                   )}
@@ -193,10 +193,21 @@ export default function AdminUsers() {
           <form onSubmit={handleCreate} className="space-y-4">
             {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input
+                type="email"
+                required
+                placeholder="user@example.com"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name <span className="text-gray-400 font-normal">(optional)</span></label>
               <input
                 type="text"
-                required
+                placeholder="Defaults to email prefix"
                 value={form.username}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -236,7 +247,7 @@ export default function AdminUsers() {
 
       {/* Edit modal */}
       {editUser && (
-        <Modal title={`Edit — ${editUser.username}`} onClose={() => setEditUser(null)}>
+        <Modal title={`Edit — ${editUser.email || editUser.username}`} onClose={() => setEditUser(null)}>
           <form onSubmit={handleEdit} className="space-y-4">
             {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
             <div>
@@ -274,7 +285,7 @@ export default function AdminUsers() {
       {deleteUser && (
         <Modal title="Delete User" onClose={() => setDeleteUser(null)}>
           <p className="text-sm text-gray-600 mb-5">
-            Are you sure you want to delete <strong>{deleteUser.username}</strong>? This cannot be undone.
+            Are you sure you want to delete <strong>{deleteUser.email || deleteUser.username}</strong>? This cannot be undone.
           </p>
           {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{formError}</div>}
           <div className="flex justify-end gap-2">

@@ -8,7 +8,7 @@ export default function Login() {
 
   const [step, setStep] = useState('credentials');
   const [tempToken, setTempToken] = useState('');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -19,7 +19,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const result = await login(username, password);
+      const result = await login(email, password);
       if (result.requires2fa) {
         setTempToken(result.tempToken);
         setStep('2fa');
@@ -74,14 +74,14 @@ export default function Login() {
           {step === 'credentials' && (
             <form onSubmit={handleCredentials} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-vs-text-2 mb-1.5">Username</label>
+                <label className="block text-sm font-medium text-vs-text-2 mb-1.5">Email</label>
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
-                  placeholder="admin"
+                  placeholder="you@example.com"
                   className={inputCls}
                 />
               </div>

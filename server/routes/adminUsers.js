@@ -14,6 +14,7 @@ function safeUser(u) {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || null,
     role: u.role,
     two_factor_enabled: !!u.two_factor_enabled,
     created_at: u.created_at,
@@ -150,10 +151,13 @@ router.get('/', auth, requireRole('superadmin'), (req, res) => {
 });
 
 router.post('/', auth, requireRole('superadmin'), (req, res) => {
-  const { username, password, role } = req.body;
+  const { email, username, password, role } = req.body;
 
-  if (!username || !password || !role) {
-    return res.status(400).json({ error: 'Username, password and role are required' });
+  if (!email || !password || !role) {
+    return res.status(400).json({ error: 'Email, password and role are required' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email address' });
   }
   if (!VALID_ROLES.includes(role)) {
     return res.status(400).json({ error: `Role must be one of: ${VALID_ROLES.join(', ')}` });
@@ -162,14 +166,20 @@ router.post('/', auth, requireRole('superadmin'), (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+  const displayName = username?.trim() || normalizedEmail.split('@')[0];
+
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
-  if (existing) return res.status(409).json({ error: 'Username already exists' });
+  const existingEmail = db.prepare('SELECT id FROM admin_users WHERE email = ?').get(normalizedEmail);
+  if (existingEmail) return res.status(409).json({ error: 'Email already exists' });
+
+  const existingUsername = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(displayName);
+  const finalUsername = existingUsername ? normalizedEmail : displayName;
 
   const hashed = bcrypt.hashSync(password, 12);
   const result = db.prepare(
-    'INSERT INTO admin_users (username, password, role) VALUES (?, ?, ?)'
-  ).run(username, hashed, role);
+    'INSERT INTO admin_users (username, email, password, role) VALUES (?, ?, ?, ?)'
+  ).run(finalUsername, normalizedEmail, hashed, role);
 
   const created = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(safeUser(created));
@@ -177,7 +187,7 @@ router.post('/', auth, requireRole('superadmin'), (req, res) => {
 
 router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
   const id = parseInt(req.params.id);
-  const { role, password } = req.body;
+  const { role, password, email } = req.body;
 
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
@@ -201,6 +211,16 @@ router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hashed = bcrypt.hashSync(password, 12);
     db.prepare('UPDATE admin_users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashed, id);
+  }
+
+  if (email !== undefined) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    const normalized = email.trim().toLowerCase();
+    const conflict = db.prepare('SELECT id FROM admin_users WHERE email = ? AND id != ?').get(normalized, id);
+    if (conflict) return res.status(409).json({ error: 'Email already in use' });
+    db.prepare('UPDATE admin_users SET email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(normalized, id);
   }
 
   const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
