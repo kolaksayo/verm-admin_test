@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [editMode, setEditMode]                     = useState(false);
   const [elevationExpiry, setElevationExpiry]       = useState(null);
   const [elevationSessionId, setElevationSessionId] = useState(null);
+  const [mfaSetupToken, setMfaSetupToken]           = useState('');
   const pollRef = useRef(null);
 
   const applyElevationData = (data) => {
@@ -65,10 +66,22 @@ export function AuthProvider({ children }) {
     if (res.data.requires2fa) {
       return { requires2fa: true, tempToken: res.data.tempToken };
     }
+    if (res.data.requiresMfaSetup) {
+      setMfaSetupToken(res.data.tempToken);
+      return { requiresMfaSetup: true, tempToken: res.data.tempToken };
+    }
     localStorage.setItem('verm_admin_token', res.data.token);
     setUser(res.data.username);
     setRole(res.data.role);
     return { requires2fa: false };
+  };
+
+  const completeMfaSetup = async (tempToken) => {
+    const res = await api.post('/auth/complete-mfa-setup', { tempToken });
+    localStorage.setItem('verm_admin_token', res.data.token);
+    setUser(res.data.username);
+    setRole(res.data.role);
+    setMfaSetupToken('');
   };
 
   const verify2fa = async (tempToken, code) => {
@@ -106,8 +119,10 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, role, loading,
       editMode, elevationExpiry, elevationSessionId,
+      mfaSetupToken, setMfaSetupToken,
       login, verify2fa, logout,
       requestElevation, dropElevation,
+      completeMfaSetup,
     }}>
       {children}
     </AuthContext.Provider>

@@ -141,6 +141,7 @@ function getDb() {
     try { db.exec(`ALTER TABLE telegram_logs ADD COLUMN channel TEXT NOT NULL DEFAULT 'telegram'`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_credits ADD COLUMN tx_type TEXT NOT NULL DEFAULT 'CREDIT'`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_users ADD COLUMN email TEXT UNIQUE`); } catch { /* already exists */ }
+    try { db.exec(`ALTER TABLE admin_users ADD COLUMN two_factor_exempt INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
   }
   return db;
 }

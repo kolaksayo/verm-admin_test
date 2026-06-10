@@ -37,6 +37,7 @@ export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [enforceMfa, setEnforceMfa] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [editUser, setEditUser] = useState(null);
@@ -55,6 +56,7 @@ export default function AdminUsers() {
       .then((res) => setUsers(res.data))
       .catch(() => setError('Failed to load users'))
       .finally(() => setLoading(false));
+    api.get('/admin-users/mfa-settings').then(r => setEnforceMfa(r.data.enforceMfa)).catch(() => {});
   };
 
   useEffect(() => { load(); }, []);
@@ -85,6 +87,41 @@ export default function AdminUsers() {
       setFormError(err.response?.data?.error || 'Failed to reset MFA');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDisableMfa = async (user) => {
+    if (!window.confirm(`Disable MFA for ${user.email || user.username} and mark them as exempt? They will be able to log in without MFA even if enforcement is on.`)) return;
+    setSaving(true);
+    try {
+      await api.post(`/admin-users/${user.id}/2fa/disable`);
+      load();
+    } catch (err) {
+      setFormError(err.response?.data?.error || 'Failed to disable MFA');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveExemption = async (user) => {
+    if (!window.confirm(`Remove MFA exemption for ${user.email || user.username}? If enforcement is on, they will be required to set up MFA on next login.`)) return;
+    setSaving(true);
+    try {
+      await api.delete(`/admin-users/${user.id}/2fa`);
+      load();
+    } catch (err) {
+      setFormError(err.response?.data?.error || 'Failed to remove exemption');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEnforceMfa = async (val) => {
+    try {
+      await api.post('/admin-users/mfa-settings', { enforceMfa: val });
+      setEnforceMfa(val);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update MFA enforcement');
     }
   };
 
@@ -139,6 +176,25 @@ export default function AdminUsers() {
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
         >
           + Add User
+        </button>
+      </div>
+
+      {/* MFA Enforcement banner */}
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">MFA Enforcement</p>
+          <p className="text-xs text-gray-500 mt-0.5">Require all non-exempt users to set up MFA on next login</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => toggleEnforceMfa(!enforceMfa)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${enforceMfa ? 'bg-blue-600' : 'bg-gray-200'}`}
+          role="switch"
+          aria-checked={enforceMfa}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${enforceMfa ? 'translate-x-6' : 'translate-x-1'}`}
+          />
         </button>
       </div>
 
@@ -298,18 +354,62 @@ export default function AdminUsers() {
               />
             </div>
             {editUser.two_factor_enabled && (
-              <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+              <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-orange-700">MFA is enabled</p>
+                    <p className="text-xs text-orange-500">Resetting will require the user to set up MFA again</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-3 shrink-0">
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => handleResetMfa(editUser)}
+                      className="px-3 py-1.5 text-xs font-medium bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                    >
+                      Reset MFA
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => handleDisableMfa(editUser)}
+                      className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                    >
+                      Disable MFA
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!editUser.two_factor_enabled && !editUser.two_factor_exempt && (
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                 <div>
-                  <p className="text-xs font-medium text-orange-700">MFA is enabled</p>
-                  <p className="text-xs text-orange-500">Resetting will require the user to set up MFA again</p>
+                  <p className="text-xs font-medium text-gray-700">MFA is disabled</p>
+                  <p className="text-xs text-gray-500">User will be required to set up MFA if enforcement is on</p>
                 </div>
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() => handleResetMfa(editUser)}
-                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                  onClick={() => handleDisableMfa(editUser)}
+                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
                 >
-                  Reset MFA
+                  Disable MFA
+                </button>
+              </div>
+            )}
+            {!editUser.two_factor_enabled && editUser.two_factor_exempt && (
+              <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <div>
+                  <p className="text-xs font-medium text-blue-700">MFA exempt</p>
+                  <p className="text-xs text-blue-500">User can log in without MFA even if enforcement is on</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleRemoveExemption(editUser)}
+                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  Remove exemption
                 </button>
               </div>
             )}

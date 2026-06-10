@@ -17,6 +17,7 @@ function safeUser(u) {
     email: u.email || null,
     role: u.role,
     two_factor_enabled: !!u.two_factor_enabled,
+    two_factor_exempt: !!u.two_factor_exempt,
     created_at: u.created_at,
     updated_at: u.updated_at,
   };
@@ -232,7 +233,29 @@ router.delete('/:id/2fa', auth, requireRole('superadmin'), (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  db.prepare('UPDATE admin_users SET two_factor_secret = NULL, two_factor_enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  db.prepare('UPDATE admin_users SET two_factor_secret = NULL, two_factor_enabled = 0, two_factor_exempt = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+router.post('/:id/2fa/disable', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.prepare('UPDATE admin_users SET two_factor_enabled = 0, two_factor_exempt = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+router.get('/mfa-settings', auth, requireRole('superadmin'), (req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM admin_settings WHERE key = 'enforce_mfa'").get();
+  res.json({ enforceMfa: row ? row.value === 'true' : false });
+});
+
+router.post('/mfa-settings', auth, requireRole('superadmin'), (req, res) => {
+  const { enforceMfa } = req.body;
+  const db = getDb();
+  db.prepare("INSERT INTO admin_settings (key, value) VALUES ('enforce_mfa', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(enforceMfa ? 'true' : 'false');
   res.json({ ok: true });
 });
 

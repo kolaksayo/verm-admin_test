@@ -7,6 +7,11 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
+function getSetting(db, key, defaultVal) {
+  const row = db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+  return row ? row.value : defaultVal;
+}
+
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -20,6 +25,8 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
+  const enforceMfa = getSetting(db, 'enforce_mfa', 'false') === 'true';
+
   if (user.two_factor_enabled) {
     const tempToken = jwt.sign(
       { id: user.id, username: user.username, pending2fa: true },
@@ -27,14 +34,21 @@ router.post('/login', (req, res) => {
       { expiresIn: '5m' }
     );
     return res.json({ requires2fa: true, tempToken });
+  } else if (enforceMfa && !user.two_factor_exempt) {
+    const tempToken = jwt.sign(
+      { id: user.id, username: user.username, pendingMfaSetup: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '30m' }
+    );
+    return res.json({ requiresMfaSetup: true, tempToken });
+  } else {
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    return res.json({ token, username: user.username, role: user.role });
   }
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-  res.json({ token, username: user.username, role: user.role });
 });
 
 router.post('/verify-2fa', (req, res) => {
@@ -67,6 +81,28 @@ router.post('/verify-2fa', (req, res) => {
 
   if (!valid) return res.status(401).json({ error: 'Invalid 2FA code' });
 
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+  res.json({ token, username: user.username, role: user.role });
+});
+
+router.post('/complete-mfa-setup', (req, res) => {
+  const { tempToken } = req.body;
+  if (!tempToken) return res.status(400).json({ error: 'Token required' });
+  let payload;
+  try {
+    payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, please log in again' });
+  }
+  if (!payload.pendingMfaSetup) return res.status(400).json({ error: 'Invalid token type' });
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(payload.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  if (!user.two_factor_enabled) return res.status(400).json({ error: 'MFA setup not complete' });
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role },
     process.env.JWT_SECRET,
