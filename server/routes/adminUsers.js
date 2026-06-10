@@ -227,6 +227,15 @@ router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
   res.json(safeUser(updated));
 });
 
+router.delete('/:id/2fa', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.prepare('UPDATE admin_users SET two_factor_secret = NULL, two_factor_enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
 router.delete('/:id', auth, requireRole('superadmin'), (req, res) => {
   const id = parseInt(req.params.id);
 

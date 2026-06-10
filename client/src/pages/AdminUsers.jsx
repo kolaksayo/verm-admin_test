@@ -75,6 +75,19 @@ export default function AdminUsers() {
     }
   };
 
+  const handleResetMfa = async (user) => {
+    if (!window.confirm(`Reset MFA for ${user.email || user.username}? They will need to set it up again.`)) return;
+    setSaving(true);
+    try {
+      await api.delete(`/admin-users/${user.id}/2fa`);
+      load();
+    } catch (err) {
+      setFormError(err.response?.data?.error || 'Failed to reset MFA');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleEdit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -284,6 +297,22 @@ export default function AdminUsers() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {editUser.two_factor_enabled && (
+              <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                <div>
+                  <p className="text-xs font-medium text-orange-700">MFA is enabled</p>
+                  <p className="text-xs text-orange-500">Resetting will require the user to set up MFA again</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleResetMfa(editUser)}
+                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  Reset MFA
+                </button>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-60">
