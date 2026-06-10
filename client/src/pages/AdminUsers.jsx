@@ -45,6 +45,7 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ email: '', username: '', password: '', role: 'viewer' });
   const [editRole, setEditRole] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editEmail, setEditEmail] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -82,9 +83,11 @@ export default function AdminUsers() {
       const payload = {};
       if (editRole !== editUser.role) payload.role = editRole;
       if (editPassword) payload.password = editPassword;
+      if (editEmail.trim() && editEmail.trim().toLowerCase() !== (editUser.email || '')) payload.email = editEmail.trim();
       if (Object.keys(payload).length) await api.patch(`/admin-users/${editUser.id}`, payload);
       setEditUser(null);
       setEditPassword('');
+      setEditEmail('');
       load();
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to update user');
@@ -166,7 +169,7 @@ export default function AdminUsers() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => { setEditUser(u); setEditRole(u.role); setEditPassword(''); setFormError(''); }}
+                      onClick={() => { setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError(''); }}
                       className="text-xs text-blue-500 hover:text-blue-700 font-medium"
                     >
                       Edit
@@ -250,6 +253,16 @@ export default function AdminUsers() {
         <Modal title={`Edit — ${editUser.email || editUser.username}`} onClose={() => setEditUser(null)}>
           <form onSubmit={handleEdit} className="space-y-4">
             {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input
+                type="email"
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                placeholder="user@example.com"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
               <select
