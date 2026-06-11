@@ -301,16 +301,16 @@ function SectionHeader({ icon, title, subtitle }) {
 // ── Channel status helpers ────────────────────────────────────────────────────
 
 const STATUS_STYLES = {
-  Active:        { dot: 'bg-vs-success', text: 'text-vs-success', pill: 'bg-vs-success/10 text-vs-success border-vs-success/20' },
-  'Needs Setup': { dot: 'bg-vs-text-3',  text: 'text-vs-text-3',  pill: 'bg-vs-elevated text-vs-text-3 border-vs-border' },
-  Error:         { dot: 'bg-vs-danger',  text: 'text-vs-danger',  pill: 'bg-vs-danger/10 text-vs-danger border-vs-danger/20' },
+  Active:        { dot: 'bg-vs-success', text: 'text-vs-success', pill: 'bg-green-900/40 text-green-400 border-green-700/30' },
+  'Needs Setup': { dot: 'bg-amber-400',  text: 'text-amber-400',  pill: 'bg-amber-900/30 text-amber-400 border-amber-700/30' },
+  Error:         { dot: 'bg-vs-danger',  text: 'text-vs-danger',  pill: 'bg-red-900/30 text-red-400 border-red-700/30' },
   Disabled:      { dot: 'bg-vs-warning', text: 'text-vs-warning', pill: 'bg-vs-warning/10 text-vs-warning border-vs-warning/20' },
 };
 
 function StatusPill({ status }) {
   const s = STATUS_STYLES[status] || STATUS_STYLES['Needs Setup'];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${s.pill}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border ${s.pill}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
       {status}
     </span>
@@ -322,76 +322,380 @@ function sentTodayCount(logs) {
   return logs.filter((l) => l.ok && String(l.created_at || '').slice(0, 10) === today).length;
 }
 function lastSuccess(logs) {
-  const row = logs.find((l) => l.ok); // logs are DESC by id
+  const row = logs.find((l) => l.ok);
   return row ? row.created_at : null;
 }
+function failuresToday(logs) {
+  const today = new Date().toISOString().slice(0, 10);
+  return logs.filter((l) => !l.ok && String(l.created_at || '').slice(0, 10) === today).length;
+}
 
-// ── Channel overview card (top section — horizontal) ──────────────────────────
+// ── Brand icons ───────────────────────────────────────────────────────────────
 
-function ChannelOverviewCard({ icon, iconBg, name, description, status, sentToday, lastTest, selected, onManage }) {
-  const s = STATUS_STYLES[status] || STATUS_STYLES['Needs Setup'];
+function TgIcon({ size = 20, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+    </svg>
+  );
+}
+
+function WaIcon({ size = 20, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  );
+}
+
+function ChanIcon({ channelKey, size = 20, className = '' }) {
+  if (channelKey === 'telegram') return <TgIcon size={size} className={className} />;
+  return <WaIcon size={size} className={className} />;
+}
+
+// ── Inline SVG icons for status/metrics ──────────────────────────────────────
+
+const IcCheckCircle = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+  </svg>
+);
+const IcXCircle = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+  </svg>
+);
+const IcClock = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+  </svg>
+);
+const IcChat = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+  </svg>
+);
+const IcShield = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+);
+const IcSend = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+  </svg>
+);
+const IcGear = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+  </svg>
+);
+const IcShieldCheck = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
+  </svg>
+);
+const IcChevronDown = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+);
+const IcChevronUp = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="18 15 12 9 6 15"/>
+  </svg>
+);
+
+// ── Channel overview card (top row — horizontal) ──────────────────────────────
+
+function ChannelOverviewCard({ channelKey, name, status, sentToday, lastTest, missingLabel, selected, onManage }) {
+  const iconBg = channelKey === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]';
   const needsSetup = status === 'Needs Setup';
   return (
-    <div className={`bg-vs-card border rounded-xl p-4 flex flex-col gap-3 transition-colors ${
-      selected ? 'border-vs-purple ring-1 ring-vs-purple/30' : 'border-vs-border'
+    <div className={`bg-vs-card border rounded-xl p-4 flex items-center gap-4 ${
+      selected ? 'border-vs-purple' : 'border-vs-border'
     }`}>
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${iconBg}`}>
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-vs-text">{name}</p>
-          <p className="text-xs text-vs-text-3 truncate mt-0.5">{description}</p>
-        </div>
-        <StatusPill status={status} />
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <ChanIcon channelKey={channelKey} size={24} className="text-white" />
       </div>
-      <div className="flex items-center gap-4 text-xs border-t border-vs-border pt-3">
-        <div className="flex-1">
-          <p className="text-vs-text-3">Messages Today</p>
-          <p className="text-vs-text font-semibold text-sm">{sentToday}</p>
-        </div>
-        <div className="flex-1">
-          <p className="text-vs-text-3">Last Test</p>
-          <p className="text-vs-text-2 font-medium">{lastTest ? timeAgo(lastTest) : '—'}</p>
-        </div>
+      <div className="flex-shrink-0 min-w-0">
+        <p className="text-sm font-semibold text-vs-text">{name}</p>
+        <div className="mt-1"><StatusPill status={status} /></div>
+      </div>
+      <div className="flex-1 flex items-center gap-6 pl-2">
+        {needsSetup ? (
+          <div>
+            <p className="text-xs text-vs-text-3">Missing</p>
+            <p className="text-sm font-semibold text-vs-text">{missingLabel || 'Configuration'}</p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <p className="text-xs text-vs-text-3">Messages Today</p>
+              <p className="text-2xl font-bold text-vs-text leading-tight">{sentToday}</p>
+            </div>
+            <div>
+              <p className="text-xs text-vs-text-3">Last Test</p>
+              <p className="text-sm font-semibold text-vs-text">{lastTest ? timeAgo(lastTest) : '—'}</p>
+            </div>
+          </>
+        )}
       </div>
       <button
         onClick={onManage}
-        className={`w-full text-xs font-semibold py-2 rounded-lg transition-colors ${
-          needsSetup
-            ? 'bg-vs-warning/10 text-vs-warning hover:bg-vs-warning/20 border border-vs-warning/30'
-            : selected
-            ? 'bg-vs-purple/10 text-vs-purple-light hover:bg-vs-purple/20 border border-vs-purple/30'
-            : 'bg-vs-elevated text-vs-text-3 hover:text-vs-text hover:bg-vs-hover border border-vs-border'
-        }`}
+        className="px-5 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors flex-shrink-0"
       >
-        {needsSetup ? 'Complete Setup' : selected ? 'Managing' : 'Manage'}
+        {needsSetup ? 'Complete setup' : 'Manage'}
       </button>
     </div>
   );
 }
 
-// ── Channel sidebar item (narrow left sidebar) ─────────────────────────────────
+// ── Channel sidebar item ───────────────────────────────────────────────────────
 
-function ChannelSidebarItem({ icon, iconBg, name, status, selected, onClick }) {
+function ChannelSidebarItem({ channelKey, name, status, selected, onClick }) {
   const s = STATUS_STYLES[status] || STATUS_STYLES['Needs Setup'];
+  const iconBg = channelKey === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]';
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
-        selected
-          ? 'bg-vs-purple/10 border border-vs-purple/30'
-          : 'hover:bg-vs-elevated/60 border border-transparent'
+      className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-left border-l-2 ${
+        selected ? 'bg-vs-elevated/60 border-vs-purple' : 'hover:bg-vs-elevated/40 border-transparent'
       }`}
     >
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${iconBg}`}>
-        {icon}
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <ChanIcon channelKey={channelKey} size={18} className="text-white" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium truncate ${selected ? 'text-vs-purple-light' : 'text-vs-text'}`}>{name}</p>
+        <p className="text-sm font-semibold text-vs-text truncate">{name}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+          <span className={`text-xs ${s.text}`}>{status}</span>
+        </div>
       </div>
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
     </button>
+  );
+}
+
+// ── Status check row (section A) ──────────────────────────────────────────────
+
+function StatusCheckRow({ label, value, state }) {
+  const isOk = state === 'ok';
+  const isFail = state === 'fail';
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-vs-border/50 last:border-0">
+      <div className="flex items-center gap-2.5">
+        {isOk
+          ? <IcCheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+          : isFail
+          ? <IcXCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          : <span className="w-5 h-5 rounded-full border-2 border-vs-border flex-shrink-0 inline-block" />
+        }
+        <span className="text-sm text-vs-text-2">{label}</span>
+      </div>
+      {value && <span className="text-xs text-vs-text-3 ml-2">{value}</span>}
+    </div>
+  );
+}
+
+// ── Config fields (section B) — styled to match reference ─────────────────────
+
+function SecretConfigRow({ label, savedPreview, inputValue, onChange, onSave, saving, saveMsg }) {
+  const [revealed, setRevealed] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const hasSaved = !!savedPreview;
+  const copy = (t) => navigator.clipboard?.writeText(t).catch(() => {});
+
+  if (hasSaved && !replacing) {
+    return (
+      <div className="mb-4">
+        <p className="text-xs text-vs-text-3 mb-1.5">{label}</p>
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg">
+          <span className="text-sm text-vs-text font-mono flex-1 truncate">
+            {revealed ? savedPreview : '••••••••••••••' + savedPreview.slice(-6)}
+          </span>
+          <button type="button" onClick={() => setRevealed((v) => !v)} className="text-xs text-vs-text-3 hover:text-vs-text transition-colors">{revealed ? 'Hide' : 'Reveal'}</button>
+          <span className="text-vs-border">|</span>
+          <button type="button" onClick={() => copy(savedPreview)} className="text-xs text-vs-text-3 hover:text-vs-text transition-colors">Copy</button>
+          <span className="text-vs-border">|</span>
+          <button type="button" onClick={() => setReplacing(true)} className="text-xs text-vs-purple-light hover:text-vs-purple transition-colors">Replace</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="text-xs text-vs-text-3 mb-1.5">{label}</p>
+      <div className="flex items-center gap-2">
+        <input
+          type={revealed ? 'text' : 'password'}
+          value={inputValue}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={hasSaved ? 'Paste new value…' : 'Paste token…'}
+          className="flex-1 px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple font-mono"
+        />
+        <button type="button" onClick={() => setRevealed((v) => !v)} className="text-xs text-vs-text-3 hover:text-vs-text px-1">{revealed ? 'Hide' : 'Show'}</button>
+        {hasSaved && <button type="button" onClick={() => { setReplacing(false); onChange(''); }} className="text-xs text-vs-text-3 hover:text-vs-text px-1">Cancel</button>}
+      </div>
+      {inputValue.trim() && (
+        <div className="flex items-center gap-2 mt-2">
+          <button type="button" onClick={onSave} disabled={saving}
+            className="px-3 py-1.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TextConfigRow({ label, fieldValue, placeholder, mono, onSave, saving, saveMsg }) {
+  const [val, setVal] = useState(fieldValue || '');
+  const copy = (t) => navigator.clipboard?.writeText(t).catch(() => {});
+  const display = fieldValue || val;
+  return (
+    <div className="mb-4">
+      <p className="text-xs text-vs-text-3 mb-1.5">{label}</p>
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg">
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder={placeholder}
+          className={`flex-1 bg-transparent text-sm text-vs-text placeholder-vs-text-3 focus:outline-none ${mono ? 'font-mono' : ''}`}
+        />
+        {display && <button type="button" onClick={() => copy(display)} className="text-xs text-vs-text-3 hover:text-vs-text transition-colors flex-shrink-0">Copy</button>}
+      </div>
+      {val.trim() && val !== fieldValue && (
+        <div className="flex items-center gap-2 mt-2">
+          <button type="button" onClick={() => onSave(val)} disabled={saving}
+            className="px-3 py-1.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Activity item (section D) ─────────────────────────────────────────────────
+
+const TRIGGER_LABEL = { test: 'Test message sent', manual: 'Manual message sent' };
+
+function ActivityItem({ log }) {
+  const isTest = log.trigger === 'test';
+  const isManual = log.trigger === 'manual';
+  const timeStr = log.created_at ? new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+
+  let icon, iconBg;
+  if (isTest) {
+    icon = <IcSend className="w-4 h-4 text-white" />;
+    iconBg = 'bg-teal-500/80';
+  } else if (isManual) {
+    icon = <IcChat className="w-4 h-4 text-white" />;
+    iconBg = 'bg-vs-purple/80';
+  } else if (!log.ok) {
+    icon = <IcShield className="w-4 h-4 text-white" />;
+    iconBg = 'bg-red-500/70';
+  } else {
+    icon = <IcShieldCheck className="w-4 h-4 text-white" />;
+    iconBg = 'bg-green-600/80';
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-vs-text-2">{timeStr}</p>
+        <p className="text-xs text-vs-text-3 truncate mt-0.5">
+          {log.ok
+            ? (TRIGGER_LABEL[log.trigger] || log.preview?.slice(0, 40) || 'Message sent')
+            : (log.error || 'Send failed')}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Setup guide accordion (section E) ─────────────────────────────────────────
+
+function SetupGuideAccordion({ title, steps }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">{title || 'E. Need help setting this up?'}</p>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text-2 hover:bg-vs-hover transition-colors"
+      >
+        <span>View setup guide</span>
+        {open ? <IcChevronUp className="w-4 h-4 text-vs-text-3" /> : <IcChevronDown className="w-4 h-4 text-vs-text-3" />}
+      </button>
+      {open && (
+        <div className="mt-2 px-1">
+          <ol className="space-y-2.5 text-xs text-vs-text-2">
+            {steps.map((step, i) => (
+              <li key={i} className="flex gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="leading-relaxed">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Bottom WhatsApp connection summary bar ────────────────────────────────────
+
+function WaConnectionBar({ waGroupStatus, waEvolutionUrl, waEvolutionInstance, waGroupId, waChannelId, onManage }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
+      <div className="flex items-center gap-4 px-5 py-4">
+        <div className="w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center flex-shrink-0">
+          <WaIcon size={20} className="text-white" />
+        </div>
+        <div className="flex-shrink-0">
+          <p className="text-sm font-semibold text-vs-text">WhatsApp Group</p>
+          <div className="mt-0.5"><StatusPill status={waGroupStatus} /></div>
+        </div>
+        {expanded && (
+          <div className="flex-1 grid grid-cols-4 gap-4 pl-4 border-l border-vs-border">
+            <div>
+              <p className="text-xs text-vs-text-3">API URL</p>
+              <p className="text-xs font-mono text-vs-text-2 truncate mt-0.5">{waEvolutionUrl || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-vs-text-3">Instance Name</p>
+              <p className="text-xs font-mono text-vs-text-2 truncate mt-0.5">{waEvolutionInstance || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-vs-text-3">Group ID</p>
+              <p className="text-xs font-mono text-vs-text-2 truncate mt-0.5">{waGroupId ? waGroupId.slice(0, 18) + '…' : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-vs-text-3">Channel ID</p>
+              <p className="text-xs font-mono text-vs-text-2 truncate mt-0.5">{waChannelId || '—'}</p>
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+          <button onClick={onManage}
+            className="px-4 py-1.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-lg transition-colors">
+            Manage
+          </button>
+          <button onClick={() => setExpanded((v) => !v)} className="p-1.5 text-vs-text-3 hover:text-vs-text">
+            {expanded ? <IcChevronUp className="w-4 h-4" /> : <IcChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -545,8 +849,6 @@ function ManualMessageComposer({ destination, value, onChange, onSend, sending, 
 
 // ── Recent channel activity ────────────────────────────────────────────────────
 
-const TRIGGER_LABEL = { test: 'Test message', manual: 'Manual message' };
-
 function RecentChannelActivity({ logs }) {
   const recent = logs.slice(0, 6);
   return (
@@ -568,32 +870,6 @@ function RecentChannelActivity({ logs }) {
               </div>
             </div>
           ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Setup guide accordion ──────────────────────────────────────────────────────
-
-function SetupGuideAccordion({ steps }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-vs-elevated/40 transition-colors">
-        <span className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">View setup guide</span>
-        <span className="text-vs-text-3 text-sm">{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <div className="px-5 pb-5">
-          <ol className="space-y-2 text-sm text-vs-text-2">
-            {steps.map((step, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="w-5 h-5 rounded-full bg-vs-purple flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
-                <span>{step}</span>
-              </li>
-            ))}
-          </ol>
         </div>
       )}
     </div>
@@ -1171,26 +1447,23 @@ export default function NotificationsPage() {
           : (waHealth && (waHealth.urlReachable === false || waHealth.apiKeyValid === false || waHealth.instanceConnected === false)) ? 'Error'
           : 'Active';
 
-        const tgItems = [
-          { label: 'Telegram API reachable', state: hs(tgHealth?.apiReachable) },
-          { label: 'Bot token valid', state: hs(tgHealth?.botTokenValid), detail: tgHealth?.botUsername },
-          { label: 'Chat ID valid', state: hs(tgHealth?.chatIdValid), detail: tgHealth?.chatTitle },
-          { label: 'Send permission', state: hs(tgHealth?.canSend) },
-          { label: 'Notifications enabled', state: tgEnabled ? 'ok' : 'fail' },
+        const tgHealthItems = [
+          { label: 'Bot Token', value: tgHealth?.botTokenValid ? 'Valid' : tgHealth?.botTokenValid === false ? 'Invalid' : null, state: hs(tgHealth?.botTokenValid) },
+          { label: 'Chat ID', value: tgHealth?.chatIdValid ? 'Valid' : tgHealth?.chatIdValid === false ? 'Invalid' : null, state: hs(tgHealth?.chatIdValid) },
+          { label: 'Admin Access', value: tgHealth?.canSend ? 'Confirmed' : tgHealth?.canSend === false ? 'Denied' : null, state: hs(tgHealth?.canSend) },
         ];
-        const waItems = (idLabel, idState) => [
-          { label: 'Evolution URL reachable', state: hs(waHealth?.urlReachable) },
-          { label: 'API key valid', state: hs(waHealth?.apiKeyValid) },
-          { label: 'Instance connected', state: hs(waHealth?.instanceConnected), detail: waHealth?.state },
-          { label: idLabel, state: hs(idState) },
-          { label: 'Notifications enabled', state: waEnabled ? 'ok' : 'fail' },
+        const waHealthItems = (idLabel, idState) => [
+          { label: 'Evolution API', value: waHealth?.urlReachable ? 'Reachable' : waHealth?.urlReachable === false ? 'Unreachable' : null, state: hs(waHealth?.urlReachable) },
+          { label: 'API Key', value: waHealth?.apiKeyValid ? 'Valid' : waHealth?.apiKeyValid === false ? 'Invalid' : null, state: hs(waHealth?.apiKeyValid) },
+          { label: 'Instance', value: waHealth?.instanceConnected ? 'Connected' : waHealth?.state || null, state: hs(waHealth?.instanceConnected) },
+          { label: idLabel, value: idState ? 'Configured' : idState === false ? 'Missing' : null, state: hs(idState) },
         ];
 
         const tgSteps = [
           <>Message <span className="font-mono text-vs-purple-light">@BotFather</span> on Telegram → send <span className="font-mono">/newbot</span> → receive your <strong>bot token</strong>.</>,
           <>Add your bot to your Telegram group as an <strong>administrator</strong>.</>,
           <>Get the group <strong>Chat ID</strong>: forward any group message to <span className="font-mono text-vs-purple-light">@userinfobot</span>. Group IDs look like <span className="font-mono">-1001234567890</span>.</>,
-          <>Paste both values into the configuration above and click <strong>Save configuration</strong>.</>,
+          <>Paste both values into the configuration fields and click <strong>Save</strong>.</>,
         ];
         const waSteps = [
           <>Deploy Evolution API and connect your WhatsApp number via the manager UI at <span className="font-mono text-vs-purple-light">{'<your-url>/manager'}</span>.</>,
@@ -1201,45 +1474,51 @@ export default function NotificationsPage() {
         ];
 
         const channels = [
-          { key: 'telegram',   icon: '✈️', iconBg: 'bg-blue-500/10',   name: 'Telegram Group',  description: 'Broadcast to a Telegram group',    status: tgStatus,        logs: tgLogs },
-          { key: 'wa_group',   icon: '💬', iconBg: 'bg-green-500/10',  name: 'WhatsApp Group',  description: 'Broadcast via Evolution API',       status: waGroupStatus,   logs: waLogs },
-          { key: 'wa_channel', icon: '📡', iconBg: 'bg-purple-500/10', name: 'WhatsApp Channel',description: 'Broadcast to a WhatsApp channel',   status: waChannelStatus, logs: waLogs },
+          { key: 'telegram',   name: 'Telegram Group',  status: tgStatus,        logs: tgLogs,  missingLabel: 'Bot Token + Chat ID' },
+          { key: 'wa_group',   name: 'WhatsApp Group',  status: waGroupStatus,   logs: waLogs,  missingLabel: 'Evolution credentials' },
+          { key: 'wa_channel', name: 'WhatsApp Channel',status: waChannelStatus, logs: waLogs,  missingLabel: 'Channel ID' },
         ];
 
-        const failuresToday = (logs) => {
-          const today = new Date().toISOString().slice(0, 10);
-          return logs.filter((l) => !l.ok && String(l.created_at || '').slice(0, 10) === today).length;
+        const sel = channels.find((c) => c.key === selectedChannel) || channels[0];
+
+        // Per-field inline save helpers
+        const saveTgField = async (field, value) => {
+          try {
+            await api.post('/telegram/config', { [field]: value });
+            await loadStatus();
+            return 'Saved!';
+          } catch (err) {
+            return err.response?.data?.error || 'Failed';
+          }
         };
 
-        const DetailToggle = ({ enabled, onToggle, toggling, label }) => (
-          <div className="flex items-center justify-between py-3 border-b border-vs-border">
-            <div>
-              <p className="text-sm font-medium text-vs-text">{label}</p>
-              <p className="text-xs text-vs-text-3 mt-0.5">{enabled ? 'Enabled — messages will be sent' : 'Disabled — messages paused'}</p>
-            </div>
-            <button onClick={onToggle} disabled={toggling}
-              className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
-              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-6' : 'left-1'}`} />
-            </button>
-          </div>
-        );
+        const saveWaField = async (fields) => {
+          try {
+            await api.post('/whatsapp/config', fields);
+            const r = await api.get('/whatsapp/status');
+            setWaStatus(r.data);
+            return 'Saved!';
+          } catch (err) {
+            return err.response?.data?.error || 'Failed';
+          }
+        };
 
         return (
-          <div className="space-y-5">
-            {/* ── Top: Channel Overview ── */}
+          <div className="space-y-4">
+
+            {/* ── Channel Overview ── */}
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Channel Overview</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <p className="text-sm font-semibold text-vs-text mb-3">Channel Overview</p>
+              <div className="space-y-3">
                 {channels.map((c) => (
                   <ChannelOverviewCard
                     key={c.key}
-                    icon={c.icon}
-                    iconBg={c.iconBg}
+                    channelKey={c.key}
                     name={c.name}
-                    description={c.description}
                     status={c.status}
                     sentToday={sentTodayCount(c.logs)}
                     lastTest={lastSuccess(c.logs)}
+                    missingLabel={c.missingLabel}
                     selected={selectedChannel === c.key}
                     onManage={() => setSelectedChannel(c.key)}
                   />
@@ -1247,18 +1526,17 @@ export default function NotificationsPage() {
               </div>
             </div>
 
-            {/* ── Bottom: Sidebar + Detail Panel ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
+            {/* ── Sidebar + Detail Panel ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
 
-              {/* Narrow sidebar */}
-              <div className="lg:col-span-1 bg-vs-card border border-vs-border rounded-xl p-3">
+              {/* Sidebar */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 px-2 mb-2">Channels</p>
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {channels.map((c) => (
                     <ChannelSidebarItem
                       key={c.key}
-                      icon={c.icon}
-                      iconBg={c.iconBg}
+                      channelKey={c.key}
                       name={c.name}
                       status={c.status}
                       selected={selectedChannel === c.key}
@@ -1268,302 +1546,238 @@ export default function NotificationsPage() {
                 </div>
               </div>
 
-              {/* Wide detail panel */}
-              <div className="lg:col-span-3 space-y-4">
+              {/* Detail panel */}
+              <div className="lg:col-span-3 bg-vs-card border border-vs-border rounded-xl overflow-hidden">
 
-                {selectedChannel === 'telegram' && (
-                  <>
-                    {/* A. Status Summary */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
-                      <DetailToggle enabled={tgEnabled} onToggle={handleToggleTg} toggling={togglingTg} label="Telegram notifications" />
-                      <div className="mt-3">
-                        {tgItems.map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
-                      </div>
-                      <div className="flex items-center gap-2 mt-4 justify-between">
-                        <button onClick={recheckHealth} disabled={healthLoading}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
-                          {healthLoading ? 'Checking…' : 'Re-check'}
-                        </button>
-                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{tgHealth?.checkedAt ? timeAgo(tgHealth.checkedAt) : '—'}</span></p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Last Test</p>
-                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(tgLogs) ? timeAgo(lastSuccess(tgLogs)) : '—'}</p>
+                {/* Panel header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-vs-border">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                      <ChanIcon channelKey={selectedChannel} size={18} className="text-white" />
+                    </div>
+                    <h2 className="text-base font-bold text-vs-text">{sel.name}</h2>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-vs-text-3">Notifications Enabled</span>
+                    <button
+                      onClick={selectedChannel === 'telegram' ? handleToggleTg : handleToggleWa}
+                      disabled={selectedChannel === 'telegram' ? togglingTg : togglingWa}
+                      className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
+                        (selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
+                      }`}
+                    >
+                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${(selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'left-6' : 'left-1'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* A | B | C columns */}
+                <div className="grid grid-cols-3 divide-x divide-vs-border">
+
+                  {/* A. Status Summary */}
+                  <div className="p-5">
+                    <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">A. Status Summary</p>
+                    {selectedChannel === 'telegram'
+                      ? tgHealthItems.map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
+                      : waHealthItems(
+                          selectedChannel === 'wa_group' ? 'Group ID' : 'Channel ID',
+                          selectedChannel === 'wa_group' ? waHealth?.groupIdConfigured : waHealth?.channelIdConfigured
+                        ).map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
+                    }
+                    <div className="mt-4 pt-3 border-t border-vs-border space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs text-vs-text-3">
+                          <IcClock className="w-4 h-4" />
+                          <span>Last Successful Test</span>
                         </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Sent Today</p>
-                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(tgLogs)}</p>
-                        </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Failures Today</p>
-                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(tgLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(tgLogs)}</p>
-                        </div>
+                        <span className="text-xs text-vs-text-2">
+                          {lastSuccess(sel.logs)
+                            ? new Date(lastSuccess(sel.logs)).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            : '—'}
+                        </span>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs text-vs-text-3">
+                          <IcChat className="w-4 h-4" />
+                          <span>Messages Sent Today</span>
+                        </div>
+                        <span className="text-xs font-semibold text-vs-text">{sentTodayCount(sel.logs)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs text-vs-text-3">
+                          <IcShield className="w-4 h-4" />
+                          <span>Failures Today</span>
+                        </div>
+                        <span className={`text-xs font-semibold ${failuresToday(sel.logs) > 0 ? 'text-vs-danger' : 'text-vs-text'}`}>{failuresToday(sel.logs)}</span>
+                      </div>
+                      <button onClick={recheckHealth} disabled={healthLoading}
+                        className="mt-1 text-xs text-vs-text-3 hover:text-vs-text transition-colors disabled:opacity-50">
+                        {healthLoading ? 'Checking…' : '↻ Re-check connection'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* B. Configuration */}
+                  <div className="p-5">
+                    <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">B. Configuration</p>
+
+                    {selectedChannel === 'telegram' && (
+                      <>
+                        <SecretConfigRow
+                          label="Bot Token"
+                          savedPreview={status?.botTokenPreview}
+                          inputValue={botToken}
+                          onChange={setBotToken}
+                          onSave={async () => { const msg = await saveTgField('botToken', botToken); setSaveMsg(msg); setBotToken(''); }}
+                          saving={saving}
+                          saveMsg={saveMsg}
+                        />
+                        <TextConfigRow
+                          label="Chat ID"
+                          fieldValue={status?.chatId || chatId}
+                          placeholder="-1001234567890"
+                          mono
+                          onSave={async (val) => { const msg = await saveTgField('chatId', val); setSaveMsg(msg); setChatId(val); }}
+                          saving={saving}
+                          saveMsg={saveMsg}
+                        />
+                      </>
+                    )}
+
+                    {selectedChannel === 'wa_group' && (
+                      <>
+                        <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
+                          onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                        <SecretConfigRow label="API Key" savedPreview={waStatus?.evolutionApiKeyPreview}
+                          inputValue={waEvolutionApiKey} onChange={setWaEvolutionApiKey}
+                          onSave={async () => { const msg = await saveWaField({ evolutionApiKey: waEvolutionApiKey }); setWaSaveMsg(msg); setWaEvolutionApiKey(''); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                        <TextConfigRow label="Instance Name" fieldValue={waEvolutionInstance} placeholder="Vermo Sports" mono
+                          onSave={async (val) => { const msg = await saveWaField({ evolutionInstance: val }); setWaSaveMsg(msg); setWaEvolutionInstance(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                        <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
+                          onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                      </>
+                    )}
+
+                    {selectedChannel === 'wa_channel' && (
+                      <>
+                        <div className="mb-3 px-3 py-2 bg-vs-elevated/60 border border-vs-border rounded-lg text-xs text-vs-text-3">
+                          Shared Evolution connection — configure URL, Key & Instance on the WhatsApp Group panel.
+                        </div>
+                        <TextConfigRow label="Channel ID" fieldValue={waChannelId} placeholder="120363xxxxxxxxxx@newsletter" mono
+                          onSave={async (val) => { const msg = await saveWaField({ channelId: val }); setWaSaveMsg(msg); setWaChannelId(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                      </>
+                    )}
+                  </div>
+
+                  {/* C. Actions */}
+                  <div className="p-5">
+                    <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">C. Actions</p>
+                    <div className="space-y-2 mb-5">
+                      <button
+                        onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
+                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup') : waChannelStatus === 'Needs Setup'}
+                        className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {(selectedChannel === 'telegram' ? testing : waTesting) ? 'Sending…' : 'Send Test Message'}
+                      </button>
+                      {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult) && (
+                        <p className={`text-xs text-center ${(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                          {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.msg}
+                        </p>
+                      )}
+                      <button className="w-full py-2.5 bg-transparent border border-vs-border text-vs-text-2 text-sm font-semibold rounded-lg hover:bg-vs-elevated transition-colors">
+                        Preview Message
+                      </button>
                     </div>
 
-                    {/* B. Configuration */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">B. Configuration</p>
-                      <form onSubmit={handleSaveConfig} className="space-y-4">
-                        <ChannelConfigField label="Bot Token" secret savedPreview={status?.botTokenPreview}
-                          value={botToken} onChange={setBotToken} placeholder="123456:ABCdef…" />
-                        <ChannelConfigField label="Chat ID" mono value={chatId} onChange={setChatId}
-                          placeholder={status?.chatId || '-1001234567890'} hint="Group IDs are negative numbers." />
-                        <div className="flex items-center gap-3">
-                          <button type="submit" disabled={saving || (!botToken.trim() && !chatId.trim())}
-                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                            {saving ? 'Saving…' : 'Save configuration'}
-                          </button>
-                          {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+                    <div>
+                      <p className="text-xs text-vs-text-3 mb-1.5 font-medium">Manual Message</p>
+                      {sel.status !== 'Active' && (
+                        <p className="text-xs text-vs-warning mb-2">{sel.status === 'Disabled' ? 'Notifications disabled.' : 'Channel not configured.'}</p>
+                      )}
+                      <form onSubmit={selectedChannel === 'telegram' ? handleSend : selectedChannel === 'wa_group' ? handleWaSend : handleWaSendChannel}>
+                        <textarea
+                          value={selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage}
+                          onChange={(e) => selectedChannel === 'telegram' ? setMessage(e.target.value) : selectedChannel === 'wa_group' ? setWaMessage(e.target.value) : setWaChannelMessage(e.target.value)}
+                          disabled={sel.status !== 'Active'}
+                          rows={4}
+                          maxLength={1024}
+                          placeholder={`Type a message to send to the ${sel.name}…`}
+                          className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50"
+                        />
+                        <div className="flex justify-end mt-1">
+                          <span className="text-xs text-vs-text-3">
+                            {(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).length} / 1024
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <p className="text-xs text-vs-text-3 mb-1.5">Destination</p>
+                          <div className="flex items-center gap-2 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg">
+                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                              <ChanIcon channelKey={selectedChannel} size={12} className="text-white" />
+                            </div>
+                            <span className="text-sm text-vs-text-2 flex-1">{sel.name}</span>
+                            <button type="submit"
+                              disabled={sel.status !== 'Active' || (selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) || !(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).trim()}
+                              className="px-3 py-1 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-md transition-colors disabled:opacity-50">
+                              {(selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) ? '…' : 'Send'}
+                            </button>
+                          </div>
+                          {(selectedChannel === 'telegram' ? sendResult : selectedChannel === 'wa_group' ? waSendResult : null) && (
+                            <p className={`text-xs mt-1 ${(selectedChannel === 'telegram' ? sendResult : waSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                              {(selectedChannel === 'telegram' ? sendResult : waSendResult)?.msg}
+                            </p>
+                          )}
                         </div>
                       </form>
                     </div>
+                  </div>
+                </div>
 
-                    {/* C. Actions */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
-                      <div className="space-y-3 mb-5">
-                        <button onClick={handleTest} disabled={testing || tgStatus === 'Needs Setup'}
-                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
-                          {testing ? 'Sending…' : 'Send Test Message'}
-                        </button>
-                        {testResult && <p className={`text-xs text-center ${testResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{testResult.msg}</p>}
-                      </div>
-                      <div className="border-t border-vs-border pt-4">
-                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
-                        {tgStatus !== 'Active' && (
-                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
-                            {tgStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
-                          </div>
-                        )}
-                        <form onSubmit={handleSend} className="space-y-2">
-                          <textarea value={message} onChange={(e) => setMessage(e.target.value)}
-                            disabled={tgStatus !== 'Active'} rows={3}
-                            placeholder="Type a message to broadcast…"
-                            maxLength={1024}
-                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
-                                <span>✈️</span> Telegram Group
-                              </span>
-                              <span className="text-xs text-vs-text-3">{message.length}/1024</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {sendResult && <p className={`text-xs ${sendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{sendResult.msg}</p>}
-                              <button type="submit" disabled={tgStatus !== 'Active' || sending || !message.trim()}
-                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                                {sending ? 'Sending…' : 'Send'}
-                              </button>
-                            </div>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
+                {/* D + E row */}
+                <div className="grid grid-cols-3 divide-x divide-vs-border border-t border-vs-border">
 
-                    <RecentChannelActivity logs={tgLogs} />
-                    <SetupGuideAccordion steps={tgSteps} />
-                  </>
-                )}
+                  {/* D. Recent Activity — spans 2 cols */}
+                  <div className="col-span-2 p-5">
+                    <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">D. Recent Activity</p>
+                    {sel.logs.length === 0 ? (
+                      <p className="text-xs text-vs-text-3 py-4 text-center">No activity yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                        {sel.logs.slice(0, 6).map((l) => (
+                          <ActivityItem key={l.id} log={l} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-                {selectedChannel === 'wa_group' && (
-                  <>
-                    {/* A. Status Summary */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
-                      <DetailToggle enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa} label="WhatsApp notifications (shared with channel)" />
-                      <div className="mt-3">
-                        {waItems('Group ID configured', waHealth?.groupIdConfigured).map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
-                      </div>
-                      <div className="flex items-center gap-2 mt-4 justify-between">
-                        <button onClick={recheckHealth} disabled={healthLoading}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
-                          {healthLoading ? 'Checking…' : 'Re-check'}
-                        </button>
-                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{waHealth?.checkedAt ? timeAgo(waHealth.checkedAt) : '—'}</span></p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Last Test</p>
-                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(waLogs) ? timeAgo(lastSuccess(waLogs)) : '—'}</p>
-                        </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Sent Today</p>
-                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(waLogs)}</p>
-                        </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Failures Today</p>
-                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(waLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(waLogs)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* B. Configuration */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">B. Configuration</p>
-                      <p className="text-xs text-vs-text-3 mb-4">Evolution API connection — shared with the WhatsApp Channel.</p>
-                      <form onSubmit={handleWaSave} className="space-y-4">
-                        <ChannelConfigField label="Evolution API URL" mono value={waEvolutionUrl} onChange={setWaEvolutionUrl} placeholder="http://localhost:8081" />
-                        <ChannelConfigField label="API Key" secret savedPreview={waStatus?.evolutionApiKeyPreview} value={waEvolutionApiKey} onChange={setWaEvolutionApiKey} placeholder="AUTHENTICATION_API_KEY value" />
-                        <ChannelConfigField label="Instance Name" mono value={waEvolutionInstance} onChange={setWaEvolutionInstance} placeholder="Vermo Sports" />
-                        <ChannelConfigField label="Group ID" mono value={waGroupId} onChange={setWaGroupId} placeholder="120363xxxxxxxxxx@g.us" hint="Format: <numbers>@g.us" />
-                        <div className="flex items-center gap-3">
-                          <button type="submit" disabled={waSaving || (!waEvolutionUrl.trim() && !waEvolutionApiKey.trim() && !waEvolutionInstance.trim() && !waGroupId.trim())}
-                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                            {waSaving ? 'Saving…' : 'Save configuration'}
-                          </button>
-                          {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
-                        </div>
-                      </form>
-                    </div>
-
-                    {/* C. Actions */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
-                      <div className="space-y-3 mb-5">
-                        <button onClick={handleWaTest} disabled={waTesting || waGroupStatus === 'Needs Setup'}
-                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
-                          {waTesting ? 'Sending…' : 'Send Test Message'}
-                        </button>
-                        {waTestResult && <p className={`text-xs text-center ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
-                      </div>
-                      <div className="border-t border-vs-border pt-4">
-                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
-                        {waGroupStatus !== 'Active' && (
-                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
-                            {waGroupStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
-                          </div>
-                        )}
-                        <form onSubmit={handleWaSend} className="space-y-2">
-                          <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)}
-                            disabled={waGroupStatus !== 'Active'} rows={3}
-                            placeholder="Type a message to broadcast…"
-                            maxLength={1024}
-                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
-                                <span>💬</span> WhatsApp Group
-                              </span>
-                              <span className="text-xs text-vs-text-3">{waMessage.length}/1024</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {waSendResult && <p className={`text-xs ${waSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waSendResult.msg}</p>}
-                              <button type="submit" disabled={waGroupStatus !== 'Active' || waSending || !waMessage.trim()}
-                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                                {waSending ? 'Sending…' : 'Send'}
-                              </button>
-                            </div>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-
-                    <RecentChannelActivity logs={waLogs} />
-                    <SetupGuideAccordion steps={waSteps} />
-                  </>
-                )}
-
-                {selectedChannel === 'wa_channel' && (
-                  <>
-                    {/* A. Status Summary */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
-                      <DetailToggle enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa} label="WhatsApp notifications (shared with group)" />
-                      <div className="mt-3">
-                        {waItems('Channel ID configured', waHealth?.channelIdConfigured).map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
-                      </div>
-                      <div className="flex items-center gap-2 mt-4 justify-between">
-                        <button onClick={recheckHealth} disabled={healthLoading}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
-                          {healthLoading ? 'Checking…' : 'Re-check'}
-                        </button>
-                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{waHealth?.checkedAt ? timeAgo(waHealth.checkedAt) : '—'}</span></p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Last Test</p>
-                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(waLogs) ? timeAgo(lastSuccess(waLogs)) : '—'}</p>
-                        </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Sent Today</p>
-                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(waLogs)}</p>
-                        </div>
-                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-vs-text-3">Failures Today</p>
-                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(waLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(waLogs)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* B. Configuration */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">B. Configuration</p>
-                      <div className="bg-vs-elevated/60 border border-vs-border rounded-lg px-3 py-2.5 mb-4 text-xs text-vs-text-3">
-                        Uses the <span className="text-vs-text-2 font-medium">shared Evolution connection</span> (URL, API Key, Instance) — manage those on the WhatsApp Group panel. Only the Channel ID is specific to this channel.
-                      </div>
-                      <form onSubmit={handleWaSave} className="space-y-4">
-                        <ChannelConfigField label="Channel ID" mono value={waChannelId} onChange={setWaChannelId} placeholder="120363xxxxxxxxxx@newsletter" hint="Format: <numbers>@newsletter" />
-                        <div className="flex items-center gap-3">
-                          <button type="submit" disabled={waSaving || !waChannelId.trim()}
-                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                            {waSaving ? 'Saving…' : 'Save configuration'}
-                          </button>
-                          {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
-                        </div>
-                      </form>
-                    </div>
-
-                    {/* C. Actions */}
-                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
-                      <div className="space-y-3 mb-5">
-                        <button onClick={handleWaChannelTest} disabled={waChannelStatus === 'Needs Setup'}
-                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
-                          Send Test Message
-                        </button>
-                        {waChannelSendResult && <p className={`text-xs text-center ${waChannelSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waChannelSendResult.msg}</p>}
-                      </div>
-                      <div className="border-t border-vs-border pt-4">
-                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
-                        {waChannelStatus !== 'Active' && (
-                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
-                            {waChannelStatus === 'Disabled' ? 'Notifications are disabled.' : 'Channel is not fully configured yet.'}
-                          </div>
-                        )}
-                        <form onSubmit={handleWaSendChannel} className="space-y-2">
-                          <textarea value={waChannelMessage} onChange={(e) => setWaChannelMessage(e.target.value)}
-                            disabled={waChannelStatus !== 'Active'} rows={3}
-                            placeholder="Type a message to broadcast…"
-                            maxLength={1024}
-                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
-                                <span>📡</span> WhatsApp Channel
-                              </span>
-                              <span className="text-xs text-vs-text-3">{waChannelMessage.length}/1024</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button type="submit" disabled={waChannelStatus !== 'Active' || waChannelSending || !waChannelMessage.trim()}
-                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                                {waChannelSending ? 'Sending…' : 'Send'}
-                              </button>
-                            </div>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-
-                    <RecentChannelActivity logs={waLogs} />
-                    <SetupGuideAccordion steps={waSteps} />
-                  </>
-                )}
+                  {/* E. Setup guide — col 3 */}
+                  <div className="p-5">
+                    <SetupGuideAccordion
+                      title="E. Need help setting this up?"
+                      steps={selectedChannel === 'telegram' ? tgSteps : waSteps}
+                    />
+                  </div>
+                </div>
 
               </div>
             </div>
+
+            {/* ── Bottom: WhatsApp connection summary bar ── */}
+            <WaConnectionBar
+              waGroupStatus={waGroupStatus}
+              waEvolutionUrl={waEvolutionUrl}
+              waEvolutionInstance={waEvolutionInstance}
+              waGroupId={waGroupId}
+              waChannelId={waChannelId}
+              onManage={() => setSelectedChannel('wa_group')}
+            />
+
           </div>
         );
       })()}
