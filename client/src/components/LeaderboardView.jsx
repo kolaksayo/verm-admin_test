@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 
+// ── Avatar ────────────────────────────────────────────────────────────────────
+
 function initials(name) {
   if (!name) return '?';
   return name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
@@ -19,7 +21,11 @@ function avatarBg(name) {
 }
 
 function Avatar({ name, size = 'md' }) {
-  const sz = size === 'lg' ? 'w-14 h-14 text-base' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
+  const sz =
+    size === 'xl' ? 'w-20 h-20 text-xl' :
+    size === 'lg' ? 'w-14 h-14 text-base' :
+    size === 'sm' ? 'w-8 h-8 text-xs' :
+                    'w-10 h-10 text-sm';
   return (
     <div
       className={`${sz} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
@@ -30,65 +36,188 @@ function Avatar({ name, size = 'md' }) {
   );
 }
 
-// ── Podium ──────────────────────────────────────────────────────────────────
+// ── Medal colors ──────────────────────────────────────────────────────────────
 
-const PODIUM_CONFIG = {
-  1: { medal: '🥇', height: 'h-20', ring: '2px solid #F5CB3E', platform: 'bg-vs-warning/10 border-t-2 border-vs-warning/40' },
-  2: { medal: '🥈', height: 'h-14', ring: '2px solid #9F9F9F', platform: 'bg-vs-elevated border-t-2 border-vs-text-3/30' },
-  3: { medal: '🥉', height: 'h-10', ring: '2px solid #B5DB1C', platform: 'bg-vs-lime/5 border-t-2 border-vs-lime/30' },
+const MEDAL = {
+  1: { color: '#F4B83F', label: '1st' },
+  2: { color: '#B0B5C0', label: '2nd' },
+  3: { color: '#B87945', label: '3rd' },
 };
 
-function PodiumSlot({ entry, rank, onUserClick }) {
-  const cfg = PODIUM_CONFIG[rank];
+// ── RankBadge ─────────────────────────────────────────────────────────────────
+
+function RankBadge({ rank }) {
+  const medal = MEDAL[rank];
+  if (!medal) return null;
   return (
-    <div className={`flex flex-col items-center gap-1.5 flex-1 ${rank === 1 ? 'order-2' : rank === 2 ? 'order-1' : 'order-3'}`}>
-      <span className="text-xl">{cfg.medal}</span>
-      <div className="rounded-full p-0.5" style={{ boxShadow: `0 0 0 ${cfg.ring}` }}>
-        <Avatar name={entry.username} size="lg" />
+    <div
+      className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0"
+      style={{
+        border: `2px solid ${medal.color}`,
+        color: medal.color,
+        backgroundColor: `${medal.color}14`,
+      }}
+    >
+      {rank}
+    </div>
+  );
+}
+
+// ── PodiumCard ────────────────────────────────────────────────────────────────
+
+function PodiumCard({ entry, rank, onUserClick }) {
+  const isFirst = rank === 1;
+  const medal = MEDAL[rank];
+
+  return (
+    <div className="flex flex-col items-center gap-1 relative pt-5">
+      {/* Badge floating above card */}
+      <div className="absolute top-0 z-10">
+        <RankBadge rank={rank} />
       </div>
-      {onUserClick && entry.userId ? (
-        <button
-          onClick={() => onUserClick(entry.userId, entry.username)}
-          className="text-xs font-bold text-vs-purple-light hover:text-vs-purple underline decoration-dotted underline-offset-2 text-center max-w-[90px] truncate"
+
+      <div
+        className={`flex flex-col items-center gap-3 rounded-2xl border border-vs-border w-full
+          ${isFirst
+            ? 'bg-vs-card pt-10 pb-6 px-6 shadow-lg'
+            : 'bg-vs-card pt-8 pb-5 px-5'
+          }`}
+        style={isFirst ? { boxShadow: `0 4px 24px ${medal.color}18` } : undefined}
+      >
+        {/* Ring around avatar for 1st place */}
+        <div
+          className="rounded-full p-0.5"
+          style={isFirst ? { boxShadow: `0 0 0 2px ${medal.color}` } : undefined}
         >
-          {entry.username || 'Unknown'}
-        </button>
-      ) : (
-        <p className="text-xs font-bold text-vs-text-2 text-center max-w-[90px] truncate">{entry.username || 'Unknown'}</p>
+          <Avatar name={entry.username} size={isFirst ? 'xl' : 'lg'} />
+        </div>
+
+        {/* Name */}
+        {onUserClick && entry.userId ? (
+          <button
+            onClick={() => onUserClick(entry.userId, entry.username)}
+            className="text-sm font-bold text-vs-purple-light hover:text-vs-purple underline decoration-dotted underline-offset-2 text-center max-w-[110px] truncate"
+          >
+            {entry.username || 'Unknown'}
+          </button>
+        ) : (
+          <p className="text-sm font-bold text-vs-text text-center max-w-[110px] truncate">
+            {entry.username || 'Unknown'}
+          </p>
+        )}
+
+        {/* Score pill */}
+        {entry.currentScore != null && (
+          <span
+            className="px-3 py-1 rounded-full text-xs font-bold bg-vs-elevated border border-vs-border"
+            style={{ color: medal.color }}
+          >
+            {typeof entry.currentScore === 'number'
+              ? entry.currentScore.toLocaleString()
+              : entry.currentScore} pts
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── TopThreePodium ────────────────────────────────────────────────────────────
+
+function TopThreePodium({ top3, onUserClick }) {
+  const first  = top3.find((e) => e.displayRank === 1);
+  const second = top3.find((e) => e.displayRank === 2);
+  const third  = top3.find((e) => e.displayRank === 3);
+
+  return (
+    <div className="flex flex-wrap items-end gap-3 mb-4">
+      {/* 1st: full-width on mobile, centered on desktop */}
+      {first && (
+        <div className="order-1 w-full md:w-auto md:order-2 md:flex-1">
+          <PodiumCard entry={first} rank={1} onUserClick={onUserClick} />
+        </div>
       )}
-      {entry.currentScore != null && (
-        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-vs-elevated text-vs-text-3 border border-vs-border">
-          {typeof entry.currentScore === 'number' ? entry.currentScore.toLocaleString() : entry.currentScore} pts
+      {/* 2nd: left on desktop */}
+      {second && (
+        <div className="order-2 flex-1 md:order-1">
+          <PodiumCard entry={second} rank={2} onUserClick={onUserClick} />
+        </div>
+      )}
+      {/* 3rd: right */}
+      {third && (
+        <div className="order-3 flex-1">
+          <PodiumCard entry={third} rank={3} onUserClick={onUserClick} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MetaChip ──────────────────────────────────────────────────────────────────
+
+function MetaChip({ children, mono, onClick, className = '' }) {
+  const base = `inline-flex items-center px-3 py-1 rounded-full text-xs border border-vs-border bg-vs-elevated text-vs-text-3 select-none ${className}`;
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        className={`${base} hover:bg-vs-hover hover:text-vs-text-2 transition-colors cursor-pointer`}
+        title="Click to copy"
+      >
+        {mono ? <span className="font-mono">{children}</span> : children}
+      </button>
+    );
+  }
+  return (
+    <span className={base}>
+      {mono ? <span className="font-mono">{children}</span> : children}
+    </span>
+  );
+}
+
+// ── GameMetaChips ─────────────────────────────────────────────────────────────
+
+function GameMetaChips({ comp }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = () => {
+    navigator.clipboard?.writeText(comp.bookingCode || comp._id).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const statusCls =
+    comp.status === 'FINISHED'
+      ? 'bg-vs-elevated text-vs-text-3 border-vs-border'
+      : comp.status === 'ACTIVE' || comp.status === 'LIVE'
+      ? 'bg-vs-success/10 text-vs-success border-vs-success/20'
+      : 'bg-vs-warning/10 text-vs-warning border-vs-warning/20';
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <MetaChip mono onClick={copyCode} className={copied ? 'text-vs-success border-vs-success/30' : ''}>
+        {copied ? 'Copied!' : (comp.bookingCode || comp._id)}
+      </MetaChip>
+      {comp.betType && <MetaChip>{comp.betType}</MetaChip>}
+      {comp.status && (
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs border font-semibold ${statusCls}`}>
+          {comp.status}
         </span>
       )}
-      <div className={`${cfg.height} w-full rounded-t-md ${cfg.platform}`} />
+      <MetaChip>
+        {comp.participants.length} player{comp.participants.length !== 1 ? 's' : ''}
+      </MetaChip>
     </div>
   );
 }
 
-function Podium({ top3, onUserClick }) {
-  const ordered = [
-    top3.find((e) => e.displayRank === 2),
-    top3.find((e) => e.displayRank === 1),
-    top3.find((e) => e.displayRank === 3),
-  ].filter(Boolean);
+// ── RankingRow ────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="flex items-end gap-3 mb-4 px-4 py-4 bg-vs-card rounded-xl border border-vs-border">
-      {ordered.map((e) => (
-        <PodiumSlot key={e.userId} entry={e} rank={e.displayRank} onUserClick={onUserClick} />
-      ))}
-    </div>
-  );
-}
-
-// ── Row (rank 4+) ────────────────────────────────────────────────────────────
-
-function EntryRow({ entry, onUserClick }) {
+function RankingRow({ entry, onUserClick }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-vs-border last:border-0 hover:bg-vs-hover transition-colors">
       <div className="w-8 text-center flex-shrink-0">
-        <span className="text-sm font-bold text-vs-text-3">#{entry.displayRank}</span>
+        <span className="text-sm font-bold text-vs-text-3 font-mono">#{entry.displayRank}</span>
       </div>
       <Avatar name={entry.username} size="sm" />
       <div className="flex-1 min-w-0">
@@ -102,19 +231,41 @@ function EntryRow({ entry, onUserClick }) {
         ) : (
           <p className="text-sm font-semibold text-vs-text-2 truncate">{entry.username || 'Unknown'}</p>
         )}
-        {entry.isWinner && <span className="text-xs text-vs-warning">🏆 Winner</span>}
+        {entry.isWinner && (
+          <span className="text-xs text-vs-warning">Winner</span>
+        )}
       </div>
       {entry.currentScore != null && (
         <div className="text-right flex-shrink-0">
-          <p className="text-sm font-bold text-vs-text">{typeof entry.currentScore === 'number' ? entry.currentScore.toLocaleString() : entry.currentScore}</p>
-          <p className="text-xs text-vs-text-3">pts</p>
+          <span className="text-sm font-bold text-vs-text">
+            {typeof entry.currentScore === 'number' ? entry.currentScore.toLocaleString() : entry.currentScore}
+          </span>
+          <span className="text-xs text-vs-text-3 ml-1">pts</span>
         </div>
       )}
+      <span className="text-vs-text-3 text-sm flex-shrink-0">›</span>
     </div>
   );
 }
 
-// ── Competition section ───────────────────────────────────────────────────────
+// ── FullRankingsTable ─────────────────────────────────────────────────────────
+
+function FullRankingsTable({ entries, onUserClick }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="bg-vs-card rounded-xl border border-vs-border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-vs-border">
+        <span className="text-sm font-semibold text-vs-text">Full Rankings</span>
+        <span className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Points</span>
+      </div>
+      {entries.map((e) => (
+        <RankingRow key={e.userId || e.username} entry={e} onUserClick={onUserClick} />
+      ))}
+    </div>
+  );
+}
+
+// ── CompetitionSection ────────────────────────────────────────────────────────
 
 function CompetitionSection({ comp, onUserClick, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen ?? true);
@@ -122,55 +273,45 @@ function CompetitionSection({ comp, onUserClick, defaultOpen }) {
   const top3 = comp.participants.filter((p) => p.displayRank <= 3);
   const rest = comp.participants.filter((p) => p.displayRank > 3);
 
-  const statusCls = comp.status === 'FINISHED'
-    ? 'bg-vs-elevated text-vs-text-3'
-    : comp.status === 'ACTIVE' || comp.status === 'LIVE'
-    ? 'bg-vs-success/10 text-vs-success'
-    : 'bg-vs-warning/10 text-vs-warning';
-
   return (
-    <div className="mb-5">
+    <div className="mb-6 bg-vs-card border border-vs-border rounded-2xl overflow-hidden">
+      {/* Section header */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between mb-3 group"
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-vs-hover transition-colors group"
       >
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-bold text-vs-text font-mono">{comp.bookingCode || comp._id}</span>
-          {comp.betType && <span className="text-xs text-vs-text-3 bg-vs-elevated px-2 py-0.5 rounded border border-vs-border">{comp.betType}</span>}
-          {comp.status && <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${statusCls}`}>{comp.status}</span>}
-          <span className="text-xs text-vs-text-3">{comp.participants.length} player{comp.participants.length !== 1 ? 's' : ''}</span>
-        </div>
-        <span className="text-vs-text-3 group-hover:text-vs-text-2 text-sm transition-colors">{open ? '▾' : '▸'}</span>
+        <GameMetaChips comp={comp} />
+        <span className="text-vs-text-3 group-hover:text-vs-text-2 text-sm transition-colors ml-4 flex-shrink-0">
+          {open ? '▾' : '▸'}
+        </span>
       </button>
 
       {open && (
-        <>
-          {top3.length > 0 && <Podium top3={top3} onUserClick={onUserClick} />}
-          {rest.length > 0 && (
-            <div className="bg-vs-card rounded-xl border border-vs-border overflow-hidden">
-              {rest.map((e) => <EntryRow key={e.userId} entry={e} onUserClick={onUserClick} />)}
-            </div>
+        <div className="px-5 pb-5 pt-1">
+          {top3.length > 0 && (
+            <TopThreePodium top3={top3} onUserClick={onUserClick} />
           )}
+          <FullRankingsTable entries={rest} onUserClick={onUserClick} />
           {comp.participants.length === 0 && (
-            <p className="text-sm text-vs-text-3 text-center py-4">No participants yet.</p>
+            <p className="text-sm text-vs-text-3 text-center py-6">No participants yet.</p>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-// ── Main view ─────────────────────────────────────────────────────────────────
+// ── LeaderboardView ───────────────────────────────────────────────────────────
 
 export default function LeaderboardView({ onUserClick }) {
   const [competitions, setCompetitions] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [total, setTotal]               = useState(0);
+  const [page, setPage]                 = useState(1);
+  const [totalPages, setTotalPages]     = useState(1);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState('');
 
-  const fetch = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -185,34 +326,66 @@ export default function LeaderboardView({ onUserClick }) {
     }
   }, [page]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { load(); }, [load]);
+
+  const shareLeaderboard = () => {
+    navigator.clipboard?.writeText(window.location.href).catch(() => {});
+  };
+
+  const btnCls = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-vs-text-3 bg-vs-elevated border border-vs-border rounded-lg hover:bg-vs-hover hover:text-vs-text-2 transition-colors';
 
   return (
     <div>
+      {/* Action bar */}
       {!loading && (
-        <p className="text-sm text-vs-text-3 mb-5">
-          {total.toLocaleString()} game bet{total !== 1 ? 's' : ''} · page {page} of {totalPages}
-        </p>
+        <div className="flex items-center justify-between mb-5">
+          <p className="text-sm text-vs-text-3">
+            {total.toLocaleString()} game bet{total !== 1 ? 's' : ''} · page {page} of {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={shareLeaderboard} className={btnCls} title="Copy page URL">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              Share
+            </button>
+            <button className={btnCls} title="Export (coming soon)" disabled>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+            </button>
+          </div>
+        </div>
       )}
 
       {error && (
-        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
+        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">
+          {error}
+        </div>
       )}
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-48 bg-vs-card rounded-xl border border-vs-border animate-pulse" />
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-56 bg-vs-card rounded-2xl border border-vs-border animate-pulse" />
           ))}
         </div>
       ) : competitions.length === 0 ? (
-        <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm">
+        <div className="bg-vs-card rounded-2xl border border-vs-border p-10 text-center text-vs-text-3 text-sm">
           No game bets found.
         </div>
       ) : (
         <>
           {competitions.map((comp, i) => (
-            <CompetitionSection key={comp._id} comp={comp} onUserClick={onUserClick} defaultOpen={i === 0} />
+            <CompetitionSection
+              key={comp._id}
+              comp={comp}
+              onUserClick={onUserClick}
+              defaultOpen={i === 0}
+            />
           ))}
 
           {totalPages > 1 && (
