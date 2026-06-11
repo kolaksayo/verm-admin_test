@@ -154,6 +154,9 @@ router.get('/activity', auth, async (req, res) => {
       recentWithdrawals,
       referralDocs,
       depositedUserIds,
+      depositorCountResult,
+      activeBettorCountResult,
+      withdrawalCount,
     ] = await Promise.all([
 
       db.collection('users').aggregate([
@@ -202,6 +205,24 @@ router.get('/activity', auth, async (req, res) => {
 
       // All-time deposit set for referral conversion check
       db.collection('transactions').distinct('user', DEPOSIT_FILTER),
+
+      // Total distinct depositors in period
+      db.collection('transactions').aggregate([
+        { $match: depFilter },
+        { $group: { _id: '$user' } },
+        { $count: 'count' },
+      ]).toArray(),
+
+      // Total distinct active bettors in period
+      db.collection('game_bet').aggregate([
+        { $match: betFilter },
+        { $unwind: '$participants' },
+        { $group: { _id: '$participants.user' } },
+        { $count: 'count' },
+      ]).toArray(),
+
+      // Total withdrawal transactions in period
+      db.collection('transactions').countDocuments(witFilter),
     ]);
 
     const depositedSet = new Set(depositedUserIds.map(String));
@@ -215,7 +236,15 @@ router.get('/activity', auth, async (req, res) => {
     ].filter(Boolean);
     const userMap = await resolveUsernames(db, allUserIds);
 
+    const newUsers = signupsDaily.reduce((s, d) => s + d.count, 0);
+
     res.json({
+      summary: {
+        newUsers,
+        depositorCount:    depositorCountResult[0]?.count    ?? 0,
+        activeBettorCount: activeBettorCountResult[0]?.count ?? 0,
+        withdrawalCount,
+      },
       dateRange: {
         from: dateFrom.toISOString().slice(0, 10),
         to:   dateTo ? dateTo.toISOString().slice(0, 10) : null,
