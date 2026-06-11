@@ -326,35 +326,71 @@ function lastSuccess(logs) {
   return row ? row.created_at : null;
 }
 
-// ── Channel overview card ──────────────────────────────────────────────────────
+// ── Channel overview card (top section — horizontal) ──────────────────────────
 
-function ChannelOverviewCard({ icon, name, description, status, sentToday, lastTest, selected, onManage }) {
+function ChannelOverviewCard({ icon, iconBg, name, description, status, sentToday, lastTest, selected, onManage }) {
+  const s = STATUS_STYLES[status] || STATUS_STYLES['Needs Setup'];
+  const needsSetup = status === 'Needs Setup';
   return (
-    <button
-      onClick={onManage}
-      className={`w-full text-left bg-vs-card border rounded-xl p-4 transition-colors ${
-        selected ? 'border-vs-purple ring-1 ring-vs-purple/40' : 'border-vs-border hover:bg-vs-elevated/40'
-      }`}
-    >
+    <div className={`bg-vs-card border rounded-xl p-4 flex flex-col gap-3 transition-colors ${
+      selected ? 'border-vs-purple ring-1 ring-vs-purple/30' : 'border-vs-border'
+    }`}>
       <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-vs-elevated border border-vs-border flex items-center justify-center text-lg flex-shrink-0">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${iconBg}`}>
           {icon}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-vs-text truncate">{name}</p>
-            <StatusPill status={status} />
-          </div>
-          <p className="text-xs text-vs-text-3 mt-0.5 truncate">{description}</p>
-          <div className="flex items-center gap-4 mt-2 text-xs text-vs-text-3">
-            <span><span className="text-vs-text-2 font-medium">{sentToday}</span> sent today</span>
-            <span className="truncate">Last ok: <span className="text-vs-text-2">{lastTest ? timeAgo(lastTest) : '—'}</span></span>
-          </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-vs-text">{name}</p>
+          <p className="text-xs text-vs-text-3 truncate mt-0.5">{description}</p>
+        </div>
+        <StatusPill status={status} />
+      </div>
+      <div className="flex items-center gap-4 text-xs border-t border-vs-border pt-3">
+        <div className="flex-1">
+          <p className="text-vs-text-3">Messages Today</p>
+          <p className="text-vs-text font-semibold text-sm">{sentToday}</p>
+        </div>
+        <div className="flex-1">
+          <p className="text-vs-text-3">Last Test</p>
+          <p className="text-vs-text-2 font-medium">{lastTest ? timeAgo(lastTest) : '—'}</p>
         </div>
       </div>
-      <div className={`mt-3 text-xs font-medium ${selected ? 'text-vs-purple-light' : 'text-vs-text-3'}`}>
-        {selected ? 'Managing ▾' : 'Manage →'}
+      <button
+        onClick={onManage}
+        className={`w-full text-xs font-semibold py-2 rounded-lg transition-colors ${
+          needsSetup
+            ? 'bg-vs-warning/10 text-vs-warning hover:bg-vs-warning/20 border border-vs-warning/30'
+            : selected
+            ? 'bg-vs-purple/10 text-vs-purple-light hover:bg-vs-purple/20 border border-vs-purple/30'
+            : 'bg-vs-elevated text-vs-text-3 hover:text-vs-text hover:bg-vs-hover border border-vs-border'
+        }`}
+      >
+        {needsSetup ? 'Complete Setup' : selected ? 'Managing' : 'Manage'}
+      </button>
+    </div>
+  );
+}
+
+// ── Channel sidebar item (narrow left sidebar) ─────────────────────────────────
+
+function ChannelSidebarItem({ icon, iconBg, name, status, selected, onClick }) {
+  const s = STATUS_STYLES[status] || STATUS_STYLES['Needs Setup'];
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
+        selected
+          ? 'bg-vs-purple/10 border border-vs-purple/30'
+          : 'hover:bg-vs-elevated/60 border border-transparent'
+      }`}
+    >
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${iconBg}`}>
+        {icon}
       </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium truncate ${selected ? 'text-vs-purple-light' : 'text-vs-text'}`}>{name}</p>
+      </div>
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
     </button>
   );
 }
@@ -512,23 +548,24 @@ function ManualMessageComposer({ destination, value, onChange, onSend, sending, 
 const TRIGGER_LABEL = { test: 'Test message', manual: 'Manual message' };
 
 function RecentChannelActivity({ logs }) {
-  const recent = logs.slice(0, 5);
+  const recent = logs.slice(0, 6);
   return (
     <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Recent Activity</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">D. Recent Activity</p>
       {recent.length === 0 ? (
         <p className="text-sm text-vs-text-3 text-center py-4">No activity yet.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {recent.map((l) => (
-            <div key={l.id} className="flex items-center gap-3 text-sm">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${l.ok ? 'bg-vs-success' : 'bg-vs-danger'}`} />
-              <span className="text-vs-text-2 flex-1 min-w-0 truncate">
-                {TRIGGER_LABEL[l.trigger] || l.trigger || 'Message'}
-                {l.preview && <span className="text-vs-text-3"> — {l.preview}</span>}
-              </span>
-              <span className={`text-xs font-medium ${l.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{l.ok ? 'OK' : 'Fail'}</span>
-              <span className="text-xs text-vs-text-3 whitespace-nowrap">{timeAgo(l.created_at)}</span>
+            <div key={l.id} className="flex items-start gap-2.5 bg-vs-elevated/60 border border-vs-border rounded-lg px-3 py-2.5">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${l.ok ? 'bg-vs-success' : 'bg-vs-danger'}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 justify-between">
+                  <span className={`text-xs font-semibold ${l.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{l.ok ? 'Sent' : 'Failed'}</span>
+                  <span className="text-xs text-vs-text-3 whitespace-nowrap">{timeAgo(l.created_at)}</span>
+                </div>
+                <p className="text-xs text-vs-text-2 truncate mt-0.5">{TRIGGER_LABEL[l.trigger] || l.trigger || 'Message'}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -563,37 +600,6 @@ function SetupGuideAccordion({ steps }) {
   );
 }
 
-// ── Channel status card (summary + toggle) ─────────────────────────────────────
-
-function ChannelStatusCard({ icon, name, description, status, enabled, onToggle, toggling, toggleLabel }) {
-  return (
-    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-vs-elevated border border-vs-border flex items-center justify-center text-xl flex-shrink-0">{icon}</div>
-          <div>
-            <p className="text-base font-semibold text-vs-text">{name}</p>
-            <p className="text-xs text-vs-text-3">{description}</p>
-          </div>
-        </div>
-        <StatusPill status={status} />
-      </div>
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-vs-border">
-        <div>
-          <p className="text-sm font-medium text-vs-text">{toggleLabel || 'Notifications'}</p>
-          <p className="text-xs text-vs-text-3 mt-0.5">{enabled ? 'Enabled — messages will be sent.' : 'Disabled — messages will not be sent.'}</p>
-        </div>
-        <button
-          onClick={onToggle}
-          disabled={toggling}
-          className={`relative w-12 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}
-        >
-          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-7' : 'left-1'}`} />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -1195,160 +1201,368 @@ export default function NotificationsPage() {
         ];
 
         const channels = [
-          { key: 'telegram',   icon: '✈️', name: 'Telegram Group',   description: 'Broadcast to a Telegram group',          status: tgStatus,        logs: tgLogs },
-          { key: 'wa_group',   icon: '💬', name: 'WhatsApp Group',    description: 'Broadcast via Evolution API',            status: waGroupStatus,   logs: waLogs },
-          { key: 'wa_channel', icon: '📡', name: 'WhatsApp Channel',  description: 'Broadcast to a WhatsApp channel',        status: waChannelStatus, logs: waLogs },
+          { key: 'telegram',   icon: '✈️', iconBg: 'bg-blue-500/10',   name: 'Telegram Group',  description: 'Broadcast to a Telegram group',    status: tgStatus,        logs: tgLogs },
+          { key: 'wa_group',   icon: '💬', iconBg: 'bg-green-500/10',  name: 'WhatsApp Group',  description: 'Broadcast via Evolution API',       status: waGroupStatus,   logs: waLogs },
+          { key: 'wa_channel', icon: '📡', iconBg: 'bg-purple-500/10', name: 'WhatsApp Channel',description: 'Broadcast to a WhatsApp channel',   status: waChannelStatus, logs: waLogs },
         ];
 
+        const failuresToday = (logs) => {
+          const today = new Date().toISOString().slice(0, 10);
+          return logs.filter((l) => !l.ok && String(l.created_at || '').slice(0, 10) === today).length;
+        };
+
+        const DetailToggle = ({ enabled, onToggle, toggling, label }) => (
+          <div className="flex items-center justify-between py-3 border-b border-vs-border">
+            <div>
+              <p className="text-sm font-medium text-vs-text">{label}</p>
+              <p className="text-xs text-vs-text-3 mt-0.5">{enabled ? 'Enabled — messages will be sent' : 'Disabled — messages paused'}</p>
+            </div>
+            <button onClick={onToggle} disabled={toggling}
+              className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-6' : 'left-1'}`} />
+            </button>
+          </div>
+        );
+
         return (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Left: channel overview list */}
-            <div className="lg:col-span-1 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Channels</p>
-              {channels.map((c) => (
-                <ChannelOverviewCard
-                  key={c.key}
-                  icon={c.icon}
-                  name={c.name}
-                  description={c.description}
-                  status={c.status}
-                  sentToday={sentTodayCount(c.logs)}
-                  lastTest={lastSuccess(c.logs)}
-                  selected={selectedChannel === c.key}
-                  onManage={() => setSelectedChannel(c.key)}
-                />
-              ))}
+          <div className="space-y-5">
+            {/* ── Top: Channel Overview ── */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">Channel Overview</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {channels.map((c) => (
+                  <ChannelOverviewCard
+                    key={c.key}
+                    icon={c.icon}
+                    iconBg={c.iconBg}
+                    name={c.name}
+                    description={c.description}
+                    status={c.status}
+                    sentToday={sentTodayCount(c.logs)}
+                    lastTest={lastSuccess(c.logs)}
+                    selected={selectedChannel === c.key}
+                    onManage={() => setSelectedChannel(c.key)}
+                  />
+                ))}
+              </div>
             </div>
 
-            {/* Right: detail panel for the selected channel */}
-            <div className="lg:col-span-2 space-y-5">
+            {/* ── Bottom: Sidebar + Detail Panel ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
 
-              {selectedChannel === 'telegram' && (
-                <>
-                  <ChannelStatusCard
-                    icon="✈️" name="Telegram Group" description="Broadcast notifications to a Telegram group"
-                    status={tgStatus} enabled={tgEnabled} onToggle={handleToggleTg} toggling={togglingTg}
-                    toggleLabel="Telegram notifications"
-                  />
-                  <ConnectionHealthCheck items={tgItems} lastChecked={tgHealth?.checkedAt} onRecheck={recheckHealth} loading={healthLoading} />
-                  <div className="flex items-center gap-3">
-                    <button onClick={handleTest} disabled={testing || tgStatus === 'Needs Setup'}
-                      className="px-4 py-2 bg-vs-elevated border border-vs-border hover:bg-vs-hover text-vs-text-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                      {testing ? 'Sending…' : 'Send test message'}
-                    </button>
-                    {testResult && <p className={`text-xs ${testResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{testResult.msg}</p>}
-                  </div>
-                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Configuration</p>
-                    <form onSubmit={handleSaveConfig} className="space-y-4">
-                      <ChannelConfigField label="Bot Token" secret savedPreview={status?.botTokenPreview}
-                        value={botToken} onChange={setBotToken} placeholder="123456:ABCdef…" />
-                      <ChannelConfigField label="Chat ID" mono value={chatId} onChange={setChatId}
-                        placeholder={status?.chatId || '-1001234567890'} hint="Group IDs are negative numbers." />
-                      <div className="flex items-center gap-3">
-                        <button type="submit" disabled={saving || (!botToken.trim() && !chatId.trim())}
-                          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                          {saving ? 'Saving…' : 'Save configuration'}
-                        </button>
-                        {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+              {/* Narrow sidebar */}
+              <div className="lg:col-span-1 bg-vs-card border border-vs-border rounded-xl p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 px-2 mb-2">Channels</p>
+                <div className="space-y-1">
+                  {channels.map((c) => (
+                    <ChannelSidebarItem
+                      key={c.key}
+                      icon={c.icon}
+                      iconBg={c.iconBg}
+                      name={c.name}
+                      status={c.status}
+                      selected={selectedChannel === c.key}
+                      onClick={() => setSelectedChannel(c.key)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Wide detail panel */}
+              <div className="lg:col-span-3 space-y-4">
+
+                {selectedChannel === 'telegram' && (
+                  <>
+                    {/* A. Status Summary */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
+                      <DetailToggle enabled={tgEnabled} onToggle={handleToggleTg} toggling={togglingTg} label="Telegram notifications" />
+                      <div className="mt-3">
+                        {tgItems.map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
                       </div>
-                    </form>
-                  </div>
-                  <ManualMessageComposer
-                    destination="Telegram group" value={message} onChange={setMessage}
-                    onSend={handleSend} sending={sending} result={sendResult}
-                    disabled={tgStatus !== 'Active'}
-                    disabledReason={tgStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
-                  />
-                  <RecentChannelActivity logs={tgLogs} />
-                  <SetupGuideAccordion steps={tgSteps} />
-                </>
-              )}
-
-              {selectedChannel === 'wa_group' && (
-                <>
-                  <ChannelStatusCard
-                    icon="💬" name="WhatsApp Group" description="Broadcast notifications to a WhatsApp group"
-                    status={waGroupStatus} enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa}
-                    toggleLabel="WhatsApp notifications (shared with channel)"
-                  />
-                  <ConnectionHealthCheck items={waItems('Group ID configured', waHealth?.groupIdConfigured)} lastChecked={waHealth?.checkedAt} onRecheck={recheckHealth} loading={healthLoading} />
-                  <div className="flex items-center gap-3">
-                    <button onClick={handleWaTest} disabled={waTesting || waGroupStatus === 'Needs Setup'}
-                      className="px-4 py-2 bg-vs-elevated border border-vs-border hover:bg-vs-hover text-vs-text-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                      {waTesting ? 'Sending…' : 'Send test message'}
-                    </button>
-                    {waTestResult && <p className={`text-xs ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
-                  </div>
-                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Configuration</p>
-                    <p className="text-xs text-vs-text-3 mb-4">Evolution API connection — shared with the WhatsApp Channel.</p>
-                    <form onSubmit={handleWaSave} className="space-y-4">
-                      <ChannelConfigField label="Evolution API URL" mono value={waEvolutionUrl} onChange={setWaEvolutionUrl} placeholder="http://localhost:8081" />
-                      <ChannelConfigField label="API Key" secret savedPreview={waStatus?.evolutionApiKeyPreview} value={waEvolutionApiKey} onChange={setWaEvolutionApiKey} placeholder="AUTHENTICATION_API_KEY value" />
-                      <ChannelConfigField label="Instance Name" mono value={waEvolutionInstance} onChange={setWaEvolutionInstance} placeholder="Vermo Sports" />
-                      <ChannelConfigField label="Group ID" mono value={waGroupId} onChange={setWaGroupId} placeholder="120363xxxxxxxxxx@g.us" hint="Format: <numbers>@g.us" />
-                      <div className="flex items-center gap-3">
-                        <button type="submit" disabled={waSaving || (!waEvolutionUrl.trim() && !waEvolutionApiKey.trim() && !waEvolutionInstance.trim() && !waGroupId.trim())}
-                          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                          {waSaving ? 'Saving…' : 'Save configuration'}
+                      <div className="flex items-center gap-2 mt-4 justify-between">
+                        <button onClick={recheckHealth} disabled={healthLoading}
+                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
+                          {healthLoading ? 'Checking…' : 'Re-check'}
                         </button>
-                        {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{tgHealth?.checkedAt ? timeAgo(tgHealth.checkedAt) : '—'}</span></p>
                       </div>
-                    </form>
-                  </div>
-                  <ManualMessageComposer
-                    destination="WhatsApp group" value={waMessage} onChange={setWaMessage}
-                    onSend={handleWaSend} sending={waSending} result={waSendResult}
-                    disabled={waGroupStatus !== 'Active'}
-                    disabledReason={waGroupStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
-                  />
-                  <RecentChannelActivity logs={waLogs} />
-                  <SetupGuideAccordion steps={waSteps} />
-                </>
-              )}
-
-              {selectedChannel === 'wa_channel' && (
-                <>
-                  <ChannelStatusCard
-                    icon="📡" name="WhatsApp Channel" description="Broadcast notifications to a WhatsApp channel"
-                    status={waChannelStatus} enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa}
-                    toggleLabel="WhatsApp notifications (shared with group)"
-                  />
-                  <ConnectionHealthCheck items={waItems('Channel ID configured', waHealth?.channelIdConfigured)} lastChecked={waHealth?.checkedAt} onRecheck={recheckHealth} loading={healthLoading} />
-                  <div className="flex items-center gap-3">
-                    <button onClick={handleWaChannelTest} disabled={waChannelStatus === 'Needs Setup'}
-                      className="px-4 py-2 bg-vs-elevated border border-vs-border hover:bg-vs-hover text-vs-text-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                      Send test message
-                    </button>
-                    {waChannelSendResult && <p className={`text-xs ${waChannelSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waChannelSendResult.msg}</p>}
-                  </div>
-                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Configuration</p>
-                    <div className="bg-vs-elevated/60 border border-vs-border rounded-lg px-3 py-2.5 mb-4 text-xs text-vs-text-3">
-                      Uses the <span className="text-vs-text-2 font-medium">shared Evolution connection</span> (URL, API Key, Instance) — manage those on the WhatsApp Group panel. Only the Channel ID is specific to this channel.
+                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Last Test</p>
+                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(tgLogs) ? timeAgo(lastSuccess(tgLogs)) : '—'}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Sent Today</p>
+                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(tgLogs)}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Failures Today</p>
+                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(tgLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(tgLogs)}</p>
+                        </div>
+                      </div>
                     </div>
-                    <form onSubmit={handleWaSave} className="space-y-4">
-                      <ChannelConfigField label="Channel ID" mono value={waChannelId} onChange={setWaChannelId} placeholder="120363xxxxxxxxxx@newsletter" hint="Format: <numbers>@newsletter" />
-                      <div className="flex items-center gap-3">
-                        <button type="submit" disabled={waSaving || !waChannelId.trim()}
-                          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                          {waSaving ? 'Saving…' : 'Save configuration'}
+
+                    {/* B. Configuration */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">B. Configuration</p>
+                      <form onSubmit={handleSaveConfig} className="space-y-4">
+                        <ChannelConfigField label="Bot Token" secret savedPreview={status?.botTokenPreview}
+                          value={botToken} onChange={setBotToken} placeholder="123456:ABCdef…" />
+                        <ChannelConfigField label="Chat ID" mono value={chatId} onChange={setChatId}
+                          placeholder={status?.chatId || '-1001234567890'} hint="Group IDs are negative numbers." />
+                        <div className="flex items-center gap-3">
+                          <button type="submit" disabled={saving || (!botToken.trim() && !chatId.trim())}
+                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                            {saving ? 'Saving…' : 'Save configuration'}
+                          </button>
+                          {saveMsg && <p className={`text-xs ${saveMsg.startsWith('Saved') ? 'text-vs-success' : 'text-vs-danger'}`}>{saveMsg}</p>}
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* C. Actions */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
+                      <div className="space-y-3 mb-5">
+                        <button onClick={handleTest} disabled={testing || tgStatus === 'Needs Setup'}
+                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                          {testing ? 'Sending…' : 'Send Test Message'}
                         </button>
-                        {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                        {testResult && <p className={`text-xs text-center ${testResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{testResult.msg}</p>}
                       </div>
-                    </form>
-                  </div>
-                  <ManualMessageComposer
-                    destination="WhatsApp channel" value={waChannelMessage} onChange={setWaChannelMessage}
-                    onSend={handleWaSendChannel} sending={waChannelSending} result={waChannelSendResult}
-                    disabled={waChannelStatus !== 'Active'}
-                    disabledReason={waChannelStatus === 'Disabled' ? 'Notifications are disabled.' : 'Channel is not fully configured yet.'}
-                  />
-                  <RecentChannelActivity logs={waLogs} />
-                  <SetupGuideAccordion steps={waSteps} />
-                </>
-              )}
+                      <div className="border-t border-vs-border pt-4">
+                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
+                        {tgStatus !== 'Active' && (
+                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
+                            {tgStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
+                          </div>
+                        )}
+                        <form onSubmit={handleSend} className="space-y-2">
+                          <textarea value={message} onChange={(e) => setMessage(e.target.value)}
+                            disabled={tgStatus !== 'Active'} rows={3}
+                            placeholder="Type a message to broadcast…"
+                            maxLength={1024}
+                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
+                                <span>✈️</span> Telegram Group
+                              </span>
+                              <span className="text-xs text-vs-text-3">{message.length}/1024</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {sendResult && <p className={`text-xs ${sendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{sendResult.msg}</p>}
+                              <button type="submit" disabled={tgStatus !== 'Active' || sending || !message.trim()}
+                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                                {sending ? 'Sending…' : 'Send'}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+
+                    <RecentChannelActivity logs={tgLogs} />
+                    <SetupGuideAccordion steps={tgSteps} />
+                  </>
+                )}
+
+                {selectedChannel === 'wa_group' && (
+                  <>
+                    {/* A. Status Summary */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
+                      <DetailToggle enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa} label="WhatsApp notifications (shared with channel)" />
+                      <div className="mt-3">
+                        {waItems('Group ID configured', waHealth?.groupIdConfigured).map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
+                      </div>
+                      <div className="flex items-center gap-2 mt-4 justify-between">
+                        <button onClick={recheckHealth} disabled={healthLoading}
+                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
+                          {healthLoading ? 'Checking…' : 'Re-check'}
+                        </button>
+                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{waHealth?.checkedAt ? timeAgo(waHealth.checkedAt) : '—'}</span></p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Last Test</p>
+                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(waLogs) ? timeAgo(lastSuccess(waLogs)) : '—'}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Sent Today</p>
+                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(waLogs)}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Failures Today</p>
+                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(waLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(waLogs)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* B. Configuration */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">B. Configuration</p>
+                      <p className="text-xs text-vs-text-3 mb-4">Evolution API connection — shared with the WhatsApp Channel.</p>
+                      <form onSubmit={handleWaSave} className="space-y-4">
+                        <ChannelConfigField label="Evolution API URL" mono value={waEvolutionUrl} onChange={setWaEvolutionUrl} placeholder="http://localhost:8081" />
+                        <ChannelConfigField label="API Key" secret savedPreview={waStatus?.evolutionApiKeyPreview} value={waEvolutionApiKey} onChange={setWaEvolutionApiKey} placeholder="AUTHENTICATION_API_KEY value" />
+                        <ChannelConfigField label="Instance Name" mono value={waEvolutionInstance} onChange={setWaEvolutionInstance} placeholder="Vermo Sports" />
+                        <ChannelConfigField label="Group ID" mono value={waGroupId} onChange={setWaGroupId} placeholder="120363xxxxxxxxxx@g.us" hint="Format: <numbers>@g.us" />
+                        <div className="flex items-center gap-3">
+                          <button type="submit" disabled={waSaving || (!waEvolutionUrl.trim() && !waEvolutionApiKey.trim() && !waEvolutionInstance.trim() && !waGroupId.trim())}
+                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                            {waSaving ? 'Saving…' : 'Save configuration'}
+                          </button>
+                          {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* C. Actions */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
+                      <div className="space-y-3 mb-5">
+                        <button onClick={handleWaTest} disabled={waTesting || waGroupStatus === 'Needs Setup'}
+                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                          {waTesting ? 'Sending…' : 'Send Test Message'}
+                        </button>
+                        {waTestResult && <p className={`text-xs text-center ${waTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waTestResult.msg}</p>}
+                      </div>
+                      <div className="border-t border-vs-border pt-4">
+                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
+                        {waGroupStatus !== 'Active' && (
+                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
+                            {waGroupStatus === 'Disabled' ? 'Notifications are disabled for this channel.' : 'Channel is not fully configured yet.'}
+                          </div>
+                        )}
+                        <form onSubmit={handleWaSend} className="space-y-2">
+                          <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)}
+                            disabled={waGroupStatus !== 'Active'} rows={3}
+                            placeholder="Type a message to broadcast…"
+                            maxLength={1024}
+                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
+                                <span>💬</span> WhatsApp Group
+                              </span>
+                              <span className="text-xs text-vs-text-3">{waMessage.length}/1024</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {waSendResult && <p className={`text-xs ${waSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waSendResult.msg}</p>}
+                              <button type="submit" disabled={waGroupStatus !== 'Active' || waSending || !waMessage.trim()}
+                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                                {waSending ? 'Sending…' : 'Send'}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+
+                    <RecentChannelActivity logs={waLogs} />
+                    <SetupGuideAccordion steps={waSteps} />
+                  </>
+                )}
+
+                {selectedChannel === 'wa_channel' && (
+                  <>
+                    {/* A. Status Summary */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-3">A. Status Summary</p>
+                      <DetailToggle enabled={waEnabled} onToggle={handleToggleWa} toggling={togglingWa} label="WhatsApp notifications (shared with group)" />
+                      <div className="mt-3">
+                        {waItems('Channel ID configured', waHealth?.channelIdConfigured).map((it) => <HealthRow key={it.label} label={it.label} state={it.state} detail={it.detail} />)}
+                      </div>
+                      <div className="flex items-center gap-2 mt-4 justify-between">
+                        <button onClick={recheckHealth} disabled={healthLoading}
+                          className="text-xs px-3 py-1.5 rounded-lg border border-vs-border text-vs-text-3 hover:bg-vs-elevated hover:text-vs-text transition-colors disabled:opacity-50">
+                          {healthLoading ? 'Checking…' : 'Re-check'}
+                        </button>
+                        <p className="text-xs text-vs-text-3">Last checked: <span className="text-vs-text-2">{waHealth?.checkedAt ? timeAgo(waHealth.checkedAt) : '—'}</span></p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-vs-border">
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Last Test</p>
+                          <p className="text-sm font-semibold text-vs-text mt-0.5">{lastSuccess(waLogs) ? timeAgo(lastSuccess(waLogs)) : '—'}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Sent Today</p>
+                          <p className="text-sm font-semibold text-vs-success mt-0.5">{sentTodayCount(waLogs)}</p>
+                        </div>
+                        <div className="bg-vs-elevated/60 rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-vs-text-3">Failures Today</p>
+                          <p className={`text-sm font-semibold mt-0.5 ${failuresToday(waLogs) > 0 ? 'text-vs-danger' : 'text-vs-text-2'}`}>{failuresToday(waLogs)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* B. Configuration */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">B. Configuration</p>
+                      <div className="bg-vs-elevated/60 border border-vs-border rounded-lg px-3 py-2.5 mb-4 text-xs text-vs-text-3">
+                        Uses the <span className="text-vs-text-2 font-medium">shared Evolution connection</span> (URL, API Key, Instance) — manage those on the WhatsApp Group panel. Only the Channel ID is specific to this channel.
+                      </div>
+                      <form onSubmit={handleWaSave} className="space-y-4">
+                        <ChannelConfigField label="Channel ID" mono value={waChannelId} onChange={setWaChannelId} placeholder="120363xxxxxxxxxx@newsletter" hint="Format: <numbers>@newsletter" />
+                        <div className="flex items-center gap-3">
+                          <button type="submit" disabled={waSaving || !waChannelId.trim()}
+                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                            {waSaving ? 'Saving…' : 'Save configuration'}
+                          </button>
+                          {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* C. Actions */}
+                    <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">C. Actions</p>
+                      <div className="space-y-3 mb-5">
+                        <button onClick={handleWaChannelTest} disabled={waChannelStatus === 'Needs Setup'}
+                          className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                          Send Test Message
+                        </button>
+                        {waChannelSendResult && <p className={`text-xs text-center ${waChannelSendResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{waChannelSendResult.msg}</p>}
+                      </div>
+                      <div className="border-t border-vs-border pt-4">
+                        <p className="text-xs text-vs-text-3 mb-2 font-medium">Manual Message</p>
+                        {waChannelStatus !== 'Active' && (
+                          <div className="bg-vs-warning/10 border border-vs-warning/30 text-vs-warning text-xs rounded-lg px-3 py-2 mb-3">
+                            {waChannelStatus === 'Disabled' ? 'Notifications are disabled.' : 'Channel is not fully configured yet.'}
+                          </div>
+                        )}
+                        <form onSubmit={handleWaSendChannel} className="space-y-2">
+                          <textarea value={waChannelMessage} onChange={(e) => setWaChannelMessage(e.target.value)}
+                            disabled={waChannelStatus !== 'Active'} rows={3}
+                            placeholder="Type a message to broadcast…"
+                            maxLength={1024}
+                            className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple resize-none disabled:opacity-50" />
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 bg-vs-elevated border border-vs-border rounded-full px-2.5 py-1 text-xs text-vs-text-2">
+                                <span>📡</span> WhatsApp Channel
+                              </span>
+                              <span className="text-xs text-vs-text-3">{waChannelMessage.length}/1024</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button type="submit" disabled={waChannelStatus !== 'Active' || waChannelSending || !waChannelMessage.trim()}
+                                className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                                {waChannelSending ? 'Sending…' : 'Send'}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+
+                    <RecentChannelActivity logs={waLogs} />
+                    <SetupGuideAccordion steps={waSteps} />
+                  </>
+                )}
+
+              </div>
             </div>
           </div>
         );
