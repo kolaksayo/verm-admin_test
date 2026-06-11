@@ -63,4 +63,70 @@ function isConfigured() {
   return !!(token && chatId);
 }
 
-module.exports = { sendMessage, isConfigured, getConfig };
+// ── Health probe ────────────────────────────────────────────────────────────
+// Verifies the bot token + chat without sending a broadcast message.
+async function checkHealth() {
+  const { token, chatId } = getConfig();
+  const result = {
+    configured:    !!(token && chatId),
+    apiReachable:  false,
+    botTokenValid: false,
+    botUsername:   null,
+    chatIdValid:   false,
+    chatTitle:     null,
+    canSend:       false,
+    checkedAt:     new Date().toISOString(),
+  };
+  if (!token) return result;
+
+  const tgGet = async (method, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    const url = `https://api.telegram.org/bot${token}/${method}${qs ? '?' + qs : ''}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      return await res.json().catch(() => ({}));
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let botId = null;
+  try {
+    const me = await tgGet('getMe');
+    result.apiReachable = true;
+    result.botTokenValid = !!me.ok;
+    if (me.ok) {
+      botId = me.result?.id;
+      result.botUsername = me.result?.username ? '@' + me.result.username : null;
+    }
+  } catch {
+    return result; // network error — apiReachable stays false
+  }
+
+  if (!result.botTokenValid || !chatId) return result;
+
+  try {
+    const chat = await tgGet('getChat', { chat_id: chatId });
+    result.chatIdValid = !!chat.ok;
+    if (chat.ok) result.chatTitle = chat.result?.title || chat.result?.username || null;
+  } catch { /* leave chatIdValid false */ }
+
+  if (result.chatIdValid && botId) {
+    try {
+      const mem = await tgGet('getChatMember', { chat_id: chatId, user_id: botId });
+      if (mem.ok) {
+        const st = mem.result?.status;
+        if (st === 'administrator' || st === 'creator') result.canSend = true;
+        else if (st === 'member') result.canSend = true;
+        else if (st === 'restricted') result.canSend = !!mem.result?.can_send_messages;
+        else result.canSend = false;
+      }
+    } catch { /* leave canSend false */ }
+  }
+
+  return result;
+}
+
+module.exports = { sendMessage, isConfigured, getConfig, checkHealth };

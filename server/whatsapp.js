@@ -197,6 +197,40 @@ function isConfigured() {
   return !!(evolutionUrl && evolutionApiKey && evolutionInstance && groupId);
 }
 
+// ── Health probe ────────────────────────────────────────────────────────────
+// Verifies the Evolution connection without sending a message.
+async function checkHealth() {
+  const cfg = getConfig();
+  const result = {
+    configured:          !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
+    urlReachable:        false,
+    apiKeyValid:         false,
+    instanceConnected:   false,
+    state:               null,
+    groupIdConfigured:   /@g\.us$/.test(cfg.groupId || ''),
+    channelIdConfigured: /@newsletter$/.test(cfg.channelId || ''),
+    checkedAt:           new Date().toISOString(),
+  };
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
+
+  try {
+    const res = await fetchWithTimeout(
+      `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
+      { method: 'GET', headers: { 'apikey': cfg.evolutionApiKey } },
+    );
+    result.urlReachable = true;
+    result.apiKeyValid = res.status !== 401 && res.status !== 403;
+    const json = await res.json().catch(() => ({}));
+    const state = json.instance?.state || json.state || null;
+    result.state = state;
+    result.instanceConnected = state === 'open';
+  } catch {
+    // network error / timeout — urlReachable stays false
+  }
+
+  return result;
+}
+
 module.exports = {
   sendMessage,
   sendDM,
@@ -206,4 +240,5 @@ module.exports = {
   getConfig,
   stripHtml,
   normalizePhone,
+  checkHealth,
 };

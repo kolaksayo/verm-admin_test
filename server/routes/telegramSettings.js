@@ -1,6 +1,6 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
-const { sendMessage, isConfigured, getConfig } = require('../telegram');
+const { sendMessage, isConfigured, getConfig, checkHealth } = require('../telegram');
 const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('../whatsapp');
 const {
   DEFAULT_TEMPLATES,
@@ -185,6 +185,15 @@ router.get('/status', auth, (req, res) => {
     chatId:          chatId || null,
     enabled,
   });
+});
+
+// GET /api/telegram/health — live probe of bot token + chat (no message sent)
+router.get('/health', auth, async (req, res) => {
+  try {
+    res.json(await checkHealth());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/telegram/config — returns current saved values (token masked)
