@@ -77,16 +77,21 @@ export default function Collection({ collectionName }) {
   const handleUserClick = (userId, displayName) => setProfileUser({ id: userId, displayName });
   const handleGameBetClick = (betId, bookingCode) => setGameBet({ id: betId, bookingCode });
 
+  const isLeaderboard = name === 'game_bet_leaderboard';
+
   return (
     <div>
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-vs-text-3 mb-4">
-        <Link to="/" className="hover:text-vs-text-2 transition-colors">Dashboard</Link>
-        <span>›</span>
-        <span className="text-vs-text-2 font-medium">{formatName(name)}</span>
-      </div>
+      {!isLeaderboard && (
+        <div className="flex items-center gap-2 text-sm text-vs-text-3 mb-4">
+          <Link to="/" className="hover:text-vs-text-2 transition-colors">Dashboard</Link>
+          <span>›</span>
+          <span className="text-vs-text-2 font-medium">{formatName(name)}</span>
+        </div>
+      )}
 
       {/* Header */}
+      {!isLeaderboard && (
       <div className="flex items-start justify-between mb-5">
         <div>
           <h1 className="text-2xl font-bold text-vs-text">{formatName(name)}</h1>
@@ -150,6 +155,7 @@ export default function Collection({ collectionName }) {
           </form>
         )}
       </div>
+      )}
 
       {error && (
         <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">
