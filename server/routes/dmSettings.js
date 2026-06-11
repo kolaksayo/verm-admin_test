@@ -289,4 +289,25 @@ router.post('/test-settled', auth, async (req, res) => {
   }
 });
 
+router.get('/stats', auth, (req, res) => {
+  try {
+    const db = getSQLite();
+    const sentThisWeek   = db.prepare("SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE ok = 1 AND sent_at >= datetime('now', '-7 days')").get()?.c || 0;
+    const failedThisWeek = db.prepare("SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE ok = 0 AND sent_at >= datetime('now', '-7 days')").get()?.c || 0;
+    const total = sentThisWeek + failedThisWeek;
+    const lastAutomated = db.prepare("SELECT sent_at FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 1 ORDER BY id DESC LIMIT 1").get();
+    const lastTest = db.prepare("SELECT sent_at, ok FROM whatsapp_user_dms WHERE user_id = '__test__' ORDER BY id DESC LIMIT 1").get();
+    res.json({
+      sentThisWeek,
+      failedThisWeek,
+      deliveryRate7d: total > 0 ? Math.round(sentThisWeek / total * 100) : null,
+      lastAutomatedSend: lastAutomated?.sent_at || null,
+      lastTestAt: lastTest?.sent_at || null,
+      lastTestOk: lastTest ? lastTest.ok === 1 : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

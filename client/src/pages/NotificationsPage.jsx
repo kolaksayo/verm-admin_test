@@ -948,6 +948,14 @@ export default function NotificationsPage() {
   const [settledTesting, setSettledTesting]         = useState(false);
   const [settledTestResults, setSettledTestResults] = useState(null);
   const dmTextareaRef                               = useRef(null);
+  const [dmSubTab, setDmSubTab]               = useState('Overview');
+  const [dmStats, setDmStats]                 = useState(null);
+  const [dmStatsLoading, setDmStatsLoading]   = useState(false);
+  const [dmGroupLinkSaved, setDmGroupLinkSaved]     = useState('');
+  const [dmChannelLinkSaved, setDmChannelLinkSaved] = useState('');
+  const [dmCountryCodeSaved, setDmCountryCodeSaved] = useState('');
+  const [dmSearch, setDmSearch]               = useState('');
+  const [dmStatusFilter, setDmStatusFilter]   = useState('all');
 
   // ── Settings tab state ────────────────────────────────────────────────────
   const [threshold, setThreshold]               = useState('7');
@@ -1014,6 +1022,10 @@ export default function NotificationsPage() {
       setDmChannelLink(r.data.channelLink || '');
       setDmCountryCode(r.data.countryCode || '');
       if (r.data.welcomePreview) setDmTemplate(r.data.welcomePreview);
+      // Track saved values for unsaved-changes detection
+      setDmGroupLinkSaved(r.data.groupLink || '');
+      setDmChannelLinkSaved(r.data.channelLink || '');
+      setDmCountryCodeSaved(r.data.countryCode || '');
     }).catch(() => {});
   }, []);
 
@@ -1023,6 +1035,14 @@ export default function NotificationsPage() {
       .then((r) => setDmLogs(r.data.rows))
       .catch(() => {})
       .finally(() => setDmLogsLoading(false));
+  }, []);
+
+  const loadDmStats = useCallback(() => {
+    setDmStatsLoading(true);
+    api.get('/notifications/dm/stats')
+      .then((r) => setDmStats(r.data))
+      .catch(() => {})
+      .finally(() => setDmStatsLoading(false));
   }, []);
 
   useEffect(() => { loadStatus(); }, []);
@@ -1065,7 +1085,8 @@ export default function NotificationsPage() {
     if (tab !== 'Direct Messages') return;
     loadDmConfig();
     loadDmLogs();
-  }, [tab, loadDmConfig, loadDmLogs]);
+    loadDmStats();
+  }, [tab, loadDmConfig, loadDmLogs, loadDmStats]);
 
   useEffect(() => {
     if (tab !== 'Settings') return;
@@ -1244,6 +1265,9 @@ export default function NotificationsPage() {
     try {
       await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, countryCode: dmCountryCode });
       setDmConfigMsg('Saved!');
+      setDmGroupLinkSaved(dmGroupLink);
+      setDmChannelLinkSaved(dmChannelLink);
+      setDmCountryCodeSaved(dmCountryCode);
     } catch (err) {
       setDmConfigMsg(err.response?.data?.error || 'Failed');
     } finally {
