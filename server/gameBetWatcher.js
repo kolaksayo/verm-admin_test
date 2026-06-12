@@ -913,14 +913,44 @@ async function pollSingleCountdowns(db) {
       { key: '15min', trigger: 'game_bet_single_15min',  threshold: 20 },
     ];
 
+    const isJoined = getCurrentPlayers(bet) >= 2 || !!bet.acceptedBy;
+
     for (const cp of checkpoints) {
       if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
         const template = getTemplate(cp.trigger);
-        if (template) {
-          const result = await notifyAll(renderTemplate(template, vars), cp.trigger);
+        if (!template) continue;
+
+        const message = renderTemplate(template, vars);
+
+        if (!isJoined) {
+          // No one has joined yet — broadcast to groups with a join caption
+          const broadcastMsg = message + `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
+          const result = await notifyAll(broadcastMsg, cp.trigger);
           if (result.ok) {
             markNotified(betId, cp.key);
-            console.log(`[GameBetWatcher] Single ${cp.key} countdown: ${vars.code}`);
+            console.log(`[GameBetWatcher] Single ${cp.key} countdown (open): ${vars.code}`);
+          }
+        } else {
+          // Bet has been joined — DM each participant via WhatsApp only (no Telegram DM capability)
+          const userIds = getParticipantUserIds(bet);
+          let anyOk = false;
+          for (const uid of userIds) {
+            try {
+              const user = await db.collection('users').findOne(
+                { _id: new ObjectId(uid) },
+                { projection: { mobile: 1 } }
+              );
+              const phone = user?.mobile;
+              if (!phone) continue;
+              const dmResult = await sendDirectMessage(phone, message, cp.trigger);
+              if (dmResult?.ok) anyOk = true;
+            } catch (e) {
+              console.error(`[GameBetWatcher] DM failed for user ${uid}:`, e.message);
+            }
+          }
+          if (anyOk) {
+            markNotified(betId, cp.key);
+            console.log(`[GameBetWatcher] Single ${cp.key} countdown (joined, DMs sent): ${vars.code}`);
           }
         }
       }
