@@ -1094,6 +1094,11 @@ export default function NotificationsPage() {
     loadDmConfig();
     loadDmLogs();
     loadDmStats();
+    api.get('/whatsapp/config').then((r) => {
+      if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
+      if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
+    }).catch(() => {});
+    api.get('/whatsapp/status').then((r) => setWaStatus(r.data)).catch(() => {});
   }, [tab, loadDmConfig, loadDmLogs, loadDmStats]);
 
   useEffect(() => {
@@ -2028,6 +2033,46 @@ export default function NotificationsPage() {
                           <ValidationBadge valid={ccValid} empty={!dmCountryCode} />
                         </div>
                         <p className="text-xs text-vs-text-3 mt-1">e.g. 234 for Nigeria</p>
+                      </div>
+                      <div className="pt-2 border-t border-vs-border/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-semibold text-vs-text-2">Evolution Connection</p>
+                          {waStatus && (
+                            <span className={`flex items-center gap-1.5 text-xs ${waHealth?.instanceConnected ? 'text-vs-success' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'text-yellow-400' : 'text-vs-danger'}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${waHealth?.instanceConnected ? 'bg-vs-success' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
+                              {waHealth?.instanceConnected ? 'Connected' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'Configured' : 'Not configured'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
+                            <input type="text" value={waEvolutionUrl} onChange={(e) => setWaEvolutionUrl(e.target.value)}
+                              placeholder="https://evolution.example.com"
+                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
+                            <input type="password" value={waEvolutionApiKey} onChange={(e) => setWaEvolutionApiKey(e.target.value)}
+                              placeholder={waStatus?.evolutionApiKeyPreview || 'Enter API key'}
+                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                            {waStatus?.evolutionApiKeySet && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
+                          </div>
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
+                            <input type="text" value={waEvolutionInstance} onChange={(e) => setWaEvolutionInstance(e.target.value)}
+                              placeholder="e.g. vermo-prod"
+                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button type="button" onClick={handleWaSave} disabled={waSaving}
+                              className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                              {waSaving ? 'Saving…' : 'Save Connection'}
+                            </button>
+                            {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                          </div>
+                          <p className="text-xs text-vs-text-3">Shared with WhatsApp group/channel broadcasts.</p>
+                        </div>
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <p className="text-xs font-semibold text-vs-text-2 mb-3">WhatsApp Template (Welcome Message)</p>
