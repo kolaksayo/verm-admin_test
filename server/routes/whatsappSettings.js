@@ -48,6 +48,10 @@ router.post('/config', auth, (req, res) => {
   const hasUrl      = evolutionUrl      != null && String(evolutionUrl).trim()      !== '';
   const hasApiKey   = evolutionApiKey   != null && String(evolutionApiKey).trim()   !== '';
   const hasInstance = evolutionInstance != null && String(evolutionInstance).trim() !== '';
+
+  if (hasApiKey && !/^[\x00-\x7F]+$/.test(String(evolutionApiKey))) {
+    return res.status(400).json({ ok: false, error: 'API key contains invalid characters — enter the full key, not the masked preview.' });
+  }
   const hasGroupId  = groupId           != null && String(groupId).trim()           !== '';
   const hasChannel  = channelId         != null && String(channelId).trim()         !== '';
   const hasEnabled  = enabled           != null;

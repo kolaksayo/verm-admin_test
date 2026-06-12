@@ -37,6 +37,7 @@ function fetchWithTimeout(url, options) {
 // ── Evolution API helpers ─────────────────────────────────────────────────────
 
 async function evolutionPost(to, text, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+  if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
   const res = await fetchWithTimeout(`${url}/message/sendText/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
@@ -48,6 +49,7 @@ async function evolutionPost(to, text, { evolutionUrl: url, evolutionApiKey: api
 }
 
 async function evolutionPostTemplate(to, templateName, languageCode, bodyParams, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+  if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
   const res = await fetchWithTimeout(`${url}/message/sendTemplate/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
