@@ -958,6 +958,15 @@ export default function NotificationsPage() {
   const [dmCountryCodeSaved, setDmCountryCodeSaved]         = useState('');
   const [dmTemplateNameSaved, setDmTemplateNameSaved]       = useState('');
   const [dmTemplateLanguageSaved, setDmTemplateLanguageSaved] = useState('');
+  const [dmEvolutionUrl, setDmEvolutionUrl]                 = useState('');
+  const [dmEvolutionApiKey, setDmEvolutionApiKey]           = useState('');
+  const [dmEvolutionInstance, setDmEvolutionInstance]       = useState('');
+  const [dmEvolutionUrlSaved, setDmEvolutionUrlSaved]       = useState('');
+  const [dmEvolutionInstanceSaved, setDmEvolutionInstanceSaved] = useState('');
+  const [dmEvolutionApiKeyPreview, setDmEvolutionApiKeyPreview] = useState('');
+  const [dmEvolutionHealth, setDmEvolutionHealth]           = useState(null);
+  const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
+  const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
   const [dmStatusFilter, setDmStatusFilter]   = useState('all');
 
@@ -1028,12 +1037,17 @@ export default function NotificationsPage() {
       setDmTemplateName(r.data.welcomeTemplateName || '');
       setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
       if (r.data.welcomePreview) setDmTemplate(r.data.welcomePreview);
+      setDmEvolutionUrl(r.data.dmEvolutionUrl || '');
+      setDmEvolutionInstance(r.data.dmEvolutionInstance || '');
+      setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
       setDmCountryCodeSaved(r.data.countryCode || '');
       setDmTemplateNameSaved(r.data.welcomeTemplateName || '');
       setDmTemplateLanguageSaved(r.data.welcomeTemplateLanguage || '');
+      setDmEvolutionUrlSaved(r.data.dmEvolutionUrl || '');
+      setDmEvolutionInstanceSaved(r.data.dmEvolutionInstance || '');
     }).catch(() => {});
   }, []);
 
@@ -1094,11 +1108,7 @@ export default function NotificationsPage() {
     loadDmConfig();
     loadDmLogs();
     loadDmStats();
-    api.get('/whatsapp/config').then((r) => {
-      if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
-      if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
-    }).catch(() => {});
-    api.get('/whatsapp/status').then((r) => setWaStatus(r.data)).catch(() => {});
+    api.get('/notifications/dm/health').then((r) => setDmEvolutionHealth(r.data)).catch(() => {});
   }, [tab, loadDmConfig, loadDmLogs, loadDmStats]);
 
   useEffect(() => {
@@ -1289,6 +1299,35 @@ export default function NotificationsPage() {
       setDmSavingConfig(false);
     }
   };
+
+  const handleSaveDmEvolution = async (e) => {
+    e.preventDefault();
+    setDmEvolutionSaving(true); setDmEvolutionSaveMsg('');
+    try {
+      await api.post('/notifications/dm/config', {
+        dmEvolutionUrl:      dmEvolutionUrl      || undefined,
+        dmEvolutionApiKey:   dmEvolutionApiKey   || undefined,
+        dmEvolutionInstance: dmEvolutionInstance || undefined,
+      });
+      setDmEvolutionSaveMsg('Saved!');
+      setDmEvolutionApiKey('');
+      setDmEvolutionUrlSaved(dmEvolutionUrl);
+      setDmEvolutionInstanceSaved(dmEvolutionInstance);
+      // Refresh preview + health
+      const r = await api.get('/notifications/dm/config');
+      setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
+      const h = await api.get('/notifications/dm/health');
+      setDmEvolutionHealth(h.data);
+    } catch (err) {
+      setDmEvolutionSaveMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setDmEvolutionSaving(false);
+    }
+  };
+
+  const recheckDmHealth = useCallback(() => {
+    api.get('/notifications/dm/health').then((r) => setDmEvolutionHealth(r.data)).catch(() => {});
+  }, []);
 
   const handleSaveDmTemplate = async () => {
     setDmSavingTemplate(true); setDmTemplateMsg('');
@@ -2036,43 +2075,46 @@ export default function NotificationsPage() {
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-semibold text-vs-text-2">Evolution Connection</p>
-                          {waStatus && (
-                            <span className={`flex items-center gap-1.5 text-xs ${waHealth?.instanceConnected ? 'text-vs-success' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'text-yellow-400' : 'text-vs-danger'}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${waHealth?.instanceConnected ? 'bg-vs-success' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
-                              {waHealth?.instanceConnected ? 'Connected' : waStatus?.evolutionUrlSet && waStatus?.evolutionApiKeySet && waStatus?.evolutionInstanceSet ? 'Configured' : 'Not configured'}
-                            </span>
-                          )}
+                          <p className="text-xs font-semibold text-vs-text-2">DM Evolution Connection</p>
+                          <div className="flex items-center gap-2">
+                            {dmEvolutionHealth && (
+                              <span className={`flex items-center gap-1.5 text-xs ${dmEvolutionHealth.instanceConnected ? 'text-vs-success' : dmEvolutionHealth.configured ? 'text-yellow-400' : 'text-vs-danger'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${dmEvolutionHealth.instanceConnected ? 'bg-vs-success' : dmEvolutionHealth.configured ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
+                                {dmEvolutionHealth.instanceConnected ? `Connected (${dmEvolutionHealth.state})` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
+                              </span>
+                            )}
+                            <button type="button" onClick={recheckDmHealth} className="text-xs text-vs-text-3 hover:text-vs-text underline">Check</button>
+                          </div>
                         </div>
-                        <div className="space-y-3">
+                        <form onSubmit={handleSaveDmEvolution} className="space-y-3">
                           <div>
                             <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
-                            <input type="text" value={waEvolutionUrl} onChange={(e) => setWaEvolutionUrl(e.target.value)}
+                            <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
                               placeholder="https://evolution.example.com"
                               className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                           </div>
                           <div>
                             <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
-                            <input type="password" value={waEvolutionApiKey} onChange={(e) => setWaEvolutionApiKey(e.target.value)}
-                              placeholder={waStatus?.evolutionApiKeyPreview || 'Enter API key'}
+                            <input type="password" value={dmEvolutionApiKey} onChange={(e) => setDmEvolutionApiKey(e.target.value)}
+                              placeholder={dmEvolutionApiKeyPreview || 'Enter API key'}
                               className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                            {waStatus?.evolutionApiKeySet && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
+                            {dmEvolutionApiKeyPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
                           </div>
                           <div>
                             <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
-                            <input type="text" value={waEvolutionInstance} onChange={(e) => setWaEvolutionInstance(e.target.value)}
-                              placeholder="e.g. vermo-prod"
+                            <input type="text" value={dmEvolutionInstance} onChange={(e) => setDmEvolutionInstance(e.target.value)}
+                              placeholder="e.g. vermo-dm"
                               className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                           </div>
                           <div className="flex items-center gap-3">
-                            <button type="button" onClick={handleWaSave} disabled={waSaving}
+                            <button type="submit" disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
-                              {waSaving ? 'Saving…' : 'Save Connection'}
+                              {dmEvolutionSaving ? 'Saving…' : 'Save Connection'}
                             </button>
-                            {waSaveMsg && <p className={`text-xs ${waSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{waSaveMsg}</p>}
+                            {dmEvolutionSaveMsg && <p className={`text-xs ${dmEvolutionSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmEvolutionSaveMsg}</p>}
                           </div>
-                          <p className="text-xs text-vs-text-3">Shared with WhatsApp group/channel broadcasts.</p>
-                        </div>
+                          <p className="text-xs text-vs-text-3">Separate from the group/channel broadcast instance.</p>
+                        </form>
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <p className="text-xs font-semibold text-vs-text-2 mb-3">WhatsApp Template (Welcome Message)</p>

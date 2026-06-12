@@ -24,6 +24,28 @@ function getConfig() {
   }
 }
 
+// Separate credentials for direct messages (welcome, settled-bet DMs).
+// Falls back to the shared group config if DM-specific keys are not set.
+function getDmConfig() {
+  try {
+    const sqlite = getSQLite();
+    const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
+    const shared = getConfig();
+    return {
+      evolutionUrl:      get('dm_evolution_api_url')  || shared.evolutionUrl,
+      evolutionApiKey:   get('dm_evolution_api_key')  || shared.evolutionApiKey,
+      evolutionInstance: get('dm_evolution_instance') || shared.evolutionInstance,
+    };
+  } catch {
+    const shared = getConfig();
+    return {
+      evolutionUrl:      shared.evolutionUrl,
+      evolutionApiKey:   shared.evolutionApiKey,
+      evolutionInstance: shared.evolutionInstance,
+    };
+  }
+}
+
 function stripHtml(text) {
   return text.replace(/<[^>]+>/g, '');
 }
@@ -167,7 +189,7 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
 }
 
 async function sendDirectMessage(phone, text, trigger = 'manual') {
-  const cfg = getConfig();
+  const cfg = getDmConfig();
   const digits = normalizePhone(phone);
   if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !digits) {
     logSend(trigger, text, false, 'not_configured');
@@ -187,7 +209,7 @@ async function sendDirectMessage(phone, text, trigger = 'manual') {
 }
 
 async function sendDM(userId, phone, username, text, trigger = 'user_registered') {
-  const cfg = getConfig();
+  const cfg = getDmConfig();
   const digits = normalizePhone(phone);
 
   if (!digits) {
@@ -214,7 +236,7 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
 }
 
 async function sendWelcomeTemplate(userId, phone, username) {
-  const cfg = getConfig();
+  const cfg = getDmConfig();
   const digits = normalizePhone(phone);
 
   if (!digits) {
@@ -262,8 +284,13 @@ function isConfigured() {
   return !!(evolutionUrl && evolutionApiKey && evolutionInstance && groupId);
 }
 
-// ── Health probe ────────────────────────────────────────────────────────────
-// Verifies the Evolution connection without sending a message.
+function isDmConfigured() {
+  const { evolutionUrl, evolutionApiKey, evolutionInstance } = getDmConfig();
+  return !!(evolutionUrl && evolutionApiKey && evolutionInstance);
+}
+
+// ── Health probes ───────────────────────────────────────────────────────────
+
 async function checkHealth() {
   const cfg = getConfig();
   const result = {
@@ -296,6 +323,36 @@ async function checkHealth() {
   return result;
 }
 
+async function checkDmHealth() {
+  const cfg = getDmConfig();
+  const result = {
+    configured:        !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
+    urlReachable:      false,
+    apiKeyValid:       false,
+    instanceConnected: false,
+    state:             null,
+    checkedAt:         new Date().toISOString(),
+  };
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
+
+  try {
+    const res = await fetchWithTimeout(
+      `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
+      { method: 'GET', headers: { 'apikey': cfg.evolutionApiKey } },
+    );
+    result.urlReachable = true;
+    result.apiKeyValid = res.status !== 401 && res.status !== 403;
+    const json = await res.json().catch(() => ({}));
+    const state = json.instance?.state || json.state || null;
+    result.state = state;
+    result.instanceConnected = state === 'open';
+  } catch {
+    // network error / timeout
+  }
+
+  return result;
+}
+
 module.exports = {
   sendMessage,
   sendDM,
@@ -303,8 +360,11 @@ module.exports = {
   sendToChannel,
   sendWelcomeTemplate,
   isConfigured,
+  isDmConfigured,
   getConfig,
+  getDmConfig,
   stripHtml,
   normalizePhone,
   checkHealth,
+  checkDmHealth,
 };
