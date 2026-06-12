@@ -34,13 +34,34 @@ function fetchWithTimeout(url, options) {
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// ── Evolution API helper ──────────────────────────────────────────────────────
+// ── Evolution API helpers ─────────────────────────────────────────────────────
 
 async function evolutionPost(to, text, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   const res = await fetchWithTimeout(`${url}/message/sendText/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ number: to, text }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const ok = res.ok && !!(json.key?.id);
+  return { ok, json };
+}
+
+async function evolutionPostTemplate(to, templateName, languageCode, bodyParams, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+  const res = await fetchWithTimeout(`${url}/message/sendTemplate/${instance}`, {
+    method: 'POST',
+    headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      number: to,
+      templateName,
+      language: languageCode,
+      components: [
+        {
+          type: 'body',
+          parameters: bodyParams.map((text) => ({ type: 'text', text })),
+        },
+      ],
+    }),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && !!(json.key?.id);
@@ -190,6 +211,48 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
   }
 }
 
+async function sendWelcomeTemplate(userId, phone, username) {
+  const cfg = getConfig();
+  const digits = normalizePhone(phone);
+
+  if (!digits) {
+    logUserDm(userId, phone, username, 'user_registered', false, 'no_phone');
+    return { ok: false, reason: 'no_phone' };
+  }
+
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
+    logUserDm(userId, phone, username, 'user_registered', false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  let templateName = '';
+  let templateLanguage = '';
+  try {
+    const sqlite = getSQLite();
+    const get = (k) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+    templateName = get('welcome_template_name');
+    templateLanguage = get('welcome_template_language');
+  } catch { /* fall through to text fallback */ }
+
+  try {
+    let ok, json;
+    if (templateName && templateLanguage) {
+      ({ ok, json } = await evolutionPostTemplate(digits, templateName, templateLanguage, [username || 'there'], cfg));
+    } else {
+      // Fallback: send as plain text if template not configured
+      const text = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
+      ({ ok, json } = await evolutionPost(digits, text, cfg));
+    }
+    const errMsg = ok ? null : (json?.message || json?.error?.message || 'api_error');
+    logUserDm(userId, phone, username, 'user_registered', ok, errMsg);
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logUserDm(userId, phone, username, 'user_registered', false, reason);
+    return { ok: false, reason };
+  }
+}
+
 // ── Status checks ─────────────────────────────────────────────────────────────
 
 function isConfigured() {
@@ -236,6 +299,7 @@ module.exports = {
   sendDM,
   sendDirectMessage,
   sendToChannel,
+  sendWelcomeTemplate,
   isConfigured,
   getConfig,
   stripHtml,

@@ -2,7 +2,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -593,8 +593,7 @@ async function pollNewUsers(db) {
 
     const username = user.username || user.name || user.displayName || 'there';
 
-    // sendDM routes 'user_registered' to the Interakt.ai approved template
-    const result = await sendDM(userId, user.mobile, username, null, 'user_registered');
+    const result = await sendWelcomeTemplate(userId, user.mobile, username);
     if (result.ok) {
       console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
       sent++;

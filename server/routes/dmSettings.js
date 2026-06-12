@@ -1,5 +1,5 @@
 const express = require('express');
-const { getConfig, sendDM, sendDirectMessage, stripHtml, isConfigured } = require('../whatsapp');
+const { getConfig, sendDM, sendDirectMessage, sendWelcomeTemplate, stripHtml, isConfigured } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
@@ -28,11 +28,13 @@ router.get('/config', auth, (req, res) => {
     const db  = getSQLite();
     const get = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? null;
     res.json({
-      enabled:        get('whatsapp_dm_enabled') === '1',
-      groupLink:      get('whatsapp_group_link')  || '',
-      channelLink:    get('whatsapp_channel_link') || '',
-      countryCode:    get('whatsapp_country_code') || '',
-      welcomePreview: APPROVED_WELCOME_PREVIEW,
+      enabled:              get('whatsapp_dm_enabled') === '1',
+      groupLink:            get('whatsapp_group_link')      || '',
+      channelLink:          get('whatsapp_channel_link')    || '',
+      countryCode:          get('whatsapp_country_code')    || '',
+      welcomePreview:       APPROVED_WELCOME_PREVIEW,
+      welcomeTemplateName:  get('welcome_template_name')    || '',
+      welcomeTemplateLanguage: get('welcome_template_language') || '',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,11 +50,13 @@ router.post('/config', auth, (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(k, String(v));
 
-    const { enabled, groupLink, channelLink, countryCode } = req.body;
-    if (enabled != null)     set('whatsapp_dm_enabled',  enabled ? '1' : '0');
-    if (groupLink != null)   set('whatsapp_group_link',  groupLink);
-    if (channelLink != null) set('whatsapp_channel_link', channelLink);
-    if (countryCode != null) set('whatsapp_country_code', countryCode);
+    const { enabled, groupLink, channelLink, countryCode, welcomeTemplateName, welcomeTemplateLanguage } = req.body;
+    if (enabled != null)               set('whatsapp_dm_enabled',      enabled ? '1' : '0');
+    if (groupLink != null)             set('whatsapp_group_link',       groupLink);
+    if (channelLink != null)           set('whatsapp_channel_link',     channelLink);
+    if (countryCode != null)           set('whatsapp_country_code',     countryCode);
+    if (welcomeTemplateName != null)   set('welcome_template_name',     welcomeTemplateName);
+    if (welcomeTemplateLanguage != null) set('welcome_template_language', welcomeTemplateLanguage);
 
     res.json({ ok: true });
   } catch (err) {
@@ -116,7 +120,7 @@ router.post('/send-welcome/:userId', auth, async (req, res) => {
     if (!phone) return res.status(400).json({ ok: false, reason: 'no_phone' });
 
     const username = user.username || user.name || user.displayName || 'there';
-    const result = await sendDM(userId, phone, username, buildWelcomeText(username), 'user_registered');
+    const result = await sendWelcomeTemplate(userId, phone, username);
     res.json(result);
   } catch (err) {
     console.error('[dmSettings] send-welcome error:', err.message);
@@ -132,7 +136,7 @@ router.post('/test', auth, async (req, res) => {
 
   if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
 
-  const result = await sendDM('__test__', phone, 'Test User', buildWelcomeText('Test User'), 'user_registered');
+  const result = await sendWelcomeTemplate('__test__', phone, 'Test User');
   res.json(result);
 });
 
@@ -159,7 +163,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
           if (user) name = user.name || user.displayName || user.username || name;
         } catch { /* use cached name */ }
       }
-      result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
+      result = await sendWelcomeTemplate(row.user_id, row.phone, name);
     } else {
       const db2 = getSQLite();
       const get = (k) => db2.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
@@ -205,7 +209,7 @@ router.post('/retry-all-failed', auth, async (req, res) => {
             if (user) name = user.name || user.displayName || user.username || name;
           } catch { /* use cached name */ }
         }
-        result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
+        result = await sendWelcomeTemplate(row.user_id, row.phone, name);
       } else {
         const get = (k) => sqlDb.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
         const rendered = renderTemplate(get('whatsapp_welcome_template') || '{{name}}', {

@@ -929,8 +929,10 @@ export default function NotificationsPage() {
   const [togglingDm, setTogglingDm]           = useState(false);
   const [dmGroupLink, setDmGroupLink]         = useState('');
   const [dmChannelLink, setDmChannelLink]     = useState('');
-  const [dmCountryCode, setDmCountryCode]     = useState('');
-  const [dmSavingConfig, setDmSavingConfig]   = useState(false);
+  const [dmCountryCode, setDmCountryCode]           = useState('');
+  const [dmTemplateName, setDmTemplateName]         = useState('');
+  const [dmTemplateLanguage, setDmTemplateLanguage] = useState('');
+  const [dmSavingConfig, setDmSavingConfig]         = useState(false);
   const [dmConfigMsg, setDmConfigMsg]         = useState('');
   const [dmTemplate, setDmTemplate]           = useState(DEFAULT_DM_TEMPLATE);
   const [dmSavingTemplate, setDmSavingTemplate] = useState(false);
@@ -951,9 +953,11 @@ export default function NotificationsPage() {
   const [dmSubTab, setDmSubTab]               = useState('Overview');
   const [dmStats, setDmStats]                 = useState(null);
   const [dmStatsLoading, setDmStatsLoading]   = useState(false);
-  const [dmGroupLinkSaved, setDmGroupLinkSaved]     = useState('');
-  const [dmChannelLinkSaved, setDmChannelLinkSaved] = useState('');
-  const [dmCountryCodeSaved, setDmCountryCodeSaved] = useState('');
+  const [dmGroupLinkSaved, setDmGroupLinkSaved]             = useState('');
+  const [dmChannelLinkSaved, setDmChannelLinkSaved]         = useState('');
+  const [dmCountryCodeSaved, setDmCountryCodeSaved]         = useState('');
+  const [dmTemplateNameSaved, setDmTemplateNameSaved]       = useState('');
+  const [dmTemplateLanguageSaved, setDmTemplateLanguageSaved] = useState('');
   const [dmSearch, setDmSearch]               = useState('');
   const [dmStatusFilter, setDmStatusFilter]   = useState('all');
 
@@ -1021,11 +1025,15 @@ export default function NotificationsPage() {
       setDmGroupLink(r.data.groupLink || '');
       setDmChannelLink(r.data.channelLink || '');
       setDmCountryCode(r.data.countryCode || '');
+      setDmTemplateName(r.data.welcomeTemplateName || '');
+      setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
       if (r.data.welcomePreview) setDmTemplate(r.data.welcomePreview);
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
       setDmCountryCodeSaved(r.data.countryCode || '');
+      setDmTemplateNameSaved(r.data.welcomeTemplateName || '');
+      setDmTemplateLanguageSaved(r.data.welcomeTemplateLanguage || '');
     }).catch(() => {});
   }, []);
 
@@ -1263,11 +1271,13 @@ export default function NotificationsPage() {
     e.preventDefault();
     setDmSavingConfig(true); setDmConfigMsg('');
     try {
-      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, countryCode: dmCountryCode });
+      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, countryCode: dmCountryCode, welcomeTemplateName: dmTemplateName, welcomeTemplateLanguage: dmTemplateLanguage });
       setDmConfigMsg('Saved!');
       setDmGroupLinkSaved(dmGroupLink);
       setDmChannelLinkSaved(dmChannelLink);
       setDmCountryCodeSaved(dmCountryCode);
+      setDmTemplateNameSaved(dmTemplateName);
+      setDmTemplateLanguageSaved(dmTemplateLanguage);
     } catch (err) {
       setDmConfigMsg(err.response?.data?.error || 'Failed');
     } finally {
@@ -1816,7 +1826,7 @@ export default function NotificationsPage() {
         const channelLinkValid = isValidChannelLink(dmChannelLink);
         const ccValid          = isValidCountryCode(dmCountryCode);
 
-        const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmCountryCode !== dmCountryCodeSaved;
+        const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmCountryCode !== dmCountryCodeSaved || dmTemplateName !== dmTemplateNameSaved || dmTemplateLanguage !== dmTemplateLanguageSaved;
         const canSave     = hasUnsaved && groupLinkValid && channelLinkValid && ccValid;
 
         const templateVars = ['{{name}}', '{{group_link}}', '{{channel_link}}'].filter((v) => (dmTemplate || '').includes(v));
@@ -2018,6 +2028,24 @@ export default function NotificationsPage() {
                           <ValidationBadge valid={ccValid} empty={!dmCountryCode} />
                         </div>
                         <p className="text-xs text-vs-text-3 mt-1">e.g. 234 for Nigeria</p>
+                      </div>
+                      <div className="pt-2 border-t border-vs-border/50">
+                        <p className="text-xs font-semibold text-vs-text-2 mb-3">WhatsApp Template (Welcome Message)</p>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Template Name</label>
+                            <input type="text" value={dmTemplateName} onChange={(e) => setDmTemplateName(e.target.value)}
+                              placeholder="e.g. vermo_welcome"
+                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Template Language</label>
+                            <input type="text" value={dmTemplateLanguage} onChange={(e) => setDmTemplateLanguage(e.target.value)}
+                              placeholder="e.g. en_US"
+                              className="w-48 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                          </div>
+                          <p className="text-xs text-vs-text-3">Template must be approved in WhatsApp Business Manager. Leave blank to fall back to plain text.</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-3 pt-1">
                         <button type="submit" disabled={dmSavingConfig || !canSave}
