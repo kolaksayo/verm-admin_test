@@ -1807,263 +1807,449 @@ export default function NotificationsPage() {
       })()}
 
       {/* ── Direct Messages tab ── */}
-      {tab === 'Direct Messages' && (
-        <>
-          <SectionHeader
-            icon="📱"
-            title="WhatsApp Direct Messages"
-            subtitle="Automatically send a personalised welcome DM to new users when they register"
-          />
+      {tab === 'Direct Messages' && (() => {
+        const isValidGroupLink    = (v) => !v || v.startsWith('https://chat.whatsapp.com/');
+        const isValidChannelLink  = (v) => !v || v.startsWith('https://whatsapp.com/channel/');
+        const isValidCountryCode  = (v) => !v || /^\d{1,4}$/.test(v.trim());
 
-          {/* Enable toggle */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-vs-text">User DMs</p>
-              <p className="text-xs text-vs-text-3 mt-0.5">
-                {dmEnabled
-                  ? 'Welcome DMs are enabled — new users with a phone number will receive a message.'
-                  : 'Welcome DMs are disabled — no messages will be sent to new users.'}
-              </p>
-            </div>
-            <button
-              onClick={handleToggleDm}
-              disabled={togglingDm}
-              className={`relative w-12 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
-                dmEnabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
-              }`}
-            >
-              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${dmEnabled ? 'left-7' : 'left-1'}`} />
-            </button>
-          </div>
+        const groupLinkValid   = isValidGroupLink(dmGroupLink);
+        const channelLinkValid = isValidChannelLink(dmChannelLink);
+        const ccValid          = isValidCountryCode(dmCountryCode);
 
-          {/* Links config */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Community Links</p>
-            <p className="text-xs text-vs-text-3 mb-4">These links are inserted into the welcome message via <span className="font-mono text-xs">{'{{group_link}}'}</span> and <span className="font-mono text-xs">{'{{channel_link}}'}</span>.</p>
-            <form onSubmit={handleSaveDmConfig} className="space-y-3">
-              <div className="flex flex-wrap gap-4">
-                <div className="flex-1 min-w-[220px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">WhatsApp Group Link</label>
-                  <input type="url" value={dmGroupLink} onChange={(e) => setDmGroupLink(e.target.value)}
-                    placeholder="https://chat.whatsapp.com/..."
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+        const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmCountryCode !== dmCountryCodeSaved;
+        const canSave     = hasUnsaved && groupLinkValid && channelLinkValid && ccValid;
+
+        const templateVars = ['{{name}}', '{{group_link}}', '{{channel_link}}'].filter((v) => (dmTemplate || '').includes(v));
+        const livePreview  = (dmTemplate || '')
+          .replace(/\{\{name\}\}/g, 'Abraham')
+          .replace(/\{\{group_link\}\}/g, dmGroupLink || '(group link)')
+          .replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)');
+
+        const filteredLogs = dmLogs.filter((row) => {
+          if (dmStatusFilter === 'success' && !row.ok) return false;
+          if (dmStatusFilter === 'failed'  &&  row.ok) return false;
+          if (dmSearch) {
+            const s = dmSearch.toLowerCase();
+            return (row.username || '').toLowerCase().includes(s) ||
+                   (row.phone    || '').includes(s) ||
+                   (row.user_id  || '').toLowerCase().includes(s);
+          }
+          return true;
+        });
+
+        const DM_SUBTABS = ['Overview', 'Configuration', 'Template', 'Testing', 'Logs'];
+        const showA   = dmSubTab === 'Overview';
+        const showB   = dmSubTab === 'Overview' || dmSubTab === 'Configuration';
+        const showC   = dmSubTab === 'Overview' || dmSubTab === 'Template';
+        const showD   = dmSubTab === 'Overview' || dmSubTab === 'Testing';
+        const showE   = dmSubTab === 'Overview' || dmSubTab === 'Logs';
+
+        const ValidationBadge = ({ valid, empty }) => {
+          if (empty) return null;
+          return valid
+            ? <span className="flex items-center gap-1 text-xs text-vs-success flex-shrink-0"><svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg> Valid</span>
+            : <span className="flex items-center gap-1 text-xs text-vs-danger flex-shrink-0"><svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/></svg> Invalid</span>;
+        };
+
+        const DeliveryBadge = ({ ok }) => ok
+          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-900/40 text-green-400 text-xs font-semibold border border-green-700/30"><svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg> Sent</span>
+          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 text-xs font-semibold border border-red-700/30"><svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/></svg> Failed</span>;
+
+        return (
+          <div className="space-y-5">
+
+            {/* ── Summary cards ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {/* Welcome DMs */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-4 flex gap-3">
+                <div className="w-10 h-10 rounded-xl bg-vs-purple/15 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-vs-purple-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                 </div>
-                <div className="flex-1 min-w-[220px]">
-                  <label className="text-xs text-vs-text-3 block mb-1">WhatsApp Channel Link</label>
-                  <input type="url" value={dmChannelLink} onChange={(e) => setDmChannelLink(e.target.value)}
-                    placeholder="https://whatsapp.com/channel/..."
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                </div>
-                <div className="w-40 flex-shrink-0">
-                  <label className="text-xs text-vs-text-3 block mb-1">Country Code</label>
-                  <input type="text" value={dmCountryCode} onChange={(e) => setDmCountryCode(e.target.value)}
-                    placeholder="234"
-                    className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                  <p className="text-xs text-vs-text-3 mt-1">e.g. 234 for Nigeria</p>
+                <div className="min-w-0">
+                  <p className="text-xs text-vs-text-3">Welcome DMs</p>
+                  <p className={`text-sm font-bold ${dmEnabled ? 'text-green-400' : 'text-vs-warning'}`}>{dmEnabled ? 'Enabled' : 'Disabled'}</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 leading-tight">{dmEnabled ? 'Automatic welcome DMs are active.' : 'DMs are paused.'}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <button type="submit" disabled={dmSavingConfig}
-                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {dmSavingConfig ? 'Saving…' : 'Save Links'}
-                </button>
-                {dmConfigMsg && <p className={`text-xs ${dmConfigMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmConfigMsg}</p>}
-              </div>
-            </form>
-          </div>
-
-          {/* Approved welcome template (read-only) */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Welcome Message Template</p>
-                <p className="text-xs text-vs-text-3">This is the WhatsApp-approved template sent via Interakt.ai. It cannot be edited here — changes must be submitted through WhatsApp Business Manager.</p>
-              </div>
-              <span className="flex-shrink-0 px-2 py-0.5 text-xs rounded-full bg-vs-success/15 text-vs-success border border-vs-success/30">Approved</span>
-            </div>
-            <pre className="w-full px-4 py-3 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text-2 whitespace-pre-wrap font-sans select-all">
-              {dmTemplate}
-            </pre>
-            <p className="text-xs text-vs-text-3 mt-2">
-              <span className="font-mono text-vs-purple-light">{'{{1}}'}</span> is substituted with the user&apos;s display name at send time.
-              Template name: <span className="font-mono text-vs-text-2">welcome_to_vermosports</span>
-            </p>
-          </div>
-
-          {/* Test DM */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Send Test DM</p>
-            <p className="text-xs text-vs-text-3 mb-4">Send the approved welcome template via Interakt.ai to a phone number. Requires Interakt.ai API Key to be configured.</p>
-            <form onSubmit={handleDmTest} className="flex items-start gap-3">
-              <div className="flex-1 max-w-xs">
-                <label className="text-xs text-vs-text-3 block mb-1">Phone Number</label>
-                <input type="tel" value={dmTestPhone} onChange={(e) => setDmTestPhone(e.target.value)}
-                  placeholder="+2348012345678"
-                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                <p className="text-xs text-vs-text-3 mt-1">International format, e.g. +234…</p>
-              </div>
-              <div className="mt-5">
-                <button type="submit" disabled={dmTesting || !dmTestPhone.trim()}
-                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {dmTesting ? 'Sending…' : 'Send Test'}
-                </button>
-              </div>
-              {dmTestResult && (
-                <div className="mt-5">
-                  <p className={`text-xs ${dmTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{dmTestResult.msg}</p>
+              {/* Template Status */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-4 flex gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 </div>
-              )}
-            </form>
-          </div>
-
-          {/* Settled notification test */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Test Settlement DM</p>
-            <p className="text-xs text-vs-text-3 mb-4">
-              Enter a booking code to send the settlement notification as individual WhatsApp DMs to each participant of that challenge.
-              Uses the saved "Challenge Settled" template from the Messages tab.
-            </p>
-            <form onSubmit={handleSettledTest} className="flex items-start gap-3 mb-4">
-              <div className="flex-1 max-w-xs">
-                <label className="text-xs text-vs-text-3 block mb-1">Booking Code</label>
-                <input
-                  type="text"
-                  value={settledTestCode}
-                  onChange={(e) => setSettledTestCode(e.target.value)}
-                  placeholder="e.g. GAME-ABCD"
-                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple"
-                />
+                <div className="min-w-0">
+                  <p className="text-xs text-vs-text-3">Template Status</p>
+                  <p className="text-sm font-bold text-green-400">Approved</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 leading-tight">Using the approved template.</p>
+                </div>
               </div>
-              <div className="mt-5">
-                <button type="submit" disabled={settledTesting || !settledTestCode.trim()}
-                  className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {settledTesting ? 'Sending…' : 'Send Test'}
-                </button>
+              {/* Delivery Rate */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-4 flex gap-3">
+                <div className="w-10 h-10 rounded-xl bg-vs-purple/15 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-vs-purple-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-vs-text-3">Delivery Rate</p>
+                  <p className="text-2xl font-bold text-vs-text leading-tight">{dmStats?.deliveryRate7d != null ? dmStats.deliveryRate7d + '%' : '—'}</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 leading-tight">Successful deliveries (7 days)</p>
+                </div>
               </div>
-            </form>
-
-            {settledTestResults && (
-              <div className="space-y-2">
-                {settledTestResults.error && (
-                  <p className="text-xs text-vs-danger">{settledTestResults.error}</p>
-                )}
-                {settledTestResults.betCode && (
-                  <p className="text-xs text-vs-text-3 mb-2">
-                    Bet: <span className="font-mono text-vs-text">{settledTestResults.betCode}</span>
+              {/* Failed Sends */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-4 flex gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${(dmStats?.failedThisWeek || 0) > 0 ? 'bg-red-900/30' : 'bg-vs-elevated'}`}>
+                  <svg className={`w-5 h-5 ${(dmStats?.failedThisWeek || 0) > 0 ? 'text-red-400' : 'text-vs-text-3'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-vs-text-3">Failed Sends</p>
+                  <p className={`text-2xl font-bold leading-tight ${(dmStats?.failedThisWeek || 0) > 0 ? 'text-red-400' : 'text-vs-text'}`}>{dmStats?.failedThisWeek ?? '—'}</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 leading-tight">Failed deliveries (7 days)</p>
+                </div>
+              </div>
+              {/* Last Test */}
+              <div className="bg-vs-card border border-vs-border rounded-xl p-4 flex gap-3">
+                <div className="w-10 h-10 rounded-xl bg-vs-elevated flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-vs-text-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-vs-text-3">Last Test</p>
+                  <p className="text-base font-bold text-vs-text leading-tight">{dmStats?.lastTestAt ? timeAgo(dmStats.lastTestAt) : 'Not tested'}</p>
+                  <p className={`text-xs mt-0.5 leading-tight ${dmStats?.lastTestOk ? 'text-green-400' : dmStats?.lastTestOk === false ? 'text-red-400' : 'text-vs-text-3'}`}>
+                    {dmStats?.lastTestOk ? 'Last test message was successful.' : dmStats?.lastTestOk === false ? 'Last test failed.' : 'No test yet.'}
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Sub-navigation ── */}
+            <div className="flex gap-0 border-b border-vs-border">
+              {DM_SUBTABS.map((t) => (
+                <button key={t} onClick={() => setDmSubTab(t)}
+                  className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    dmSubTab === t ? 'border-vs-purple text-vs-purple-light' : 'border-transparent text-vs-text-3 hover:text-vs-text'
+                  }`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {/* ── A + B + C row ── */}
+            {(showA || showB || showC) && (
+              <div className={`grid grid-cols-1 gap-4 ${showA && showB && showC ? 'lg:grid-cols-3' : showB && showC ? 'lg:grid-cols-2' : ''}`}>
+
+                {/* A. Welcome DM Status */}
+                {showA && (
+                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-vs-text">A. Welcome DM Status</p>
+                        <svg className="w-3.5 h-3.5 text-vs-text-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${dmEnabled ? 'bg-green-900/40 text-green-400 border-green-700/30' : 'bg-vs-elevated text-vs-text-3 border-vs-border'}`}>{dmEnabled ? 'Enabled' : 'Disabled'}</span>
+                        <button onClick={handleToggleDm} disabled={togglingDm}
+                          className={`relative w-10 h-5 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${dmEnabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${dmEnabled ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-vs-text-3 mb-4 leading-relaxed">New users with a phone number receive the approved welcome message automatically.</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-xs text-vs-text-3">
+                          <svg className="w-4 h-4 text-vs-purple-light flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                          Total sent this week
+                        </div>
+                        <span className="text-sm font-bold text-vs-text">{dmStats?.sentThisWeek?.toLocaleString() ?? '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-xs text-vs-text-3">
+                          <svg className="w-4 h-4 text-red-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          Failed this week
+                        </div>
+                        <span className={`text-sm font-bold ${(dmStats?.failedThisWeek || 0) > 0 ? 'text-red-400' : 'text-vs-text'}`}>{dmStats?.failedThisWeek ?? '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-xs text-vs-text-3">
+                          <svg className="w-4 h-4 text-vs-text-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          Last automated send
+                        </div>
+                        <span className="text-sm font-medium text-vs-text">{dmStats?.lastAutomatedSend ? timeAgo(dmStats.lastAutomatedSend) : '—'}</span>
+                      </div>
+                    </div>
+                  </div>
                 )}
-                {settledTestResults.results?.length > 0 && (
-                  <div className="rounded-lg border border-vs-border overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-vs-border bg-vs-elevated/60">
-                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">User</th>
-                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">Phone</th>
-                          <th className="text-left px-4 py-2 font-semibold uppercase tracking-wider text-vs-text-3">Result</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-vs-border">
-                        {settledTestResults.results.map((r, i) => (
-                          <tr key={i} className="hover:bg-vs-elevated/30">
-                            <td className="px-4 py-2 font-mono text-vs-text">{r.username}</td>
-                            <td className="px-4 py-2 font-mono text-vs-text-3">{r.phone || '—'}</td>
-                            <td className="px-4 py-2">
-                              {r.reason === 'no_phone' ? (
-                                <span className="text-vs-text-3">No phone</span>
-                              ) : r.ok ? (
-                                <span className="text-vs-success font-semibold">Sent</span>
-                              ) : (
-                                <span className="text-vs-danger">{r.reason || 'Failed'}</span>
-                              )}
-                            </td>
-                          </tr>
+
+                {/* B. Welcome Message Links */}
+                {showB && (
+                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm font-semibold text-vs-text">B. Welcome Message Links</p>
+                      {hasUnsaved && (
+                        <span className="flex items-center gap-1.5 text-xs text-amber-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                          Unsaved changes
+                        </span>
+                      )}
+                    </div>
+                    <form onSubmit={handleSaveDmConfig} className="space-y-4">
+                      <div>
+                        <label className="text-xs text-vs-text-3 block mb-1.5">WhatsApp Group Link</label>
+                        <div className="flex items-center gap-2">
+                          <input type="url" value={dmGroupLink} onChange={(e) => setDmGroupLink(e.target.value)}
+                            placeholder="https://chat.whatsapp.com/..."
+                            className={`flex-1 px-3 py-2 bg-vs-elevated border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple ${groupLinkValid ? 'border-vs-border' : 'border-red-500/50'}`} />
+                          <ValidationBadge valid={groupLinkValid} empty={!dmGroupLink} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-vs-text-3 block mb-1.5">WhatsApp Channel Link</label>
+                        <div className="flex items-center gap-2">
+                          <input type="url" value={dmChannelLink} onChange={(e) => setDmChannelLink(e.target.value)}
+                            placeholder="https://whatsapp.com/channel/..."
+                            className={`flex-1 px-3 py-2 bg-vs-elevated border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple ${channelLinkValid ? 'border-vs-border' : 'border-red-500/50'}`} />
+                          <ValidationBadge valid={channelLinkValid} empty={!dmChannelLink} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-vs-text-3 block mb-1.5">Default Country Code</label>
+                        <div className="flex items-center gap-2">
+                          <input type="text" value={dmCountryCode} onChange={(e) => setDmCountryCode(e.target.value)}
+                            placeholder="234"
+                            className={`w-32 px-3 py-2 bg-vs-elevated border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple ${ccValid ? 'border-vs-border' : 'border-red-500/50'}`} />
+                          <ValidationBadge valid={ccValid} empty={!dmCountryCode} />
+                        </div>
+                        <p className="text-xs text-vs-text-3 mt-1">e.g. 234 for Nigeria</p>
+                      </div>
+                      <div className="flex items-center gap-3 pt-1">
+                        <button type="submit" disabled={dmSavingConfig || !canSave}
+                          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                          {dmSavingConfig ? 'Saving…' : 'Save Changes'}
+                        </button>
+                        {dmConfigMsg && <p className={`text-xs ${dmConfigMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmConfigMsg}</p>}
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* C. Approved Welcome Template */}
+                {showC && (
+                  <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-vs-text">C. Approved Welcome Template</p>
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs mb-4">
+                      <div><p className="text-vs-text-3">Template name</p><p className="text-vs-text font-mono mt-0.5">welcome_to_vermosports</p></div>
+                      <div><p className="text-vs-text-3">Source</p><p className="text-vs-text-2 mt-0.5">Interakt.ai</p></div>
+                      <div>
+                        <p className="text-vs-text-3">Editable here</p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <p className="text-vs-text-2">No</p>
+                          <svg className="w-3 h-3 text-vs-text-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <p className="text-xs text-vs-text-3 mb-1.5">Template preview</p>
+                        <pre className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{dmTemplate}</pre>
+                      </div>
+                      <div>
+                        <p className="text-xs text-vs-text-3 mb-1.5">Live preview (Abraham)</p>
+                        <pre className="w-full px-3 py-2.5 bg-vs-elevated/60 border border-vs-purple/20 rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{livePreview}</pre>
+                      </div>
+                    </div>
+                    {templateVars.length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-vs-text-3">Variables used</span>
+                        {templateVars.map((v) => (
+                          <span key={v} className="px-2 py-0.5 bg-vs-elevated border border-vs-border rounded-md text-xs font-mono text-vs-purple-light">{v}</span>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
-          </div>
 
-          {/* DM log table */}
-          <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-vs-border flex items-center gap-3 flex-wrap">
-              <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mr-auto">DM Send Log</p>
-              {dmRetryAllResult && (
-                <span className={`text-xs ${dmRetryAllResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                  {dmRetryAllResult.ok
-                    ? `${dmRetryAllResult.retried} retried — ${dmRetryAllResult.succeeded} sent, ${dmRetryAllResult.failed} failed`
-                    : (dmRetryAllResult.error || 'Failed')}
-                </span>
-              )}
-              <button onClick={handleDmRetryAll} disabled={dmRetryAllSending}
-                className="text-xs text-vs-purple-light hover:text-vs-purple px-2 py-1 rounded border border-vs-purple/30 hover:bg-vs-purple/10 transition-colors disabled:opacity-40">
-                {dmRetryAllSending ? 'Retrying…' : 'Retry All Failed'}
-              </button>
-              <button onClick={loadDmLogs}
-                className="text-xs text-vs-text-3 hover:text-vs-text px-2 py-1 rounded border border-vs-border hover:bg-vs-elevated transition-colors">
-                Refresh
-              </button>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-vs-border bg-vs-elevated/40">
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">User</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Phone</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-vs-border">
-                {dmLogsLoading ? (
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 6 }).map((_, j) => (
-                      <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
-                    ))}</tr>
-                  ))
-                ) : dmLogs.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-vs-text-3 text-sm">No DMs sent yet.</td></tr>
-                ) : (
-                  dmLogs.map((row) => (
-                    <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
-                      <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.sent_at}</td>
-                      <td className="px-5 py-3 text-xs text-vs-text font-mono">{row.username || row.user_id}</td>
-                      <td className="px-5 py-3 text-xs text-vs-text-3 font-mono">{row.phone}</td>
-                      <td className="px-5 py-3">
-                        <span className={`text-xs font-semibold ${row.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                          {row.ok ? 'OK' : 'FAIL'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
-                      <td className="px-5 py-3 text-right">
-                        {!row.ok && (
-                          <div className="flex items-center justify-end gap-2">
-                            {dmRetryResults[row.id] && (
-                              <span className={`text-xs ${dmRetryResults[row.id] === 'ok' ? 'text-vs-success' : 'text-vs-danger'}`}>
-                                {dmRetryResults[row.id] === 'ok' ? '✓ Sent' : dmRetryResults[row.id]}
-                              </span>
-                            )}
-                            <button
-                              onClick={() => handleDmRetry(row.id)}
-                              disabled={dmRetryingId === row.id}
-                              className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40"
-                            >
-                              {dmRetryingId === row.id ? '…' : 'Retry'}
-                            </button>
+            {/* ── D + E row ── */}
+            {(showD || showE) && (
+              <div className={`grid grid-cols-1 gap-4 ${showD && showE ? 'lg:grid-cols-5' : ''}`}>
+
+                {/* D. Send Test Welcome Message */}
+                {showD && (
+                  <div className={`bg-vs-card border border-vs-border rounded-xl p-5 ${showD && showE ? 'lg:col-span-2' : ''}`}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <p className="text-sm font-semibold text-vs-text">D. Send Test Welcome Message</p>
+                      <svg className="w-3.5 h-3.5 text-vs-text-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+                    </div>
+                    <form onSubmit={handleDmTest} className="space-y-3">
+                      <div>
+                        <label className="text-xs text-vs-text-3 block mb-1.5">Phone number</label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-0 bg-vs-elevated border border-vs-border rounded-lg overflow-hidden flex-1">
+                            <span className="px-2.5 py-2 text-sm text-vs-text-3 border-r border-vs-border bg-vs-elevated flex-shrink-0">+{dmCountryCode || '234'}</span>
+                            <input type="tel" value={dmTestPhone} onChange={(e) => setDmTestPhone(e.target.value)}
+                              placeholder="814 638 1549"
+                              className="flex-1 px-3 py-2 bg-transparent text-sm text-vs-text placeholder-vs-text-3 focus:outline-none" />
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-vs-text-3 mb-1.5">Message preview</p>
+                        <pre className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed max-h-36 overflow-y-auto">
+                          {(dmTemplate || '').replace(/\{\{name\}\}/g, 'Test User').replace(/\{\{group_link\}\}/g, dmGroupLink || '(group link)').replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)')}
+                        </pre>
+                      </div>
+                      <button type="submit" disabled={dmTesting || !dmTestPhone.trim() || !dmEnabled}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                        {dmTesting ? 'Sending…' : 'Send Test DM'}
+                      </button>
+                      {!dmEnabled && <p className="text-xs text-vs-warning text-center">Welcome DMs are disabled.</p>}
+                    </form>
+                    {dmTestResult && (
+                      <div className={`mt-3 flex items-center gap-2 text-xs ${dmTestResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                        <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                          {dmTestResult.ok
+                            ? <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                            : <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+                          }
+                        </svg>
+                        {dmTestResult.ok ? 'Last test successful' : dmTestResult.msg}
+                        {dmTestResult.ok && dmStats?.lastTestAt && <span className="text-vs-text-3 ml-1">{timeAgo(dmStats.lastTestAt)}</span>}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </tbody>
-            </table>
+
+                {/* E. Direct Message Delivery Log */}
+                {showE && (
+                  <div className={`bg-vs-card border border-vs-border rounded-xl overflow-hidden ${showD && showE ? 'lg:col-span-3' : ''}`}>
+                    <div className="px-5 py-3 border-b border-vs-border flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-vs-text mr-auto">E. Direct Message Delivery Log</p>
+                      <div className="relative">
+                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-vs-text-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input value={dmSearch} onChange={(e) => setDmSearch(e.target.value)}
+                          placeholder="Search by user or phone…"
+                          className="pl-8 pr-3 py-1.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-1 focus:ring-vs-purple w-48" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {['all', 'success', 'failed'].map((f) => (
+                          <button key={f} onClick={() => setDmStatusFilter(f)}
+                            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${dmStatusFilter === f ? 'bg-vs-elevated text-vs-text border border-vs-border' : 'text-vs-text-3 hover:text-vs-text'}`}>
+                            {f === 'all' ? 'All' : f === 'success' ? 'Success' : 'Failed'}
+                          </button>
+                        ))}
+                      </div>
+                      {dmRetryAllResult && (
+                        <span className={`text-xs ${dmRetryAllResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                          {dmRetryAllResult.ok ? `${dmRetryAllResult.retried} retried — ${dmRetryAllResult.succeeded} sent, ${dmRetryAllResult.failed} failed` : (dmRetryAllResult.error || 'Failed')}
+                        </span>
+                      )}
+                      <button onClick={handleDmRetryAll} disabled={dmRetryAllSending}
+                        className="flex items-center gap-1.5 text-xs text-vs-purple-light hover:text-vs-purple px-2.5 py-1.5 rounded-md border border-vs-purple/30 hover:bg-vs-purple/10 transition-colors disabled:opacity-40">
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                        {dmRetryAllSending ? 'Retrying…' : 'Retry Failed'}
+                      </button>
+                      <button onClick={loadDmLogs}
+                        className="flex items-center gap-1.5 text-xs text-vs-text-3 hover:text-vs-text px-2.5 py-1.5 rounded-md border border-vs-border hover:bg-vs-elevated transition-colors">
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-vs-border bg-vs-elevated/40">
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">User</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Phone</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Template</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
+                            <th className="px-4 py-2.5" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-vs-border">
+                          {dmLogsLoading ? (
+                            Array.from({ length: 4 }).map((_, i) => (
+                              <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
+                                <td key={j} className="px-4 py-2.5"><div className="h-3.5 bg-vs-elevated rounded animate-pulse" /></td>
+                              ))}</tr>
+                            ))
+                          ) : filteredLogs.length === 0 ? (
+                            <tr><td colSpan={7} className="text-center py-10 text-vs-text-3 text-sm">No DMs found.</td></tr>
+                          ) : (
+                            filteredLogs.map((row) => (
+                              <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
+                                <td className="px-4 py-2.5 text-xs text-vs-text-3 whitespace-nowrap">{row.sent_at ? new Date(row.sent_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                <td className="px-4 py-2.5 text-xs text-vs-text font-medium">{row.username || row.user_id || '—'}</td>
+                                <td className="px-4 py-2.5 text-xs text-vs-text-3 font-mono">{row.phone || '—'}</td>
+                                <td className="px-4 py-2.5 text-xs text-vs-text-3 font-mono">welcome_to_vermosports</td>
+                                <td className="px-4 py-2.5"><DeliveryBadge ok={!!row.ok} /></td>
+                                <td className="px-4 py-2.5 text-xs text-red-400 max-w-[140px] truncate">{row.error || '—'}</td>
+                                <td className="px-4 py-2.5 text-right">
+                                  {!row.ok && (
+                                    <div className="flex items-center justify-end gap-2">
+                                      {dmRetryResults[row.id] && (
+                                        <span className={`text-xs ${dmRetryResults[row.id] === 'ok' ? 'text-vs-success' : 'text-vs-danger'}`}>
+                                          {dmRetryResults[row.id] === 'ok' ? '✓' : '✗'}
+                                        </span>
+                                      )}
+                                      <button onClick={() => handleDmRetry(row.id)} disabled={dmRetryingId === row.id}
+                                        className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded-md px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40">
+                                        {dmRetryingId === row.id ? '…' : 'Retry'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredLogs.length > 0 && (
+                      <div className="px-4 py-2.5 border-t border-vs-border text-xs text-vs-text-3">
+                        Showing 1 to {filteredLogs.length} of {filteredLogs.length} results
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── F. Help & Information ── */}
+            {showA && (
+              <div className="bg-vs-card border border-vs-border rounded-xl p-5 flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-vs-elevated border border-vs-border flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-vs-text-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><path d="M12 12v4"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-vs-text mb-1">F. Help &amp; Information</p>
+                  <p className="text-xs text-vs-text-3 leading-relaxed">
+                    The welcome template content is managed in Interakt.ai and must be approved before use. You cannot edit the template text here. Use the links above to connect your WhatsApp Group and Channel.<br />
+                    For advanced template management and approvals, log in to Interakt.ai or WhatsApp Business Manager.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <a href="https://app.interakt.ai" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 hover:bg-vs-hover transition-colors">
+                    Open Interakt.ai
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                  <a href="https://business.facebook.com/wa/manage" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 hover:bg-vs-hover transition-colors">
+                    WhatsApp Business Manager
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                </div>
+              </div>
+            )}
+
           </div>
-        </>
-      )}
+        );
+      })()}
 
       {/* ── Messages tab ── */}
       {tab === 'Messages' && (
