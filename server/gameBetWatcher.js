@@ -559,6 +559,19 @@ function hasUserDmSent(userId, trigger) {
   }
 }
 
+const MAX_DM_AUTO_RETRIES = 3;
+
+function countUserDmFailures(userId, trigger) {
+  try {
+    const row = getSQLite()
+      .prepare('SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE user_id = ? AND trigger = ? AND ok = 0')
+      .get(String(userId), trigger);
+    return row?.c || 0;
+  } catch {
+    return 0;
+  }
+}
+
 function getWelcomeConfig() {
   try {
     const get = (k) => getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
@@ -590,6 +603,7 @@ async function pollNewUsers(db) {
     if (sent >= MAX_PER_POLL) break;
     const userId = user._id.toString();
     if (hasUserDmSent(userId, 'user_registered')) continue;
+    if (countUserDmFailures(userId, 'user_registered') >= MAX_DM_AUTO_RETRIES) continue;
 
     const username = user.username || user.name || user.displayName || 'there';
 
