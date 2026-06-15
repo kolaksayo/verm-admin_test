@@ -628,13 +628,13 @@ async function pollNewUsers(db) {
       ...(excludeOIds.length ? { _id: { $nin: excludeOIds } } : {}),
     })
     .sort({ createdAt: -1 })
-    .limit(20)
+    .limit(10)
     .toArray();
 
   let sent = 0;
 
   for (const user of candidates) {
-    if (sent >= 20) break;
+    if (sent >= 10) break;
     const userId = user._id.toString();
     const username = user.username || user.name || user.displayName || 'there';
 
