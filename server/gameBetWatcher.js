@@ -474,6 +474,18 @@ function markNotified(betId, key) {
   }
 }
 
+// Track per-user DM failures within a bet using sub-keys (no schema change).
+// Returns true when the failure count reaches MAX_DM_AUTO_RETRIES (give up).
+function recordDmFailureAndCheckGiveUp(betId, key) {
+  let count = 0;
+  for (let n = 1; n <= MAX_DM_AUTO_RETRIES; n++) {
+    if (hasNotified(betId, `${key}_f${n}`)) count = n; else break;
+  }
+  const next = count + 1;
+  markNotified(betId, `${key}_f${next}`);
+  return next >= MAX_DM_AUTO_RETRIES;
+}
+
 // ── lastChecked persistence ────────────────────────────────────────────────────
 
 function readLastChecked() {
@@ -978,21 +990,36 @@ async function pollSingleCountdowns(db) {
           // Bet has been joined — DM each participant via WhatsApp only (no Telegram DM capability)
           const userIds = getParticipantUserIds(bet);
           let anyOk = false;
+          let allGaveUp = userIds.length > 0;
           for (const uid of userIds) {
+            const dmKey = `cdm_${cp.key}_${uid.slice(-8)}`;
             try {
               const user = await db.collection('users').findOne(
                 { _id: new ObjectId(uid) },
                 { projection: { mobile: 1 } }
               );
               const phone = user?.mobile;
-              if (!phone) continue;
+              if (!phone) { markNotified(betId, dmKey); continue; }
               const dmResult = await sendDirectMessage(phone, message, cp.trigger);
-              if (dmResult?.ok) anyOk = true;
+              if (dmResult?.ok) {
+                anyOk = true;
+                markNotified(betId, dmKey);
+              } else {
+                const giveUp = recordDmFailureAndCheckGiveUp(betId, dmKey);
+                if (giveUp) {
+                  markNotified(betId, dmKey);
+                  console.warn(`[GameBetWatcher] Giving up countdown DM → ${uid} after ${MAX_DM_AUTO_RETRIES} failures`);
+                } else {
+                  allGaveUp = false;
+                  console.error(`[GameBetWatcher] DM failed for user ${uid}:`, dmResult.reason);
+                }
+              }
             } catch (e) {
+              allGaveUp = false;
               console.error(`[GameBetWatcher] DM failed for user ${uid}:`, e.message);
             }
           }
-          if (anyOk) {
+          if (anyOk || allGaveUp) {
             markNotified(betId, cp.key);
             console.log(`[GameBetWatcher] Single ${cp.key} countdown (joined, DMs sent): ${vars.code}`);
           }
@@ -1120,8 +1147,14 @@ async function pollSettledBets(db) {
         markNotified(betId, perKey);
         console.log(`[GameBetWatcher] Settled DM → ${recipient} (${betCode})`);
       } else {
-        allDone = false;
-        console.error(`[GameBetWatcher] Settled DM failed → ${recipient}:`, result.reason);
+        const giveUp = recordDmFailureAndCheckGiveUp(betId, perKey);
+        if (giveUp) {
+          markNotified(betId, perKey); // stop retrying
+          console.warn(`[GameBetWatcher] Giving up settled DM → ${recipient} after ${MAX_DM_AUTO_RETRIES} failures`);
+        } else {
+          allDone = false;
+          console.error(`[GameBetWatcher] Settled DM failed → ${recipient}:`, result.reason);
+        }
       }
     }
 
