@@ -602,24 +602,40 @@ function getWelcomeConfig() {
 async function pollNewUsers(db) {
   if (!isWADmEnabled()) return;
 
-  // Fetch all users with a mobile number, oldest first so backfill processes
-  // historical users before newly registered ones. Limit to 50 per query;
-  // hasUserDmSent dedup skips already-sent rows quickly.
+  const sqlite = getSQLite();
+
+  // Build exclusion list from SQLite so MongoDB only returns users who still need a DM
+  const sentIds = sqlite
+    .prepare("SELECT DISTINCT user_id FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 1")
+    .all()
+    .map((r) => r.user_id);
+
+  const maxedIds = sqlite
+    .prepare(`SELECT user_id FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 0 GROUP BY user_id HAVING COUNT(*) >= ${MAX_DM_AUTO_RETRIES}`)
+    .all()
+    .map((r) => r.user_id);
+
+  const excludeStrings = [...new Set([...sentIds, ...maxedIds])];
+  const excludeOIds = excludeStrings
+    .filter((id) => id && id !== '__test__' && /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => { try { return new ObjectId(id); } catch { return null; } })
+    .filter(Boolean);
+
+  // Newest first so fresh registrations are processed immediately
   const candidates = await db.collection('users')
-    .find({ mobile: { $exists: true, $nin: ['', null] } })
-    .sort({ createdAt: 1 })
-    .limit(50)
+    .find({
+      mobile: { $exists: true, $nin: ['', null] },
+      ...(excludeOIds.length ? { _id: { $nin: excludeOIds } } : {}),
+    })
+    .sort({ createdAt: -1 })
+    .limit(20)
     .toArray();
 
   let sent = 0;
-  const MAX_PER_POLL = 20; // avoid rate-limiting
 
   for (const user of candidates) {
-    if (sent >= MAX_PER_POLL) break;
+    if (sent >= 20) break;
     const userId = user._id.toString();
-    if (hasUserDmSent(userId, 'user_registered')) continue;
-    if (countUserDmFailures(userId, 'user_registered') >= MAX_DM_AUTO_RETRIES) continue;
-
     const username = user.username || user.name || user.displayName || 'there';
 
     const result = await sendWelcomeTemplate(userId, user.mobile, username);
