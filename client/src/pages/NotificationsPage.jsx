@@ -2074,7 +2074,7 @@ export default function NotificationsPage() {
                         </span>
                       )}
                     </div>
-                    <form onSubmit={handleSaveDmConfig} className="space-y-4">
+                    <form onSubmit={handleSaveDmConfig} noValidate className="space-y-4">
                       <div>
                         <label className="text-xs text-vs-text-3 block mb-1.5">WhatsApp Group Link</label>
                         <div className="flex items-center gap-2">
