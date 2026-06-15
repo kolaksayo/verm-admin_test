@@ -2110,7 +2110,7 @@ export default function NotificationsPage() {
                             <button type="button" onClick={recheckDmHealth} className="text-xs text-vs-text-3 hover:text-vs-text underline">Check</button>
                           </div>
                         </div>
-                        <form onSubmit={handleSaveDmEvolution} className="space-y-3">
+                        <div className="space-y-3">
                           <div>
                             <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
                             <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
@@ -2142,14 +2142,14 @@ export default function NotificationsPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
-                            <button type="submit" disabled={dmEvolutionSaving}
+                            <button type="button" onClick={handleSaveDmEvolution} disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
                               {dmEvolutionSaving ? 'Saving…' : 'Save Connection'}
                             </button>
                             {dmEvolutionSaveMsg && <p className={`text-xs ${dmEvolutionSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmEvolutionSaveMsg}</p>}
                           </div>
                           <p className="text-xs text-vs-text-3">Separate from the group/channel broadcast instance.</p>
-                        </form>
+                        </div>
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <p className="text-xs font-semibold text-vs-text-2 mb-3">WhatsApp Template (Welcome Message)</p>
