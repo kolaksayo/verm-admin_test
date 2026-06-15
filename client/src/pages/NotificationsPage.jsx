@@ -900,10 +900,11 @@ export default function NotificationsPage() {
   const [waStatus, setWaStatus]                 = useState(null);
   const [waEnabled, setWaEnabled]               = useState(true);
   const [togglingWa, setTogglingWa]             = useState(false);
-  const [waEvolutionUrl, setWaEvolutionUrl]     = useState('');
-  const [waEvolutionApiKey, setWaEvolutionApiKey] = useState('');
+  const [waEvolutionUrl, setWaEvolutionUrl]         = useState('');
+  const [waEvolutionApiKey, setWaEvolutionApiKey]   = useState('');
   const [waEvolutionInstance, setWaEvolutionInstance] = useState('');
-  const [waGroupId, setWaGroupId]               = useState('');
+  const [waEvolutionMethod, setWaEvolutionMethod]   = useState('baileys');
+  const [waGroupId, setWaGroupId]                   = useState('');
   const [waChannelId, setWaChannelId]           = useState('');
   const [waSaving, setWaSaving]                 = useState(false);
   const [waSaveMsg, setWaSaveMsg]               = useState('');
@@ -965,6 +966,7 @@ export default function NotificationsPage() {
   const [dmEvolutionInstanceSaved, setDmEvolutionInstanceSaved] = useState('');
   const [dmEvolutionApiKeyPreview, setDmEvolutionApiKeyPreview] = useState('');
   const [dmEvolutionHealth, setDmEvolutionHealth]           = useState(null);
+  const [dmEvolutionMethod, setDmEvolutionMethod]           = useState('baileys');
   const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
   const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
@@ -1040,6 +1042,7 @@ export default function NotificationsPage() {
       setDmEvolutionUrl(r.data.dmEvolutionUrl || '');
       setDmEvolutionInstance(r.data.dmEvolutionInstance || '');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
+      setDmEvolutionMethod(r.data.dmEvolutionMethod || 'baileys');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
@@ -1094,10 +1097,11 @@ export default function NotificationsPage() {
       if (r.data.enabled != null) setWaEnabled(!!r.data.enabled);
     }).catch(() => {});
     api.get('/whatsapp/config').then((r) => {
-      if (r.data.groupId)         setWaGroupId(r.data.groupId);
-      if (r.data.channelId)       setWaChannelId(r.data.channelId);
-      if (r.data.evolutionUrl)    setWaEvolutionUrl(r.data.evolutionUrl);
+      if (r.data.groupId)           setWaGroupId(r.data.groupId);
+      if (r.data.channelId)         setWaChannelId(r.data.channelId);
+      if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
       if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
+      if (r.data.evolutionMethod)   setWaEvolutionMethod(r.data.evolutionMethod);
     }).catch(() => {});
     recheckHealth();
     loadChannelLogs();
@@ -1193,6 +1197,7 @@ export default function NotificationsPage() {
         evolutionInstance: waEvolutionInstance || undefined,
         groupId:           waGroupId           || undefined,
         channelId:         waChannelId         || undefined,
+        evolutionMethod:   waEvolutionMethod,
       });
       setWaSaveMsg('Saved!');
       setWaEvolutionApiKey('');
@@ -1308,6 +1313,7 @@ export default function NotificationsPage() {
         dmEvolutionUrl:      dmEvolutionUrl      || undefined,
         dmEvolutionApiKey:   dmEvolutionApiKey   || undefined,
         dmEvolutionInstance: dmEvolutionInstance || undefined,
+        dmEvolutionMethod,
       });
       setDmEvolutionSaveMsg('Saved!');
       setDmEvolutionApiKey('');
@@ -1737,6 +1743,18 @@ export default function NotificationsPage() {
                         <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
                           onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
                           saving={waSaving} saveMsg={waSaveMsg} />
+                        <div>
+                          <p className="text-xs text-vs-text-3 mb-1.5">Send Method</p>
+                          <div className="flex gap-2">
+                            {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                              <button key={val} type="button"
+                                onClick={async () => { setWaEvolutionMethod(val); await saveWaField({ evolutionMethod: val }); }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </>
                     )}
 
@@ -2106,6 +2124,17 @@ export default function NotificationsPage() {
                               placeholder="e.g. vermo-dm"
                               className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                           </div>
+                          <div>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Send Method</label>
+                            <div className="flex gap-2">
+                              {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                                <button key={val} type="button" onClick={() => setDmEvolutionMethod(val)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           <div className="flex items-center gap-3">
                             <button type="submit" disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
@@ -2131,7 +2160,7 @@ export default function NotificationsPage() {
                               placeholder="e.g. en_US"
                               className="w-48 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                           </div>
-                          <p className="text-xs text-vs-text-3">Template must be approved in WhatsApp Business Manager. Leave blank to fall back to plain text.</p>
+                          <p className="text-xs text-vs-text-3">Only used when Send Method is set to <span className="font-semibold">WhatsApp Business Cloud</span> above. Must be approved in WhatsApp Business Manager.</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 pt-1">

@@ -30,7 +30,7 @@ router.get('/status', auth, (req, res) => {
 
 // GET /api/whatsapp/config
 router.get('/config', auth, (req, res) => {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId } = getConfig();
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, method } = getConfig();
   const sqlite = getSQLite();
   res.json({
     evolutionUrl:      evolutionUrl      || '',
@@ -38,13 +38,14 @@ router.get('/config', auth, (req, res) => {
     evolutionInstance: evolutionInstance || '',
     groupId:           groupId           || '',
     channelId:         channelId         || '',
+    evolutionMethod:   method            || 'baileys',
     enabled:           getWhatsAppEnabled(sqlite),
   });
 });
 
 // POST /api/whatsapp/config
 router.post('/config', auth, (req, res) => {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, enabled } = req.body;
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, enabled, evolutionMethod } = req.body;
   const hasUrl      = evolutionUrl      != null && String(evolutionUrl).trim()      !== '';
   const hasApiKey   = evolutionApiKey   != null && String(evolutionApiKey).trim()   !== '';
   const hasInstance = evolutionInstance != null && String(evolutionInstance).trim() !== '';
@@ -52,11 +53,15 @@ router.post('/config', auth, (req, res) => {
   if (hasApiKey && !/^[\x00-\x7F]+$/.test(String(evolutionApiKey))) {
     return res.status(400).json({ ok: false, error: 'API key contains invalid characters — enter the full key, not the masked preview.' });
   }
+  if (evolutionMethod != null && !['baileys', 'cloud_api'].includes(evolutionMethod)) {
+    return res.status(400).json({ ok: false, error: 'evolutionMethod must be baileys or cloud_api' });
+  }
   const hasGroupId  = groupId           != null && String(groupId).trim()           !== '';
   const hasChannel  = channelId         != null && String(channelId).trim()         !== '';
   const hasEnabled  = enabled           != null;
+  const hasMethod   = evolutionMethod   != null;
 
-  if (!hasUrl && !hasApiKey && !hasInstance && !hasGroupId && !hasChannel && !hasEnabled) {
+  if (!hasUrl && !hasApiKey && !hasInstance && !hasGroupId && !hasChannel && !hasEnabled && !hasMethod) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -73,6 +78,7 @@ router.post('/config', auth, (req, res) => {
     if (hasGroupId)  upsert.run('whatsapp_group_id',  String(groupId).trim());
     if (hasChannel)  upsert.run('whatsapp_channel_id',String(channelId).trim());
     if (hasEnabled)  upsert.run('whatsapp_enabled',   enabled ? '1' : '0');
+    if (hasMethod)   upsert.run('evolution_method',   evolutionMethod);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

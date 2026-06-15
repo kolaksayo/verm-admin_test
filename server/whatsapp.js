@@ -12,6 +12,7 @@ function getConfig() {
       evolutionInstance: get('evolution_instance') || process.env.EVOLUTION_INSTANCE     || '',
       groupId:           get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         get('whatsapp_channel_id')|| process.env.WHATSAPP_CHANNEL_ID    || '',
+      method:            get('evolution_method')   || 'baileys',
     };
   } catch {
     return {
@@ -20,6 +21,7 @@ function getConfig() {
       evolutionInstance: process.env.EVOLUTION_INSTANCE     || '',
       groupId:           process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         process.env.WHATSAPP_CHANNEL_ID    || '',
+      method:            'baileys',
     };
   }
 }
@@ -35,6 +37,7 @@ function getDmConfig() {
       evolutionUrl:      get('dm_evolution_api_url')  || shared.evolutionUrl,
       evolutionApiKey:   get('dm_evolution_api_key')  || shared.evolutionApiKey,
       evolutionInstance: get('dm_evolution_instance') || shared.evolutionInstance,
+      method:            get('dm_evolution_method')   || 'baileys',
     };
   } catch {
     const shared = getConfig();
@@ -42,6 +45,7 @@ function getDmConfig() {
       evolutionUrl:      shared.evolutionUrl,
       evolutionApiKey:   shared.evolutionApiKey,
       evolutionInstance: shared.evolutionInstance,
+      method:            'baileys',
     };
   }
 }
@@ -249,23 +253,27 @@ async function sendWelcomeTemplate(userId, phone, username) {
     return { ok: false, reason: 'not_configured' };
   }
 
-  let templateName = '';
-  let templateLanguage = '';
-  try {
-    const sqlite = getSQLite();
-    const get = (k) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
-    templateName = get('welcome_template_name');
-    templateLanguage = get('welcome_template_language');
-  } catch { /* fall through to text fallback */ }
+  const WELCOME_TEXT = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
 
   try {
     let ok, json;
-    if (templateName && templateLanguage) {
+    if (cfg.method === 'cloud_api') {
+      let templateName = '', templateLanguage = '';
+      try {
+        const sqlite = getSQLite();
+        const get = (k) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+        templateName = get('welcome_template_name');
+        templateLanguage = get('welcome_template_language');
+      } catch { /* handled below */ }
+
+      if (!templateName || !templateLanguage) {
+        logUserDm(userId, phone, username, 'user_registered', false, 'template_not_configured');
+        return { ok: false, reason: 'template_not_configured' };
+      }
       ({ ok, json } = await evolutionPostTemplate(digits, templateName, templateLanguage, [username || 'there'], cfg));
     } else {
-      // Fallback: send as plain text if template not configured
-      const text = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
-      ({ ok, json } = await evolutionPost(digits, text, cfg));
+      // Baileys (default): plain text via sendText
+      ({ ok, json } = await evolutionPost(digits, WELCOME_TEXT, cfg));
     }
     const errMsg = ok ? null : (json?.message || json?.error?.message || 'api_error');
     logUserDm(userId, phone, username, 'user_registered', ok, errMsg);

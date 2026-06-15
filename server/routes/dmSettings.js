@@ -41,6 +41,7 @@ router.get('/config', auth, (req, res) => {
       dmEvolutionInstance:  get('dm_evolution_instance')    || '',
       dmEvolutionApiKeyPreview: rawDmKey ? rawDmKey.slice(0, 8) + '…' + rawDmKey.slice(-4) : '',
       dmEvolutionApiKeySet: !!rawDmKey,
+      dmEvolutionMethod:    get('dm_evolution_method')      || 'baileys',
       // resolved values (with shared-config fallback) — for status display
       dmEvolutionUrlResolved:      dmCfg.evolutionUrl,
       dmEvolutionInstanceResolved: dmCfg.evolutionInstance,
@@ -60,7 +61,11 @@ router.post('/config', auth, (req, res) => {
     `).run(k, String(v));
 
     const { enabled, groupLink, channelLink, countryCode, welcomeTemplateName, welcomeTemplateLanguage,
-            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance } = req.body;
+            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod } = req.body;
+
+    if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
+      return res.status(400).json({ ok: false, error: 'dmEvolutionMethod must be baileys or cloud_api' });
+    }
 
     if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '') {
       if (!/^[\x00-\x7F]+$/.test(String(dmEvolutionApiKey))) {
@@ -78,6 +83,7 @@ router.post('/config', auth, (req, res) => {
     if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '')
                                        set('dm_evolution_api_key',      String(dmEvolutionApiKey).trim());
     if (dmEvolutionInstance != null)   set('dm_evolution_instance',     String(dmEvolutionInstance).trim());
+    if (dmEvolutionMethod != null)     set('dm_evolution_method',       dmEvolutionMethod);
 
     res.json({ ok: true });
   } catch (err) {
