@@ -930,6 +930,7 @@ export default function NotificationsPage() {
   const [togglingDm, setTogglingDm]           = useState(false);
   const [dmGroupLink, setDmGroupLink]         = useState('');
   const [dmChannelLink, setDmChannelLink]     = useState('');
+  const [dmTelegramLink, setDmTelegramLink]   = useState('');
   const [dmCountryCode, setDmCountryCode]           = useState('');
   const [dmTemplateName, setDmTemplateName]         = useState('');
   const [dmTemplateLanguage, setDmTemplateLanguage] = useState('');
@@ -956,6 +957,7 @@ export default function NotificationsPage() {
   const [dmStatsLoading, setDmStatsLoading]   = useState(false);
   const [dmGroupLinkSaved, setDmGroupLinkSaved]             = useState('');
   const [dmChannelLinkSaved, setDmChannelLinkSaved]         = useState('');
+  const [dmTelegramLinkSaved, setDmTelegramLinkSaved]       = useState('');
   const [dmCountryCodeSaved, setDmCountryCodeSaved]         = useState('');
   const [dmTemplateNameSaved, setDmTemplateNameSaved]       = useState('');
   const [dmTemplateLanguageSaved, setDmTemplateLanguageSaved] = useState('');
@@ -1035,6 +1037,7 @@ export default function NotificationsPage() {
       setDmEnabled(!!r.data.enabled);
       setDmGroupLink(r.data.groupLink || '');
       setDmChannelLink(r.data.channelLink || '');
+      setDmTelegramLink(r.data.telegramLink || '');
       setDmCountryCode(r.data.countryCode || '');
       setDmTemplateName(r.data.welcomeTemplateName || '');
       setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
@@ -1052,6 +1055,7 @@ export default function NotificationsPage() {
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
+      setDmTelegramLinkSaved(r.data.telegramLink || '');
       setDmCountryCodeSaved(r.data.countryCode || '');
       setDmTemplateNameSaved(r.data.welcomeTemplateName || '');
       setDmTemplateLanguageSaved(r.data.welcomeTemplateLanguage || '');
@@ -1297,10 +1301,11 @@ export default function NotificationsPage() {
     e.preventDefault();
     setDmSavingConfig(true); setDmConfigMsg('');
     try {
-      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, countryCode: dmCountryCode, welcomeTemplateName: dmTemplateName, welcomeTemplateLanguage: dmTemplateLanguage });
+      await api.post('/notifications/dm/config', { groupLink: dmGroupLink, channelLink: dmChannelLink, telegramLink: dmTelegramLink, countryCode: dmCountryCode, welcomeTemplateName: dmTemplateName, welcomeTemplateLanguage: dmTemplateLanguage });
       setDmConfigMsg('Saved!');
       setDmGroupLinkSaved(dmGroupLink);
       setDmChannelLinkSaved(dmChannelLink);
+      setDmTelegramLinkSaved(dmTelegramLink);
       setDmCountryCodeSaved(dmCountryCode);
       setDmTemplateNameSaved(dmTemplateName);
       setDmTemplateLanguageSaved(dmTemplateLanguage);
@@ -1894,14 +1899,15 @@ export default function NotificationsPage() {
         const channelLinkValid = isValidChannelLink(dmChannelLink);
         const ccValid          = isValidCountryCode(dmCountryCode);
 
-        const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmCountryCode !== dmCountryCodeSaved || dmTemplateName !== dmTemplateNameSaved || dmTemplateLanguage !== dmTemplateLanguageSaved;
+        const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmTelegramLink !== dmTelegramLinkSaved || dmCountryCode !== dmCountryCodeSaved || dmTemplateName !== dmTemplateNameSaved || dmTemplateLanguage !== dmTemplateLanguageSaved;
         const canSave     = groupLinkValid && channelLinkValid && ccValid;
 
-        const templateVars = ['{{name}}', '{{group_link}}', '{{channel_link}}'].filter((v) => (dmTemplate || '').includes(v));
+        const templateVars = ['{{name}}', '{{group_link}}', '{{channel_link}}', '{{telegram_link}}'].filter((v) => (dmTemplate || '').includes(v));
         const livePreview  = (dmTemplate || '')
           .replace(/\{\{name\}\}/g, 'Abraham')
           .replace(/\{\{group_link\}\}/g, dmGroupLink || '(group link)')
-          .replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)');
+          .replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)')
+          .replace(/\{\{telegram_link\}\}/g, dmTelegramLink || '(telegram link)');
 
         const filteredLogs = dmLogs.filter((row) => {
           if (dmStatusFilter === 'success' && !row.ok) return false;
@@ -2088,6 +2094,12 @@ export default function NotificationsPage() {
                         </div>
                       </div>
                       <div>
+                        <label className="text-xs text-vs-text-3 block mb-1.5">Telegram Group Link</label>
+                        <input type="url" value={dmTelegramLink} onChange={(e) => setDmTelegramLink(e.target.value)}
+                          placeholder="https://t.me/..."
+                          className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                      </div>
+                      <div>
                         <label className="text-xs text-vs-text-3 block mb-1.5">Default Country Code</label>
                         <div className="flex items-center gap-2">
                           <input type="text" value={dmCountryCode} onChange={(e) => setDmCountryCode(e.target.value)}
@@ -2196,7 +2208,7 @@ export default function NotificationsPage() {
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs text-vs-text-3">Insert variable:</span>
-                          {['{{name}}', '{{group_link}}', '{{channel_link}}'].map((v) => (
+                          {['{{name}}', '{{group_link}}', '{{channel_link}}', '{{telegram_link}}'].map((v) => (
                             <button key={v} type="button" onClick={() => insertDmMacro(v)}
                               className="px-2 py-0.5 bg-vs-elevated border border-vs-border rounded-md text-xs font-mono text-vs-purple-light hover:border-vs-purple/50 transition-colors">
                               {v}
@@ -2276,7 +2288,7 @@ export default function NotificationsPage() {
                       <div>
                         <p className="text-xs text-vs-text-3 mb-1.5">Message preview</p>
                         <pre className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed max-h-36 overflow-y-auto">
-                          {(dmTemplate || '').replace(/\{\{name\}\}/g, 'Test User').replace(/\{\{group_link\}\}/g, dmGroupLink || '(group link)').replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)')}
+                          {(dmTemplate || '').replace(/\{\{name\}\}/g, 'Test User').replace(/\{\{group_link\}\}/g, dmGroupLink || '(group link)').replace(/\{\{channel_link\}\}/g, dmChannelLink || '(channel link)').replace(/\{\{telegram_link\}\}/g, dmTelegramLink || '(telegram link)')}
                         </pre>
                       </div>
                       <button type="submit" disabled={dmTesting || !dmTestPhone.trim() || !dmEnabled}

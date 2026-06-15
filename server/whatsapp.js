@@ -253,15 +253,33 @@ async function sendWelcomeTemplate(userId, phone, username) {
     return { ok: false, reason: 'not_configured' };
   }
 
-  const DEFAULT_WELCOME = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
-
+  let groupLink = '', channelLink = '', telegramLink = '';
   let customWelcomeText = '';
   try {
     const sq = getSQLite();
-    const raw = sq.prepare("SELECT value FROM admin_settings WHERE key = 'dm_welcome_text'").get()?.value || '';
-    customWelcomeText = raw.replace(/\{\{name\}\}/g, username || 'there')
-                           .replace(/\{\{1\}\}/g, username || 'there');
+    const sqGet = (k) => sq.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
+    groupLink    = sqGet('whatsapp_group_link');
+    channelLink  = sqGet('whatsapp_channel_link');
+    telegramLink = sqGet('dm_telegram_link');
+    const raw = sqGet('dm_welcome_text');
+    if (raw) {
+      customWelcomeText = raw
+        .replace(/\{\{name\}\}/g, username || 'there')
+        .replace(/\{\{1\}\}/g, username || 'there')
+        .replace(/\{\{group_link\}\}/g, groupLink)
+        .replace(/\{\{channel_link\}\}/g, channelLink)
+        .replace(/\{\{telegram_link\}\}/g, telegramLink);
+    }
   } catch { /* use default */ }
+
+  const linkLines = [groupLink, channelLink, telegramLink].filter(Boolean).join('\n\n');
+  const DEFAULT_WELCOME = [
+    `Welcome to VermoSports, ${username || 'there'}! ⚽`,
+    `You're officially part of the VermoSports community.`,
+    `Stay updated with football competitions, rankings, match updates and important VermoSports announcements.`,
+    `18+ only. Play responsibly.`,
+    ...(linkLines ? [linkLines] : []),
+  ].join('\n\n');
 
   const WELCOME_TEXT = customWelcomeText || DEFAULT_WELCOME;
 
