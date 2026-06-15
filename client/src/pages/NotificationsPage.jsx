@@ -2779,52 +2779,73 @@ export default function NotificationsPage() {
           </div>
 
           {/* Watcher Health */}
-          <div className="bg-vs-card border border-vs-border rounded-xl p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Watcher Health</p>
-            {watcherStatus ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {[
-                    { label: 'New-Bet Poll',     value: watcherStatus.lastNewBetPoll,        count: watcherStatus.newBetPollCount,   interval: '30s' },
-                    { label: 'Progress Poll',    value: watcherStatus.lastProgressPoll,      count: watcherStatus.progressPollCount, interval: '2m' },
-                    { label: 'User DM Poll',     value: watcherStatus.lastUserDmPoll,        count: watcherStatus.userDmPollCount,   interval: '5m' },
-                    { label: 'Weekly Rankings',  value: watcherStatus.rankingsWeeklySentAt,  count: null,                            interval: 'Mon' },
-                    { label: 'Monthly Rankings', value: watcherStatus.rankingsMonthlySentAt, count: null,                            interval: '1st' },
-                  ].map(({ label, value, count, interval }) => {
-                    const ago  = timeAgo(value);
-                    const ageS = value ? Math.floor((Date.now() - new Date(value).getTime()) / 1000) : null;
-                    const dot  = !value ? 'bg-vs-text-3' : ageS < 120 ? 'bg-vs-success' : ageS < 600 ? 'bg-vs-warning' : 'bg-vs-danger';
-                    return (
-                      <div key={label} className="bg-vs-elevated rounded-lg px-3 py-2.5">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                          <span className="text-xs text-vs-text-3">{label}</span>
-                          <span className="ml-auto text-[10px] text-vs-text-3 opacity-60">{interval}</span>
-                        </div>
-                        <p className="text-xs font-mono text-vs-text">{ago || 'Never'}</p>
-                        {count != null && <p className="text-[10px] text-vs-text-3 mt-0.5">{count} polls</p>}
+          {(() => {
+            const togglePoll = async (field, currentVal) => {
+              const next = !currentVal;
+              setWatcherStatus((prev) => prev ? { ...prev, [field]: next } : prev);
+              try {
+                await api.post('/telegram/watcher-settings', { [field]: next });
+              } catch {
+                setWatcherStatus((prev) => prev ? { ...prev, [field]: currentVal } : prev);
+              }
+            };
+            const polls = watcherStatus ? [
+              { label: 'New-Bet Poll',     value: watcherStatus.lastNewBetPoll,        count: watcherStatus.newBetPollCount,   interval: '30s', enabledKey: 'pollNewBetEnabled',   enabled: watcherStatus.pollNewBetEnabled  ?? true },
+              { label: 'Progress Poll',    value: watcherStatus.lastProgressPoll,      count: watcherStatus.progressPollCount, interval: '2m',  enabledKey: 'pollProgressEnabled', enabled: watcherStatus.pollProgressEnabled ?? true },
+              { label: 'User DM Poll',     value: watcherStatus.lastUserDmPoll,        count: watcherStatus.userDmPollCount,   interval: '5m',  enabledKey: 'pollUserDmEnabled',   enabled: watcherStatus.pollUserDmEnabled  ?? true },
+              { label: 'Weekly Rankings',  value: watcherStatus.rankingsWeeklySentAt,  count: null,                            interval: 'Mon', enabledKey: null,                  enabled: true },
+              { label: 'Monthly Rankings', value: watcherStatus.rankingsMonthlySentAt, count: null,                            interval: '1st', enabledKey: null,                  enabled: true },
+            ] : [];
+            return (
+              <div className="bg-vs-card border border-vs-border rounded-xl p-5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-4">Watcher Health</p>
+                {watcherStatus ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {polls.map(({ label, value, count, interval, enabledKey, enabled }) => {
+                        const ago  = timeAgo(value);
+                        const ageS = value ? Math.floor((Date.now() - new Date(value).getTime()) / 1000) : null;
+                        const dot  = !enabled ? 'bg-vs-text-3' : !value ? 'bg-vs-text-3' : ageS < 120 ? 'bg-vs-success' : ageS < 600 ? 'bg-vs-warning' : 'bg-vs-danger';
+                        return (
+                          <div key={label} className={`bg-vs-elevated rounded-lg px-3 py-2.5 transition-opacity ${!enabled ? 'opacity-50' : ''}`}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                              <span className="text-xs text-vs-text-3 truncate">{label}</span>
+                              <span className="ml-auto text-[10px] text-vs-text-3 opacity-60 flex-shrink-0">{interval}</span>
+                            </div>
+                            <p className="text-xs font-mono text-vs-text">{!enabled ? 'Disabled' : (ago || 'Never')}</p>
+                            {count != null && <p className="text-[10px] text-vs-text-3 mt-0.5">{count} polls</p>}
+                            {enabledKey && (
+                              <button type="button" onClick={() => togglePoll(enabledKey, enabled)}
+                                className={`mt-2 relative w-8 h-4 rounded-full flex-shrink-0 transition-colors ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+                                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${enabled ? 'left-4' : 'left-0.5'}`} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {watcherStatus.lastError && (
+                      <div className="bg-vs-danger/10 border border-vs-danger/20 rounded-lg px-3 py-2 text-xs">
+                        <span className="text-vs-danger font-semibold">Last error</span>
+                        <span className="text-vs-text-3 mx-2">·</span>
+                        <span className="text-vs-danger">{watcherStatus.lastError}</span>
+                        {watcherStatus.lastErrorAt && (
+                          <span className="text-vs-text-3 ml-2">{timeAgo(watcherStatus.lastErrorAt)}</span>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-                {watcherStatus.lastError && (
-                  <div className="bg-vs-danger/10 border border-vs-danger/20 rounded-lg px-3 py-2 text-xs">
-                    <span className="text-vs-danger font-semibold">Last error</span>
-                    <span className="text-vs-text-3 mx-2">·</span>
-                    <span className="text-vs-danger">{watcherStatus.lastError}</span>
-                    {watcherStatus.lastErrorAt && (
-                      <span className="text-vs-text-3 ml-2">{timeAgo(watcherStatus.lastErrorAt)}</span>
+                    )}
+                    {watcherStatus.startedAt && (
+                      <p className="text-xs text-vs-text-3">Watcher started {timeAgo(watcherStatus.startedAt)}</p>
                     )}
                   </div>
-                )}
-                {watcherStatus.startedAt && (
-                  <p className="text-xs text-vs-text-3">Watcher started {timeAgo(watcherStatus.startedAt)}</p>
+                ) : (
+                  <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />
                 )}
               </div>
-            ) : (
-              <div className="h-20 animate-pulse bg-vs-elevated rounded-lg" />
-            )}
-          </div>
+            );
+          })()}
+
         </>
       )}
     </div>

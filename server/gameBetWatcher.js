@@ -25,17 +25,32 @@ const watcherState = {
 
 function getWatcherState() {
   try {
-    const get = (key) => getSQLite()
-      .prepare('SELECT value FROM admin_settings WHERE key = ?')
-      .get(key)?.value || null;
+    const sqlite = getSQLite();
+    const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value || null;
+    const getBool = (key, def = true) => {
+      const v = get(key);
+      return v === null ? def : v !== '0';
+    };
     return {
       ...watcherState,
-      rankingsWeeklySentAt:  get('rankings_weekly_sent_at'),
-      rankingsMonthlySentAt: get('rankings_monthly_sent_at'),
-      lastUserDmCheckAt:     get('whatsapp_dm_last_check_at'),
+      rankingsWeeklySentAt:   get('rankings_weekly_sent_at'),
+      rankingsMonthlySentAt:  get('rankings_monthly_sent_at'),
+      lastUserDmCheckAt:      get('whatsapp_dm_last_check_at'),
+      pollNewBetEnabled:      getBool('poll_newbet_enabled'),
+      pollProgressEnabled:    getBool('poll_progress_enabled'),
+      pollUserDmEnabled:      getBool('whatsapp_dm_enabled'),
     };
   } catch {
-    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null, lastUserDmCheckAt: null };
+    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null, lastUserDmCheckAt: null, pollNewBetEnabled: true, pollProgressEnabled: true, pollUserDmEnabled: true };
+  }
+}
+
+function isPollEnabled(key, def = true) {
+  try {
+    const v = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
+    return v === null || v === undefined ? def : v !== '0';
+  } catch {
+    return def;
   }
 }
 
@@ -1270,7 +1285,7 @@ function startWatcher() {
 
   // New bets — fast poll (30 s)
   setInterval(async () => {
-    if (!isConfigured()) return;
+    if (!isConfigured() || !isPollEnabled('poll_newbet_enabled')) return;
     try {
       const db    = getDb();
       const since = lastChecked;
@@ -1289,7 +1304,7 @@ function startWatcher() {
 
   // Fill progress + countdowns + settled — slow poll (2 min)
   setInterval(async () => {
-    if (!isConfigured()) return;
+    if (!isConfigured() || !isPollEnabled('poll_progress_enabled')) return;
     try {
       const db = getDb();
       await Promise.allSettled([
@@ -1307,8 +1322,8 @@ function startWatcher() {
     }
   }, POLL_INTERVAL_MS);
 
-  // User welcome DMs — 5 min poll
-  setInterval(async () => {
+  // User welcome DMs — run once on startup then every 5 min
+  const runUserDmPoll = async () => {
     try {
       await pollNewUsers(getDb());
       watcherState.lastUserDmPoll  = new Date();
@@ -1318,7 +1333,9 @@ function startWatcher() {
       watcherState.lastErrorAt = new Date();
       console.error('[GameBetWatcher] User DM poll error:', err.message);
     }
-  }, USER_DM_INTERVAL_MS);
+  };
+  setTimeout(runUserDmPoll, 5000); // run shortly after startup
+  setInterval(runUserDmPoll, USER_DM_INTERVAL_MS);
 
   // Daily cleanup + rankings check
   const runDaily = async () => {

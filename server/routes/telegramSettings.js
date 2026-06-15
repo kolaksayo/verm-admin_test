@@ -432,6 +432,25 @@ router.get('/watcher-status', auth, (req, res) => {
   res.json(getWatcherState());
 });
 
+// POST /api/telegram/watcher-settings — toggle individual polls on/off
+router.post('/watcher-settings', auth, (req, res) => {
+  const { pollNewBetEnabled, pollProgressEnabled, pollUserDmEnabled } = req.body;
+  try {
+    const sqlite = getSQLite();
+    const upsert = sqlite.prepare(`
+      INSERT INTO admin_settings (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `);
+    if (pollNewBetEnabled   != null) upsert.run('poll_newbet_enabled',   pollNewBetEnabled   ? '1' : '0');
+    if (pollProgressEnabled != null) upsert.run('poll_progress_enabled', pollProgressEnabled ? '1' : '0');
+    if (pollUserDmEnabled   != null) upsert.run('whatsapp_dm_enabled',   pollUserDmEnabled   ? '1' : '0');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // POST /api/telegram/logs/:id/retry — re-send a failed message
 router.post('/logs/:id/retry', auth, async (req, res) => {
   if (!isConfigured()) {
