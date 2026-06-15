@@ -1895,7 +1895,7 @@ export default function NotificationsPage() {
         const ccValid          = isValidCountryCode(dmCountryCode);
 
         const hasUnsaved  = dmGroupLink !== dmGroupLinkSaved || dmChannelLink !== dmChannelLinkSaved || dmCountryCode !== dmCountryCodeSaved || dmTemplateName !== dmTemplateNameSaved || dmTemplateLanguage !== dmTemplateLanguageSaved;
-        const canSave     = hasUnsaved && groupLinkValid && channelLinkValid && ccValid;
+        const canSave     = groupLinkValid && channelLinkValid && ccValid;
 
         const templateVars = ['{{name}}', '{{group_link}}', '{{channel_link}}'].filter((v) => (dmTemplate || '').includes(v));
         const livePreview  = (dmTemplate || '')
@@ -2171,8 +2171,8 @@ export default function NotificationsPage() {
                       </div>
                       <div className="flex items-center gap-3 pt-1">
                         <button type="submit" disabled={dmSavingConfig || !canSave}
-                          className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
-                          {dmSavingConfig ? 'Saving…' : 'Save Changes'}
+                          className={`px-4 py-2 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 ${!hasUnsaved && !dmSavingConfig ? 'bg-vs-success hover:bg-vs-success/90' : 'bg-vs-purple hover:bg-vs-purple/90'}`}>
+                          {dmSavingConfig ? 'Saving…' : !hasUnsaved ? 'Saved ✓' : 'Save Changes'}
                         </button>
                         {dmConfigMsg && <p className={`text-xs ${dmConfigMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmConfigMsg}</p>}
                       </div>
