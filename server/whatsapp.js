@@ -253,7 +253,17 @@ async function sendWelcomeTemplate(userId, phone, username) {
     return { ok: false, reason: 'not_configured' };
   }
 
-  const WELCOME_TEXT = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
+  const DEFAULT_WELCOME = `Welcome to VermoSports, ${username || 'there'}! ⚽\n\nYou're officially part of the VermoSports community.\n\nStay updated with football competitions, rankings, match updates and important VermoSports announcements.\n\n18+ only. Play responsibly.`;
+
+  let customWelcomeText = '';
+  try {
+    const sq = getSQLite();
+    const raw = sq.prepare("SELECT value FROM admin_settings WHERE key = 'dm_welcome_text'").get()?.value || '';
+    customWelcomeText = raw.replace(/\{\{name\}\}/g, username || 'there')
+                           .replace(/\{\{1\}\}/g, username || 'there');
+  } catch { /* use default */ }
+
+  const WELCOME_TEXT = customWelcomeText || DEFAULT_WELCOME;
 
   try {
     let ok, json;

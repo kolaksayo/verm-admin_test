@@ -1038,7 +1038,13 @@ export default function NotificationsPage() {
       setDmCountryCode(r.data.countryCode || '');
       setDmTemplateName(r.data.welcomeTemplateName || '');
       setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
-      if (r.data.welcomePreview) setDmTemplate(r.data.welcomePreview);
+      // Baileys: use the editable custom text; Cloud API: show approved preview
+      const method = r.data.dmEvolutionMethod || 'baileys';
+      if (method === 'baileys') {
+        setDmTemplate(r.data.welcomeText || r.data.welcomePreview || '');
+      } else {
+        setDmTemplate(r.data.welcomePreview || '');
+      }
       setDmEvolutionUrl(r.data.dmEvolutionUrl || '');
       setDmEvolutionInstance(r.data.dmEvolutionInstance || '');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
@@ -1338,7 +1344,7 @@ export default function NotificationsPage() {
   const handleSaveDmTemplate = async () => {
     setDmSavingTemplate(true); setDmTemplateMsg('');
     try {
-      await api.post('/notifications/dm/config', { welcomeTemplate: dmTemplate });
+      await api.post('/notifications/dm/config', { welcomeText: dmTemplate });
       setDmTemplateMsg('Saved!');
     } catch (err) {
       setDmTemplateMsg(err.response?.data?.error || 'Failed');
@@ -2174,40 +2180,69 @@ export default function NotificationsPage() {
                   </div>
                 )}
 
-                {/* C. Approved Welcome Template */}
+                {/* C. Welcome Message / Approved Template */}
                 {showC && (
                   <div className="bg-vs-card border border-vs-border rounded-xl p-5">
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold text-vs-text">C. Approved Welcome Template</p>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
+                      <p className="text-sm font-semibold text-vs-text">C. Welcome Message</p>
+                      {dmEvolutionMethod === 'baileys'
+                        ? <span className="px-2 py-0.5 text-xs rounded-full bg-vs-elevated text-vs-text-2 border border-vs-border font-semibold">Editable</span>
+                        : <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
+                      }
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs mb-4">
-                      <div><p className="text-vs-text-3">Template name</p><p className="text-vs-text font-mono mt-0.5">welcome_to_vermosports</p></div>
-                      <div><p className="text-vs-text-3">Source</p><p className="text-vs-text-2 mt-0.5">Interakt.ai</p></div>
-                      <div>
-                        <p className="text-vs-text-3">Editable here</p>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <p className="text-vs-text-2">No</p>
-                          <svg className="w-3 h-3 text-vs-text-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+
+                    {dmEvolutionMethod === 'baileys' ? (
+                      /* ── Editable welcome text (Baileys mode) ── */
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-xs text-vs-text-3">Insert variable:</span>
+                          {['{{name}}', '{{group_link}}', '{{channel_link}}'].map((v) => (
+                            <button key={v} type="button" onClick={() => insertDmMacro(v)}
+                              className="px-2 py-0.5 bg-vs-elevated border border-vs-border rounded-md text-xs font-mono text-vs-purple-light hover:border-vs-purple/50 transition-colors">
+                              {v}
+                            </button>
+                          ))}
                         </div>
+                        <textarea ref={dmTextareaRef} value={dmTemplate} onChange={(e) => setDmTemplate(e.target.value)}
+                          rows={8}
+                          className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text font-sans leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-vs-text-3 mb-1.5">Live preview (Abraham)</p>
+                            <pre className="w-full px-3 py-2.5 bg-vs-elevated/60 border border-vs-purple/20 rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[80px]">{livePreview}</pre>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 pt-1">
+                          <button type="button" onClick={handleSaveDmTemplate} disabled={dmSavingTemplate}
+                            className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                            {dmSavingTemplate ? 'Saving…' : 'Save Message'}
+                          </button>
+                          {dmTemplateMsg && <p className={`text-xs ${dmTemplateMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmTemplateMsg}</p>}
+                        </div>
+                        <p className="text-xs text-vs-text-3">Use <span className="font-mono">{'{{name}}'}</span> for the user's display name.</p>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mb-3">
+                    ) : (
+                      /* ── Read-only approved template (Cloud API mode) ── */
                       <div>
-                        <p className="text-xs text-vs-text-3 mb-1.5">Template preview</p>
-                        <pre className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{dmTemplate}</pre>
-                      </div>
-                      <div>
-                        <p className="text-xs text-vs-text-3 mb-1.5">Live preview (Abraham)</p>
-                        <pre className="w-full px-3 py-2.5 bg-vs-elevated/60 border border-vs-purple/20 rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{livePreview}</pre>
-                      </div>
-                    </div>
-                    {templateVars.length > 0 && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-vs-text-3">Variables used</span>
-                        {templateVars.map((v) => (
-                          <span key={v} className="px-2 py-0.5 bg-vs-elevated border border-vs-border rounded-md text-xs font-mono text-vs-purple-light">{v}</span>
-                        ))}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <p className="text-xs text-vs-text-3 mb-1.5">Template preview</p>
+                            <pre className="w-full px-3 py-2.5 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{dmTemplate}</pre>
+                          </div>
+                          <div>
+                            <p className="text-xs text-vs-text-3 mb-1.5">Live preview (Abraham)</p>
+                            <pre className="w-full px-3 py-2.5 bg-vs-elevated/60 border border-vs-purple/20 rounded-lg text-xs text-vs-text-2 whitespace-pre-wrap font-sans leading-relaxed min-h-[100px]">{livePreview}</pre>
+                          </div>
+                        </div>
+                        {templateVars.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-vs-text-3">Variables used</span>
+                            {templateVars.map((v) => (
+                              <span key={v} className="px-2 py-0.5 bg-vs-elevated border border-vs-border rounded-md text-xs font-mono text-vs-purple-light">{v}</span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-vs-text-3 mt-3">Managed in WhatsApp Business Manager. Switch to Baileys to edit freely.</p>
                       </div>
                     )}
                   </div>

@@ -35,6 +35,7 @@ router.get('/config', auth, (req, res) => {
       channelLink:          get('whatsapp_channel_link')    || '',
       countryCode:          get('whatsapp_country_code')    || '',
       welcomePreview:       APPROVED_WELCOME_PREVIEW,
+      welcomeText:          get('dm_welcome_text')         || '',
       welcomeTemplateName:  get('welcome_template_name')    || '',
       welcomeTemplateLanguage: get('welcome_template_language') || '',
       dmEvolutionUrl:       get('dm_evolution_api_url')     || '',
@@ -60,7 +61,7 @@ router.post('/config', auth, (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(k, String(v));
 
-    const { enabled, groupLink, channelLink, countryCode, welcomeTemplateName, welcomeTemplateLanguage,
+    const { enabled, groupLink, channelLink, countryCode, welcomeText, welcomeTemplateName, welcomeTemplateLanguage,
             dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod } = req.body;
 
     if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
@@ -74,6 +75,7 @@ router.post('/config', auth, (req, res) => {
     }
 
     if (enabled != null)               set('whatsapp_dm_enabled',      enabled ? '1' : '0');
+    if (welcomeText != null)           set('dm_welcome_text',           welcomeText);
     if (groupLink != null)             set('whatsapp_group_link',       groupLink);
     if (channelLink != null)           set('whatsapp_channel_link',     channelLink);
     if (countryCode != null)           set('whatsapp_country_code',     countryCode);
