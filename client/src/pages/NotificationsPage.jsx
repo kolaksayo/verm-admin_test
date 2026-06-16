@@ -107,6 +107,18 @@ function TemplateEditor({ tpl, onSaved }) {
     }
   };
 
+  const handleToggle = async () => {
+    const newEnabled = !enabled;
+    setEnabled(newEnabled);
+    try {
+      await api.post(`/telegram/templates/${tpl.trigger}`, { template: text, enabled: newEnabled });
+      onSaved?.();
+    } catch {
+      setEnabled(enabled);
+      setMsg('Failed to save');
+    }
+  };
+
   const handleReset = () => { setText(tpl.default || tpl.template); setMsg(''); };
 
   const handleTest = async () => {
@@ -131,7 +143,7 @@ function TemplateEditor({ tpl, onSaved }) {
         <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
           <span className="text-xs text-vs-text-3">Enabled</span>
           <button
-            onClick={() => setEnabled((v) => !v)}
+            onClick={handleToggle}
             className={`relative w-10 h-5 rounded-full transition-colors ${enabled ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${enabled ? 'left-5' : 'left-0.5'}`} />
           </button>
