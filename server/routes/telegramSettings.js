@@ -9,6 +9,7 @@ const {
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
+  GROUPED_COUNTDOWN_MACROS,
   SETTLED_MACROS,
   RANKINGS_MACROS,
   renderTemplate,
@@ -119,6 +120,14 @@ const TRIGGERS = [
     description: 'Fired 15 minutes before kickoff for multiplayer challenges with 2+ players',
     macros:      COUNTDOWN_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_match_15min,
+  },
+  {
+    trigger:     'game_bet_countdown_grouped',
+    group:       'multi',
+    label:       'Grouped Countdown',
+    description: 'Sent when 2+ bets share the same countdown window (1hr/30min/15min); replaces individual per-bet messages',
+    macros:      GROUPED_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_countdown_grouped,
   },
   {
     trigger:     'game_bet_large_stake',

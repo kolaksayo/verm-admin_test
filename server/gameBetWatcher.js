@@ -193,6 +193,12 @@ Top players this month on VermoSports:
 
 {{total_players}} players competed this month
 Generated: {{generated_at}}`,
+
+  game_bet_countdown_grouped: `⏰ {{count}} Challenges Starting in {{time_label}}!
+
+{{bets_list}}
+
+Open the VermoSports app to join! 🚀`,
 };
 
 // Backward-compat alias
@@ -247,6 +253,12 @@ const SINGLE_COUNTDOWN_MACROS = [
   { key: '{{creator}}',             desc: 'Creator username' },
   { key: '{{kickoff_time}}',        desc: 'Formatted kickoff time (e.g. 20:00)' },
   { key: '{{minutes_until_match}}', desc: 'Minutes until kickoff' },
+];
+
+const GROUPED_COUNTDOWN_MACROS = [
+  { key: '{{count}}',      desc: 'Number of challenges starting in this window' },
+  { key: '{{time_label}}', desc: 'Time window label (e.g. 1 Hour / 30 Minutes / 15 Minutes)' },
+  { key: '{{bets_list}}',  desc: 'One line per challenge: teams, players, code' },
 ];
 
 const RANKINGS_MACROS = [
@@ -867,6 +879,196 @@ async function pollFillProgress(db) {
   }
 }
 
+async function pollCountdowns(db) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const bets = await db.collection('game_bet').find({
+    createdAt: { $gt: thirtyDaysAgo },
+    status: { $not: { $regex: /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED|finished|settled|completed|cancelled|canceled|closed|expired|deleted)$/ } },
+    gameFixtureId: { $exists: true },
+  }).toArray();
+
+  const checkpoints = [
+    { key: '1hr',   singleTrigger: 'game_bet_single_1hr',  multiTrigger: 'game_bet_match_1hr',   timeLabel: '1 Hour',     threshold: 65 },
+    { key: '30min', singleTrigger: 'game_bet_single_30min', multiTrigger: 'game_bet_match_30min', timeLabel: '30 Minutes', threshold: 35 },
+    { key: '15min', singleTrigger: 'game_bet_single_15min', multiTrigger: 'game_bet_match_15min', timeLabel: '15 Minutes', threshold: 20 },
+  ];
+
+  // Collect candidates per checkpoint
+  const cpGroups = {};
+  for (const cp of checkpoints) {
+    cpGroups[cp.key] = { broadcast: [], dm: [] };
+  }
+
+  for (const bet of bets) {
+    const multi = isMultiplayer(bet);
+    const betId = bet._id.toString();
+
+    if (multi) {
+      const currentPlayers = getCurrentPlayers(bet);
+      if (currentPlayers < 2) continue;
+
+      const allFixtures = await resolveAllFixtures(db, bet);
+      const primaryFixture = allFixtures[0] || {};
+      if (!primaryFixture.kickoff) continue;
+      const kickoffMs = new Date(primaryFixture.kickoff).getTime();
+      if (isNaN(kickoffMs)) continue;
+      const minutesAway = (kickoffMs - Date.now()) / 60000;
+
+      const needsNotif = checkpoints.some(cp =>
+        minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)
+      );
+      if (!needsNotif) continue;
+
+      const creatorName = await resolveCreator(db, bet);
+      const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+      });
+      const vars = {
+        ...buildMultiVars(bet, allFixtures, creatorName, currentPlayers),
+        minutes_until_match: Math.round(minutesAway),
+        kickoff_time: kickoffTime,
+      };
+
+      for (const cp of checkpoints) {
+        if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
+          cpGroups[cp.key].broadcast.push({ betId, vars, type: 'multi', trigger: cp.multiTrigger });
+        }
+      }
+    } else {
+      const fixture = await resolveFixture(db, bet);
+      if (!fixture.kickoff) continue;
+      const kickoffMs = new Date(fixture.kickoff).getTime();
+      if (isNaN(kickoffMs)) continue;
+      const minutesAway = (kickoffMs - Date.now()) / 60000;
+
+      const needsNotif = checkpoints.some(cp =>
+        minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)
+      );
+      if (!needsNotif) continue;
+
+      const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+      const isJoined = getCurrentPlayers(bet) >= 2 || !!bet.acceptedBy;
+      const creatorName = await resolveCreator(db, bet);
+      const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+      });
+      const vars = {
+        home_team:           fixture.homeTeam || '—',
+        away_team:           fixture.awayTeam || '—',
+        league:              fixture.league   || '—',
+        stake:               stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
+        code:                bet.bookingCode || bet.title || bet.name || betId,
+        creator:             creatorName || '—',
+        kickoff_time:        kickoffTime,
+        minutes_until_match: Math.round(minutesAway),
+      };
+
+      for (const cp of checkpoints) {
+        if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
+          if (!isJoined) {
+            cpGroups[cp.key].broadcast.push({ betId, vars, type: 'single', trigger: cp.singleTrigger });
+          } else {
+            cpGroups[cp.key].dm.push({ betId, bet, vars });
+          }
+        }
+      }
+    }
+  }
+
+  // Process each checkpoint
+  for (const cp of checkpoints) {
+    const { broadcast, dm } = cpGroups[cp.key];
+
+    if (broadcast.length === 1) {
+      const { betId, vars, type, trigger } = broadcast[0];
+      const template = getTemplate(trigger);
+      if (template) {
+        let message = renderTemplate(template, vars);
+        if (type === 'single') message += `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
+        const result = await notifyAll(message, trigger);
+        if (result.ok) {
+          markNotified(betId, cp.key);
+          console.log(`[GameBetWatcher] ${type} ${cp.key} countdown (solo): ${vars.code}`);
+        }
+      }
+    } else if (broadcast.length > 1) {
+      const groupedTemplate = getTemplate('game_bet_countdown_grouped');
+      if (groupedTemplate) {
+        const lines = broadcast.map(({ vars, type }) => {
+          if (type === 'single') {
+            return `⚽ ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code}`;
+          }
+          const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
+            || `${vars.home_team} vs ${vars.away_team}`;
+          return `🎮 ${firstLine} — ${vars.current_players} players — Code: ${vars.code}`;
+        });
+        const gVars = {
+          count:      broadcast.length,
+          time_label: cp.timeLabel,
+          bets_list:  lines.join('\n'),
+        };
+        const result = await notifyAll(renderTemplate(groupedTemplate, gVars), 'game_bet_countdown_grouped');
+        if (result.ok) {
+          for (const { betId } of broadcast) markNotified(betId, cp.key);
+          console.log(`[GameBetWatcher] Grouped ${cp.key} countdown: ${broadcast.length} bets`);
+        }
+      } else {
+        // Grouped template not configured — send individually
+        for (const { betId, vars, type, trigger } of broadcast) {
+          const template = getTemplate(trigger);
+          if (!template) continue;
+          let message = renderTemplate(template, vars);
+          if (type === 'single') message += `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
+          const result = await notifyAll(message, trigger);
+          if (result.ok) markNotified(betId, cp.key);
+        }
+      }
+    }
+
+    // DMs for joined single bets
+    for (const { betId, bet, vars } of dm) {
+      const template = getTemplate(cp.singleTrigger);
+      if (!template) continue;
+      const message = renderTemplate(template, vars);
+      const userIds = getParticipantUserIds(bet);
+      let anyOk = false;
+      let allGaveUp = userIds.length > 0;
+      for (const uid of userIds) {
+        const dmKey = `cdm_${cp.key}_${uid.slice(-8)}`;
+        try {
+          const user = await db.collection('users').findOne(
+            { _id: new ObjectId(uid) },
+            { projection: { mobile: 1 } }
+          );
+          const phone = user?.mobile;
+          if (!phone) { markNotified(betId, dmKey); continue; }
+          const dmResult = await sendDirectMessage(phone, message, cp.singleTrigger);
+          if (dmResult?.ok) {
+            anyOk = true;
+            markNotified(betId, dmKey);
+          } else {
+            const giveUp = recordDmFailureAndCheckGiveUp(betId, dmKey);
+            if (giveUp) {
+              markNotified(betId, dmKey);
+              console.warn(`[GameBetWatcher] Giving up countdown DM → ${uid} after ${MAX_DM_AUTO_RETRIES} failures`);
+            } else {
+              allGaveUp = false;
+              console.error(`[GameBetWatcher] DM failed for user ${uid}:`, dmResult.reason);
+            }
+          }
+        } catch (e) {
+          allGaveUp = false;
+          console.error(`[GameBetWatcher] DM failed for user ${uid}:`, e.message);
+        }
+      }
+      if (anyOk || allGaveUp) {
+        markNotified(betId, cp.key);
+        console.log(`[GameBetWatcher] Single ${cp.key} countdown (joined, DMs sent): ${vars.code}`);
+      }
+    }
+  }
+}
+
 async function pollMatchCountdowns(db) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const bets = await db.collection('game_bet')
@@ -1358,8 +1560,7 @@ function startWatcher() {
       const db = getDb();
       await Promise.allSettled([
         pollFillProgress(db),
-        pollSingleCountdowns(db),
-        pollMatchCountdowns(db),
+        pollCountdowns(db),
         pollSettledBets(db),
       ]);
       watcherState.lastProgressPoll  = new Date();
@@ -1419,6 +1620,7 @@ module.exports = {
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
+  GROUPED_COUNTDOWN_MACROS,
   SETTLED_MACROS,
   RANKINGS_MACROS,
   renderTemplate,
