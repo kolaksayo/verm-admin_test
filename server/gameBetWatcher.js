@@ -901,7 +901,7 @@ function buildBetsList(singles, multis, full = false) {
   const singleLines = singles.map(({ vars }) =>
     full
       ? `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
-      : `• ${vars.home_team} vs ${vars.away_team}`
+      : `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code}`
   );
   const multiLines = multis.map(({ vars }) => {
     const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
@@ -909,7 +909,7 @@ function buildBetsList(singles, multis, full = false) {
     const players = `${vars.current_players}/${vars.max_players} players`;
     return full
       ? `• ${firstLine} — ${players} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
-      : `• ${firstLine} — ${players}`;
+      : `• ${firstLine} — ${players} — Code: ${vars.code}`;
   });
 
   if (singleLines.length > 0 && multiLines.length > 0) {

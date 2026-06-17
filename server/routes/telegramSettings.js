@@ -391,7 +391,7 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       total_players:       42,
       count:               3,
       time_label:          '30 Minutes',
-      bets_list:           `⚽ Single Bets:\n• ${homeTeam} vs ${awayTeam}\n• Arsenal vs Man City\n\n🎮 Multiplayer Bets:\n• Liverpool vs Tottenham — 2/4 players`,
+      bets_list:           `⚽ Single Bets:\n• ${homeTeam} vs ${awayTeam} — Code: TEST-ABCD\n• Arsenal vs Man City — Code: TEST-EFGH\n\n🎮 Multiplayer Bets:\n• Liverpool vs Tottenham — 2/4 players — Code: TEST-IJKL`,
       bets_list_full:      `⚽ Single Bets:\n• ${homeTeam} vs ${awayTeam} — Code: TEST-ABCD | Kickoff: 20:00\n• Arsenal vs Man City — Code: TEST-EFGH | Kickoff: 20:00\n\n🎮 Multiplayer Bets:\n• Liverpool vs Tottenham — 2/4 players — Code: TEST-IJKL | Kickoff: 20:30`,
     };
 
