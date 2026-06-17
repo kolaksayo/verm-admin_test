@@ -202,19 +202,19 @@ Open the VermoSports app to join! 🚀`,
 
   game_bet_countdown_1hr: `⏰ {{count}} Challenge(s) Starting in 1 Hour!
 
-{{bets_list}}
+{{bets_list_full}}
 
 Open the VermoSports app to join! 🚀`,
 
   game_bet_countdown_30min: `⏰ {{count}} Challenge(s) Starting in 30 Minutes!
 
-{{bets_list}}
+{{bets_list_full}}
 
 Open the VermoSports app to join! 🚀`,
 
   game_bet_countdown_15min: `🚀 {{count}} Challenge(s) Starting in 15 Minutes!
 
-{{bets_list}}
+{{bets_list_full}}
 
 Open the VermoSports app to join! 🚀`,
 };
@@ -274,9 +274,9 @@ const SINGLE_COUNTDOWN_MACROS = [
 ];
 
 const GROUPED_COUNTDOWN_MACROS = [
-  { key: '{{count}}',      desc: 'Number of challenges starting in this window' },
-  { key: '{{time_label}}', desc: 'Time window label (e.g. 1 Hour / 30 Minutes / 15 Minutes)' },
-  { key: '{{bets_list}}',  desc: 'One line per challenge: teams, players, code' },
+  { key: '{{count}}',          desc: 'Number of challenges starting in this window' },
+  { key: '{{bets_list}}',      desc: 'One line per challenge — teams and player count only (compact)' },
+  { key: '{{bets_list_full}}', desc: 'One line per challenge — includes code and kickoff time' },
 ];
 
 const RANKINGS_MACROS = [
@@ -897,14 +897,19 @@ async function pollFillProgress(db) {
   }
 }
 
-function buildBetsList(singles, multis) {
+function buildBetsList(singles, multis, full = false) {
   const singleLines = singles.map(({ vars }) =>
-    `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+    full
+      ? `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+      : `• ${vars.home_team} vs ${vars.away_team}`
   );
   const multiLines = multis.map(({ vars }) => {
     const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
       || `${vars.home_team} vs ${vars.away_team}`;
-    return `• ${firstLine} — ${vars.current_players} players — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`;
+    const players = `${vars.current_players}/${vars.max_players} players`;
+    return full
+      ? `• ${firstLine} — ${players} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+      : `• ${firstLine} — ${players}`;
   });
 
   if (singleLines.length > 0 && multiLines.length > 0) {
@@ -940,7 +945,9 @@ async function pollCountdowns(db) {
 
     if (multi) {
       const currentPlayers = getCurrentPlayers(bet);
+      const maxPlayers = Number(bet.capacity || bet.maxParticipants) || 0;
       if (currentPlayers < 2) continue;
+      if (maxPlayers > 0 && currentPlayers >= maxPlayers) continue; // already full
 
       const allFixtures = await resolveAllFixtures(db, bet);
       const primaryFixture = allFixtures[0] || {};
@@ -1020,8 +1027,9 @@ async function pollCountdowns(db) {
         const singles = broadcast.filter(b => b.type === 'single');
         const multis  = broadcast.filter(b => b.type === 'multi');
         const gVars = {
-          count:     broadcast.length,
-          bets_list: buildBetsList(singles, multis),
+          count:          broadcast.length,
+          bets_list:      buildBetsList(singles, multis, false),
+          bets_list_full: buildBetsList(singles, multis, true),
         };
         const result = await notifyAll(renderTemplate(template, gVars), cp.trigger);
         if (result.ok) {

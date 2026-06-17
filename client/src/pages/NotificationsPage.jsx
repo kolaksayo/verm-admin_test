@@ -246,7 +246,8 @@ const PREVIEW_VARS = {
   total_players:       42,
   count:               3,
   time_label:          '30 Minutes',
-  bets_list:           '⚽ Single Bets:\n• Arsenal vs Chelsea — Code: ABC-123 | Kickoff: 20:00\n• Man City vs Liverpool — Code: DEF-456 | Kickoff: 20:00\n\n🎮 Multiplayer Bets:\n• Arsenal vs Man City — 4 players — Code: GHI-789 | Kickoff: 20:30',
+  bets_list:           '⚽ Single Bets:\n• Arsenal vs Chelsea\n• Man City vs Liverpool\n\n🎮 Multiplayer Bets:\n• Arsenal vs Man City — 3/4 players',
+  bets_list_full:      '⚽ Single Bets:\n• Arsenal vs Chelsea — Code: ABC-123 | Kickoff: 20:00\n• Man City vs Liverpool — Code: DEF-456 | Kickoff: 20:00\n\n🎮 Multiplayer Bets:\n• Arsenal vs Man City — 3/4 players — Code: GHI-789 | Kickoff: 20:30',
 };
 
 function renderPreview(template) {
