@@ -37,10 +37,9 @@ const TRIGGER_LABELS = {
   game_bet_multi_half:    '60% Full',
   game_bet_multi_almost_3:'3 Slots Left',
   game_bet_multi_almost_1:'Last Slot',
-  game_bet_match_1hr:              '1hr Countdown',
-  game_bet_match_30min:            '30min Countdown',
-  game_bet_match_15min:            '15min Countdown',
-  game_bet_countdown_grouped:      'Grouped Countdown',
+  game_bet_countdown_1hr:          '1hr Countdown',
+  game_bet_countdown_30min:        '30min Countdown',
+  game_bet_countdown_15min:        '15min Countdown',
   game_bet_large_stake:            'Large Stake',
   game_bet_settled:       'Settled',
   rankings_weekly:        'Weekly Rankings',
@@ -57,10 +56,9 @@ const TRIGGER_COLORS = {
   game_bet_multi_half:    'bg-vs-warning/15 text-vs-warning',
   game_bet_multi_almost_3:'bg-vs-warning/15 text-vs-warning',
   game_bet_multi_almost_1:'bg-vs-danger/15 text-vs-danger',
-  game_bet_match_1hr:             'bg-vs-lime/15 text-vs-lime',
-  game_bet_match_30min:           'bg-vs-lime/15 text-vs-lime',
-  game_bet_match_15min:           'bg-vs-lime/15 text-vs-lime',
-  game_bet_countdown_grouped:     'bg-vs-lime/15 text-vs-lime',
+  game_bet_countdown_1hr:         'bg-vs-lime/15 text-vs-lime',
+  game_bet_countdown_30min:       'bg-vs-lime/15 text-vs-lime',
+  game_bet_countdown_15min:       'bg-vs-lime/15 text-vs-lime',
   game_bet_large_stake:           'bg-vs-warning/15 text-vs-warning',
   game_bet_settled:       'bg-vs-success/15 text-vs-success',
   rankings_weekly:        'bg-vs-purple/15 text-vs-purple-light',
@@ -248,7 +246,7 @@ const PREVIEW_VARS = {
   total_players:       42,
   count:               3,
   time_label:          '30 Minutes',
-  bets_list:           '⚽ Arsenal vs Chelsea — Code: ABC-123\n⚽ Man City vs Liverpool — Code: DEF-456\n🎮 Arsenal vs Man City — 4 players — Code: GHI-789',
+  bets_list:           '⚽ Single Bets:\n• Arsenal vs Chelsea — Code: ABC-123 | Kickoff: 20:00\n• Man City vs Liverpool — Code: DEF-456 | Kickoff: 20:00\n\n🎮 Multiplayer Bets:\n• Arsenal vs Man City — 4 players — Code: GHI-789 | Kickoff: 20:30',
 };
 
 function renderPreview(template) {
@@ -278,10 +276,11 @@ function MessagesTab({ templates, loading, onSaved }) {
       </p>
 
       <div className="flex gap-1 mb-5 bg-vs-elevated rounded-lg p-1 w-fit">
-        <button onClick={() => setMode('single')}   className={subTabCls(mode === 'single')}>Single Bet</button>
-        <button onClick={() => setMode('multi')}    className={subTabCls(mode === 'multi')}>Multiplayer</button>
-        <button onClick={() => setMode('settled')}  className={subTabCls(mode === 'settled')}>Settled</button>
-        <button onClick={() => setMode('rankings')} className={subTabCls(mode === 'rankings')}>Rankings</button>
+        <button onClick={() => setMode('single')}    className={subTabCls(mode === 'single')}>Single Bet</button>
+        <button onClick={() => setMode('multi')}     className={subTabCls(mode === 'multi')}>Multiplayer</button>
+        <button onClick={() => setMode('countdown')} className={subTabCls(mode === 'countdown')}>Countdown</button>
+        <button onClick={() => setMode('settled')}   className={subTabCls(mode === 'settled')}>Settled</button>
+        <button onClick={() => setMode('rankings')}  className={subTabCls(mode === 'rankings')}>Rankings</button>
       </div>
 
       {loading ? (
@@ -2493,10 +2492,9 @@ export default function NotificationsPage() {
                     <option value="game_bet_multi_half">Multi — 60% Full</option>
                     <option value="game_bet_multi_almost_3">Multi — 3 Slots Left</option>
                     <option value="game_bet_multi_almost_1">Multi — Last Slot</option>
-                    <option value="game_bet_match_1hr">Countdown — 1hr</option>
-                    <option value="game_bet_match_30min">Countdown — 30min</option>
-                    <option value="game_bet_match_15min">Countdown — 15min</option>
-                    <option value="game_bet_countdown_grouped">Countdown — Grouped</option>
+                    <option value="game_bet_countdown_1hr">Countdown — 1hr</option>
+                    <option value="game_bet_countdown_30min">Countdown — 30min</option>
+                    <option value="game_bet_countdown_15min">Countdown — 15min</option>
                     <option value="game_bet_large_stake">Large Stake</option>
                   </select>
                 </div>

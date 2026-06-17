@@ -40,30 +40,6 @@ const TRIGGERS = [
     macros:      GAME_BET_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet,
   },
-  {
-    trigger:     'game_bet_single_1hr',
-    group:       'single',
-    label:       'Match Countdown — 1 Hour',
-    description: 'Fired 1 hour before match kickoff for single-mode bets',
-    macros:      SINGLE_COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_single_1hr,
-  },
-  {
-    trigger:     'game_bet_single_30min',
-    group:       'single',
-    label:       'Match Countdown — 30 Minutes',
-    description: 'Fired 30 minutes before match kickoff for single-mode bets',
-    macros:      SINGLE_COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_single_30min,
-  },
-  {
-    trigger:     'game_bet_single_15min',
-    group:       'single',
-    label:       'Match Countdown — 15 Minutes',
-    description: 'Fired 15 minutes before match kickoff for single-mode bets',
-    macros:      SINGLE_COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_single_15min,
-  },
   // ── Multiplayer bet mode ─────────────────────────────────────────────────────
   {
     trigger:     'game_bet_multi_created',
@@ -98,38 +74,6 @@ const TRIGGERS = [
     default:     DEFAULT_TEMPLATES.game_bet_multi_almost_1,
   },
   {
-    trigger:     'game_bet_match_1hr',
-    group:       'multi',
-    label:       'Match Countdown — 1 Hour',
-    description: 'Fired 1 hour before kickoff for multiplayer challenges with 2+ players',
-    macros:      COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_match_1hr,
-  },
-  {
-    trigger:     'game_bet_match_30min',
-    group:       'multi',
-    label:       'Match Countdown — 30 Minutes',
-    description: 'Fired 30 minutes before kickoff for multiplayer challenges with 2+ players',
-    macros:      COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_match_30min,
-  },
-  {
-    trigger:     'game_bet_match_15min',
-    group:       'multi',
-    label:       'Match Countdown — 15 Minutes',
-    description: 'Fired 15 minutes before kickoff for multiplayer challenges with 2+ players',
-    macros:      COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_match_15min,
-  },
-  {
-    trigger:     'game_bet_countdown_grouped',
-    group:       'multi',
-    label:       'Grouped Countdown',
-    description: 'Sent when 2+ bets share the same countdown window (1hr/30min/15min); replaces individual per-bet messages',
-    macros:      GROUPED_COUNTDOWN_MACROS,
-    default:     DEFAULT_TEMPLATES.game_bet_countdown_grouped,
-  },
-  {
     trigger:     'game_bet_large_stake',
     group:       'multi',
     label:       'Large Stake Alert',
@@ -145,6 +89,31 @@ const TRIGGERS = [
     description: 'Fired once when a challenge is resolved and a winner is determined',
     macros:      SETTLED_MACROS,
     default:     DEFAULT_TEMPLATES.game_bet_settled,
+  },
+  // ── Countdown (single + multiplayer, grouped by time window) ─────────────────
+  {
+    trigger:     'game_bet_countdown_1hr',
+    group:       'countdown',
+    label:       'Countdown — 1 Hour',
+    description: 'Sent 1 hour before kickoff; groups all active single + multiplayer bets in one message',
+    macros:      GROUPED_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_countdown_1hr,
+  },
+  {
+    trigger:     'game_bet_countdown_30min',
+    group:       'countdown',
+    label:       'Countdown — 30 Minutes',
+    description: 'Sent 30 minutes before kickoff; groups all active single + multiplayer bets in one message',
+    macros:      GROUPED_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_countdown_30min,
+  },
+  {
+    trigger:     'game_bet_countdown_15min',
+    group:       'countdown',
+    label:       'Countdown — 15 Minutes',
+    description: 'Sent 15 minutes before kickoff; groups all active single + multiplayer bets in one message',
+    macros:      GROUPED_COUNTDOWN_MACROS,
+    default:     DEFAULT_TEMPLATES.game_bet_countdown_15min,
   },
   // ── Rankings ──────────────────────────────────────────────────────────────────
   {
@@ -422,7 +391,7 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       total_players:       42,
       count:               3,
       time_label:          '30 Minutes',
-      bets_list:           `⚽ ${homeTeam} vs ${awayTeam} — Code: TEST-ABCD\n⚽ Arsenal vs Man City — Code: TEST-EFGH\n🎮 Liverpool vs Tottenham — 4 players — Code: TEST-IJKL`,
+      bets_list:           `⚽ Single Bets:\n• ${homeTeam} vs ${awayTeam} — Code: TEST-ABCD | Kickoff: 20:00\n• Arsenal vs Man City — Code: TEST-EFGH | Kickoff: 20:00\n\n🎮 Multiplayer Bets:\n• Liverpool vs Tottenham — 4 players — Code: TEST-IJKL | Kickoff: 20:30`,
     };
 
     // Get the saved (or default) template

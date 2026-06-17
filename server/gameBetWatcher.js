@@ -199,6 +199,24 @@ Generated: {{generated_at}}`,
 {{bets_list}}
 
 Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_1hr: `⏰ {{count}} Challenge(s) Starting in 1 Hour!
+
+{{bets_list}}
+
+Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_30min: `⏰ {{count}} Challenge(s) Starting in 30 Minutes!
+
+{{bets_list}}
+
+Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_15min: `🚀 {{count}} Challenge(s) Starting in 15 Minutes!
+
+{{bets_list}}
+
+Open the VermoSports app to join! 🚀`,
 };
 
 // Backward-compat alias
@@ -879,6 +897,23 @@ async function pollFillProgress(db) {
   }
 }
 
+function buildBetsList(singles, multis) {
+  const singleLines = singles.map(({ vars }) =>
+    `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+  );
+  const multiLines = multis.map(({ vars }) => {
+    const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
+      || `${vars.home_team} vs ${vars.away_team}`;
+    return `• ${firstLine} — ${vars.current_players} players — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`;
+  });
+
+  if (singleLines.length > 0 && multiLines.length > 0) {
+    return `⚽ Single Bets:\n${singleLines.join('\n')}\n\n🎮 Multiplayer Bets:\n${multiLines.join('\n')}`;
+  }
+  if (singleLines.length > 0) return singleLines.join('\n');
+  return multiLines.join('\n');
+}
+
 async function pollCountdowns(db) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const bets = await db.collection('game_bet').find({
@@ -888,9 +923,9 @@ async function pollCountdowns(db) {
   }).toArray();
 
   const checkpoints = [
-    { key: '1hr',   singleTrigger: 'game_bet_single_1hr',  multiTrigger: 'game_bet_match_1hr',   timeLabel: '1 Hour',     threshold: 65 },
-    { key: '30min', singleTrigger: 'game_bet_single_30min', multiTrigger: 'game_bet_match_30min', timeLabel: '30 Minutes', threshold: 35 },
-    { key: '15min', singleTrigger: 'game_bet_single_15min', multiTrigger: 'game_bet_match_15min', timeLabel: '15 Minutes', threshold: 20 },
+    { key: '1hr',   trigger: 'game_bet_countdown_1hr',   threshold: 65 },
+    { key: '30min', trigger: 'game_bet_countdown_30min',  threshold: 35 },
+    { key: '15min', trigger: 'game_bet_countdown_15min',  threshold: 20 },
   ];
 
   // Collect candidates per checkpoint
@@ -931,7 +966,7 @@ async function pollCountdowns(db) {
 
       for (const cp of checkpoints) {
         if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
-          cpGroups[cp.key].broadcast.push({ betId, vars, type: 'multi', trigger: cp.multiTrigger });
+          cpGroups[cp.key].broadcast.push({ betId, vars, type: 'multi' });
         }
       }
     } else {
@@ -966,7 +1001,7 @@ async function pollCountdowns(db) {
       for (const cp of checkpoints) {
         if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
           if (!isJoined) {
-            cpGroups[cp.key].broadcast.push({ betId, vars, type: 'single', trigger: cp.singleTrigger });
+            cpGroups[cp.key].broadcast.push({ betId, vars, type: 'single' });
           } else {
             cpGroups[cp.key].dm.push({ betId, bet, vars });
           }
@@ -979,57 +1014,26 @@ async function pollCountdowns(db) {
   for (const cp of checkpoints) {
     const { broadcast, dm } = cpGroups[cp.key];
 
-    if (broadcast.length === 1) {
-      const { betId, vars, type, trigger } = broadcast[0];
-      const template = getTemplate(trigger);
+    if (broadcast.length > 0) {
+      const template = getTemplate(cp.trigger);
       if (template) {
-        let message = renderTemplate(template, vars);
-        if (type === 'single') message += `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
-        const result = await notifyAll(message, trigger);
-        if (result.ok) {
-          markNotified(betId, cp.key);
-          console.log(`[GameBetWatcher] ${type} ${cp.key} countdown (solo): ${vars.code}`);
-        }
-      }
-    } else if (broadcast.length > 1) {
-      const groupedTemplate = getTemplate('game_bet_countdown_grouped');
-      if (groupedTemplate) {
-        const lines = broadcast.map(({ vars, type }) => {
-          if (type === 'single') {
-            return `⚽ ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code}`;
-          }
-          const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
-            || `${vars.home_team} vs ${vars.away_team}`;
-          return `🎮 ${firstLine} — ${vars.current_players} players — Code: ${vars.code}`;
-        });
+        const singles = broadcast.filter(b => b.type === 'single');
+        const multis  = broadcast.filter(b => b.type === 'multi');
         const gVars = {
-          count:      broadcast.length,
-          time_label: cp.timeLabel,
-          bets_list:  lines.join('\n'),
+          count:     broadcast.length,
+          bets_list: buildBetsList(singles, multis),
         };
-        const result = await notifyAll(renderTemplate(groupedTemplate, gVars), 'game_bet_countdown_grouped');
+        const result = await notifyAll(renderTemplate(template, gVars), cp.trigger);
         if (result.ok) {
           for (const { betId } of broadcast) markNotified(betId, cp.key);
-          console.log(`[GameBetWatcher] Grouped ${cp.key} countdown: ${broadcast.length} bets`);
-        }
-      } else {
-        // Grouped template not configured — send individually
-        for (const { betId, vars, type, trigger } of broadcast) {
-          const template = getTemplate(trigger);
-          if (!template) continue;
-          let message = renderTemplate(template, vars);
-          if (type === 'single') message += `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
-          const result = await notifyAll(message, trigger);
-          if (result.ok) markNotified(betId, cp.key);
+          console.log(`[GameBetWatcher] ${cp.key} countdown: ${broadcast.length} bets (${singles.length} single, ${multis.length} multi)`);
         }
       }
     }
 
-    // DMs for joined single bets
+    // DMs for joined single bets — per-bet plain text (not the grouped format)
     for (const { betId, bet, vars } of dm) {
-      const template = getTemplate(cp.singleTrigger);
-      if (!template) continue;
-      const message = renderTemplate(template, vars);
+      const dmText = `⏰ Your Match Kicks Off Soon!\n\n⚽ ${vars.home_team} vs ${vars.away_team}\n🏆 ${vars.league}\n\nKickoff: ${vars.kickoff_time}\nStake: ${vars.stake} | Code: ${vars.code}`;
       const userIds = getParticipantUserIds(bet);
       let anyOk = false;
       let allGaveUp = userIds.length > 0;
@@ -1042,7 +1046,7 @@ async function pollCountdowns(db) {
           );
           const phone = user?.mobile;
           if (!phone) { markNotified(betId, dmKey); continue; }
-          const dmResult = await sendDirectMessage(phone, message, cp.singleTrigger);
+          const dmResult = await sendDirectMessage(phone, dmText, cp.trigger);
           if (dmResult?.ok) {
             anyOk = true;
             markNotified(betId, dmKey);
