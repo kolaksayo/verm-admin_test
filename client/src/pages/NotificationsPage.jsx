@@ -246,6 +246,9 @@ const PREVIEW_VARS = {
   generated_at:        new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
   top_players:         '🥇 testuser1 — 320 pts (5 bets)\n🥈 testuser2 — 280 pts (4 bets)\n🥉 testuser3 — 210 pts (3 bets)',
   total_players:       42,
+  count:               3,
+  time_label:          '30 Minutes',
+  bets_list:           '⚽ Arsenal vs Chelsea — Code: ABC-123\n⚽ Man City vs Liverpool — Code: DEF-456\n🎮 Arsenal vs Man City — 4 players — Code: GHI-789',
 };
 
 function renderPreview(template) {
