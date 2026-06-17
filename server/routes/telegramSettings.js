@@ -231,6 +231,10 @@ router.post('/test', auth, async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
   }
+  const tgRow = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
+  if (tgRow && tgRow.value === '0') {
+    return res.status(400).json({ ok: false, error: 'Telegram notifications are disabled. Enable them first.' });
+  }
   const result = await sendMessage('✅ <b>VermoSports Admin</b>\n\nTelegram notifications are configured and working!');
   res.json(result);
 });
@@ -304,8 +308,14 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
 
-  if (!isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'Telegram not configured' });
+  const sqlite = getSQLite();
+  const tgRow  = sqlite.prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
+  const tgEnabled = tgRow ? tgRow.value !== '0' : true;
+  const waRow  = sqlite.prepare("SELECT value FROM admin_settings WHERE key = 'whatsapp_enabled'").get();
+  const waEnabledFlag = waRow ? waRow.value !== '0' : true;
+
+  if (!isConfigured() && !isWAConfigured()) {
+    return res.status(400).json({ ok: false, error: 'No channels configured' });
   }
 
   try {
@@ -400,8 +410,14 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
     const testMsg  = '[TEST] ' + renderTemplate(template, sampleVars);
 
     const triggerKey = req.params.trigger + '_test';
-    const sends = [sendMessage(testMsg, triggerKey)];
-    if (isWAConfigured()) sends.push(sendWhatsApp(testMsg, triggerKey));
+    const sends = [];
+    if (isConfigured()   && tgEnabled)      sends.push(sendMessage(testMsg, triggerKey));
+    if (isWAConfigured() && waEnabledFlag)  sends.push(sendWhatsApp(testMsg, triggerKey));
+
+    if (sends.length === 0) {
+      return res.json({ ok: false, reason: 'All configured channels have notifications disabled' });
+    }
+
     const [tgResult] = await Promise.allSettled(sends);
     res.json(tgResult.status === 'fulfilled' ? tgResult.value : { ok: false, reason: tgResult.reason?.message });
   } catch (err) {

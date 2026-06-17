@@ -1804,7 +1804,7 @@ export default function NotificationsPage() {
                     <div className="space-y-2 mb-5">
                       <button
                         onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
-                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup') : waChannelStatus === 'Needs Setup'}
+                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup' || tgStatus === 'Disabled') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup' || waGroupStatus === 'Disabled') : (waChannelStatus === 'Needs Setup' || waChannelStatus === 'Disabled')}
                         className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
                       >
                         {(selectedChannel === 'telegram' ? testing : waTesting) ? 'Sending…' : 'Send Test Message'}
