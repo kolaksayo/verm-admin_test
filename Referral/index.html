@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Referral Dashboard — VermoSports</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Check your referral stats on VermoSports." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --globe: #1C1B20;
+      --island: #24232A;
+      --on-island: #313038;
+      --on-island-hover: #3B3A42;
+      --coloured: #775CFD;
+      --btn-primary: #775CFD;
+      --btn-primary-tap: #6247CF;
+      --btn-tertiary: #313038;
+      --text-primary: #FFFFFF;
+      --text-secondary: #E2E2E2;
+      --text-tertiary: #979F9F;
+      --text-button-light: #FFFFFF;
+      --divider-light: #303030;
+      --divider-dark: #24232A;
+      --lime: #84CC16;
+      --danger: #EF4444;
+    }
+    body {
+      background: radial-gradient(circle at top, #24232A 0, #1C1B20 40%, #050509 100%);
+      color: var(--text-primary);
+    }
+    .nav-blur {
+      backdrop-filter: blur(14px);
+      background: linear-gradient(to bottom, rgba(12,12,18,0.95), rgba(12,12,18,0.9));
+      border-bottom: 1px solid rgba(48,48,48,0.8);
+    }
+    .glass {
+      background: linear-gradient(135deg, rgba(36,35,42,0.96), rgba(36,35,42,0.92));
+      border: 1px solid rgba(67,66,80,0.9);
+      backdrop-filter: blur(20px);
+    }
+    .funnel-bar { transition: width 0.6s ease; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.8s linear infinite; }
+  </style>
+</head>
+<body class="antialiased text-sm min-h-screen flex flex-col">
+
+  <!-- NAV -->
+  <header class="nav-blur sticky top-0 z-40">
+    <div class="max-w-2xl mx-auto px-4 py-3 flex justify-between items-center">
+      <a href="/" class="flex items-center gap-3">
+        <img src="/Vermo.jpeg" alt="VermoSports" class="w-9 h-9 rounded-2xl object-cover" />
+        <div>
+          <p class="text-[10px] tracking-[0.18em] font-semibold uppercase text-[var(--text-tertiary)]">VERMO</p>
+          <p class="text-sm font-semibold text-white">SPORTS</p>
+        </div>
+      </a>
+      <div>
+        <h1 class="text-sm font-bold text-white">Referral Dashboard</h1>
+        <p class="text-[11px] text-[var(--text-tertiary)] text-right">Enter your referral code</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="flex-1 px-4 py-10">
+    <div class="max-w-2xl mx-auto space-y-8">
+
+      <!-- Code input -->
+      <div class="glass rounded-2xl p-6">
+        <label for="referral-code" class="block text-sm font-semibold text-white mb-3">Your Referral Code</label>
+        <form id="code-form" class="flex gap-3" onsubmit="return false;">
+          <input
+            id="referral-code"
+            type="text"
+            placeholder="e.g. ABDUL302"
+            autocomplete="off"
+            spellcheck="false"
+            class="flex-1 px-4 py-3 rounded-xl text-sm font-mono uppercase
+                   bg-[var(--on-island)] border border-[var(--divider-light)] text-white
+                   placeholder-[var(--text-tertiary)]
+                   focus:outline-none focus:ring-2 focus:ring-[var(--coloured)]"
+          />
+          <button
+            id="submit-btn"
+            type="button"
+            class="px-6 py-3 rounded-xl text-sm font-semibold text-white whitespace-nowrap
+                   bg-[var(--btn-primary)] hover:bg-[var(--btn-primary-tap)]
+                   disabled:opacity-50 transition-colors"
+          >
+            View Stats
+          </button>
+        </form>
+        <p id="error-msg" class="mt-3 text-sm hidden" style="color:var(--danger)"></p>
+      </div>
+
+      <!-- Results -->
+      <div id="results" class="space-y-8 hidden">
+
+        <!-- Identity -->
+        <div class="flex items-center gap-3">
+          <div id="avatar"
+               class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0"
+               style="background:rgba(119,92,253,0.2); color:var(--coloured)">
+          </div>
+          <div>
+            <p id="display-name" class="text-sm font-semibold text-white hidden"></p>
+            <p id="username" class="text-sm font-semibold text-white"></p>
+            <p id="ref-code" class="text-xs font-mono text-[var(--text-tertiary)]"></p>
+          </div>
+        </div>
+
+        <!-- Stat cards -->
+        <div id="stats-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+
+        <!-- Conversion funnel -->
+        <div id="funnel-section" class="glass rounded-2xl p-6 hidden">
+          <p class="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-6">Conversion Funnel</p>
+          <div id="funnel-steps"></div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="empty-state" class="glass rounded-2xl p-8 text-center hidden">
+          <p class="text-[var(--text-tertiary)] text-sm">No referrals yet. Share your code to get started!</p>
+          <p id="empty-code" class="font-mono font-bold text-lg mt-2" style="color:var(--coloured)"></p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-[var(--divider-dark)] py-4 mt-auto">
+    <div class="max-w-2xl mx-auto px-4 text-center">
+      <p class="text-[11px] text-[var(--text-tertiary)]">
+        &copy; <span id="year"></span> VermoSports. For players 18+ only.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    var API_BASE = 'https://vermosports.com/api';
+
+    var input     = document.getElementById('referral-code');
+    var submitBtn = document.getElementById('submit-btn');
+    var errorMsg  = document.getElementById('error-msg');
+    var results   = document.getElementById('results');
+
+    // Tracks the current referral code so the earnings unlock can use it
+    var currentCode = '';
+
+    function loadStats(code) {
+      code = code.trim().toUpperCase();
+      if (!code) return;
+      currentCode = code;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Loading…';
+      errorMsg.classList.add('hidden');
+      results.classList.add('hidden');
+
+      fetch(API_BASE + '/influencer-public?code=' + encodeURIComponent(code))
+        .then(function (res) {
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.error || 'Something went wrong'); });
+          return res.json();
+        })
+        .then(renderResults)
+        .catch(function (err) {
+          var msg = err.message === 'Referral code not found'
+            ? 'That referral code was not found. Double-check and try again.'
+            : err.message;
+          errorMsg.textContent = msg;
+          errorMsg.classList.remove('hidden');
+        })
+        .finally(function () {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'View Stats';
+        });
+    }
+
+    input.addEventListener('input', function () {
+      this.value = this.value.toUpperCase();
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') loadStats(input.value);
+    });
+
+    submitBtn.addEventListener('click', function () {
+      loadStats(input.value);
+    });
+
+    // Auto-load from ?code= query param
+    var prefillCode = (window.__PREFILL_CODE__ || new URLSearchParams(window.location.search).get('code') || '').toUpperCase();
+    if (prefillCode) {
+      input.value = prefillCode;
+      loadStats(prefillCode);
+    }
+
+    function renderResults(data) {
+      var nameEl     = document.getElementById('display-name');
+      var usernameEl = document.getElementById('username');
+
+      if (data.name) {
+        nameEl.textContent = data.name;
+        nameEl.classList.remove('hidden');
+        usernameEl.className = 'text-xs text-[var(--text-tertiary)]';
+      } else {
+        nameEl.classList.add('hidden');
+        usernameEl.className = 'text-sm font-semibold text-white';
+      }
+
+      document.getElementById('avatar').textContent =
+        ((data.name || data.username) || '?')[0].toUpperCase();
+      usernameEl.textContent = data.username || '';
+      document.getElementById('ref-code').textContent = data.referralCode || '';
+
+      var grid = document.getElementById('stats-grid');
+      grid.innerHTML = '';
+      grid.appendChild(statCard('Total Signups', num(data.referred), 'Users who joined using your code', null));
+
+      if (data.showEarnings) {
+        grid.appendChild(earningsLockedCard());
+      }
+
+      var funnelSection = document.getElementById('funnel-section');
+      if (data.showFunnel && data.referred > 0) {
+        var fundedPct = Math.round((data.funded / data.referred) * 100);
+        var betPct    = Math.round((data.bet    / data.referred) * 100);
+        var stepsEl   = document.getElementById('funnel-steps');
+        stepsEl.innerHTML = '';
+        stepsEl.appendChild(funnelStep(1, 'Signed Up',     data.referred, null,      '#979F9F', false));
+        stepsEl.appendChild(funnelStep(2, 'Funded Wallet', data.funded,   fundedPct, '#84CC16', false));
+        stepsEl.appendChild(funnelStep(3, 'Placed a Bet',  data.bet,      betPct,    '#775CFD', true));
+        funnelSection.classList.remove('hidden');
+      } else {
+        funnelSection.classList.add('hidden');
+      }
+
+      var emptyState = document.getElementById('empty-state');
+      if (data.referred === 0) {
+        document.getElementById('empty-code').textContent = data.referralCode || '';
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      results.classList.remove('hidden');
+    }
+
+    // Builds the locked earnings card with password input
+    function earningsLockedCard() {
+      var card = document.createElement('div');
+      card.id = 'earnings-card';
+      card.className = 'glass rounded-2xl p-6 flex flex-col gap-3';
+      card.innerHTML =
+        '<div class="flex items-center justify-between">' +
+          '<p class="text-xs font-semibold uppercase tracking-widest" style="color:var(--text-tertiary)">Estimated Earnings</p>' +
+          '<span class="text-lg">🔒</span>' +
+        '</div>' +
+        '<p class="text-xs" style="color:var(--text-tertiary)">Enter your VermoSports password to view your earnings.</p>' +
+        '<div class="flex gap-2">' +
+          '<input id="earnings-pw" type="password" placeholder="Your password" autocomplete="current-password"' +
+            ' class="flex-1 px-3 py-2 rounded-xl text-sm bg-[var(--on-island)] border border-[var(--divider-light)]' +
+            ' text-white placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--coloured)]" />' +
+          '<button id="earnings-unlock-btn" type="button"' +
+            ' class="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--btn-primary)]' +
+            ' hover:bg-[var(--btn-primary-tap)] disabled:opacity-50 transition-colors whitespace-nowrap">' +
+            'Unlock' +
+          '</button>' +
+        '</div>' +
+        '<p id="earnings-error" class="text-xs hidden" style="color:var(--danger)"></p>';
+
+      // Wire up after insertion (elements exist in DOM after append)
+      setTimeout(function () {
+        var pwInput   = document.getElementById('earnings-pw');
+        var unlockBtn = document.getElementById('earnings-unlock-btn');
+        var errEl     = document.getElementById('earnings-error');
+
+        function doUnlock() {
+          var pw = pwInput.value;
+          if (!pw) return;
+          unlockBtn.disabled = true;
+          unlockBtn.textContent = '…';
+          errEl.classList.add('hidden');
+
+          fetch(API_BASE + '/influencer-public/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: currentCode, password: pw }),
+          })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+              if (!data.ok) throw new Error(data.error || 'Incorrect password');
+              // Replace locked card with real earnings card
+              var earningsCard = document.getElementById('earnings-card');
+              var realCard = statCard(
+                'Estimated Earnings',
+                '₦' + num(data.earnings, 2),
+                '₦' + num(data.rate || 0) + ' per full conversion',
+                'var(--lime)'
+              );
+              earningsCard.parentNode.replaceChild(realCard, earningsCard);
+            })
+            .catch(function (err) {
+              errEl.textContent = err.message === 'Incorrect password'
+                ? 'Incorrect password. Please try again.'
+                : err.message;
+              errEl.classList.remove('hidden');
+              unlockBtn.disabled = false;
+              unlockBtn.textContent = 'Unlock';
+            });
+        }
+
+        unlockBtn.addEventListener('click', doUnlock);
+        pwInput.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') doUnlock();
+        });
+      }, 0);
+
+      return card;
+    }
+
+    function statCard(label, value, sub, color) {
+      var card = document.createElement('div');
+      card.className = 'glass rounded-2xl p-6 flex flex-col gap-1';
+      card.innerHTML =
+        '<p class="text-xs font-semibold uppercase tracking-widest" style="color:var(--text-tertiary)">' + esc(label) + '</p>' +
+        '<p class="text-3xl font-bold" style="color:' + (color || '#FFFFFF') + '">' + esc(value) + '</p>' +
+        (sub ? '<p class="text-xs mt-0.5" style="color:var(--text-tertiary)">' + esc(sub) + '</p>' : '');
+      return card;
+    }
+
+    function funnelStep(step, label, count, pct, color, isLast) {
+      var wrapper = document.createElement('div');
+      wrapper.className = 'flex items-start gap-4';
+      var lineHtml = isLast ? '' :
+        '<div class="w-px flex-1 mt-1 mb-1" style="background:var(--divider-light);min-height:24px"></div>';
+      var barHtml = pct != null
+        ? '<div class="mt-2">' +
+            '<div class="w-full rounded-full h-2" style="background:var(--on-island)">' +
+              '<div class="h-2 rounded-full funnel-bar" style="width:' + Math.max(pct,1) + '%;background:' + color + '"></div>' +
+            '</div>' +
+            '<p class="text-xs mt-1" style="color:var(--text-tertiary)">' + pct + '% of signups</p>' +
+          '</div>'
+        : '';
+      wrapper.innerHTML =
+        '<div class="flex flex-col items-center">' +
+          '<div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background:' + color + '">' + step + '</div>' +
+          lineHtml +
+        '</div>' +
+        '<div class="pb-6 flex-1">' +
+          '<div class="flex items-center justify-between">' +
+            '<p class="text-sm font-semibold text-white">' + esc(label) + '</p>' +
+            '<p class="text-sm font-bold text-white">' + num(count) + '</p>' +
+          '</div>' +
+          barHtml +
+        '</div>';
+      return wrapper;
+    }
+
+    function num(n, d) {
+      if (n == null) return '0';
+      return d != null
+        ? Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })
+        : Number(n).toLocaleString();
+    }
+
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = String(s);
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

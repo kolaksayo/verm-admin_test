@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt  = require('bcryptjs');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
@@ -16,6 +17,25 @@ const toOid = (id) => { try { return new ObjectId(id.toString()); } catch { retu
 function getSetting(sqlite, key, defaultVal) {
   const row = sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
   return row ? row.value : defaultVal;
+}
+
+async function getBetCount(db, refereeIds) {
+  if (!refereeIds.length) return 0;
+  const refereeOids = refereeIds.map(toOid).filter(Boolean);
+  const [bettingParticipants, bettingCreators] = await Promise.all([
+    db.collection('game_bet').aggregate([
+      { $match: { 'participants.user': { $in: refereeOids } } },
+      { $unwind: '$participants' },
+      { $match: { 'participants.user': { $in: refereeOids } } },
+      { $group: { _id: '$participants.user' } },
+    ]).toArray(),
+    db.collection('game_bet').distinct('createdBy', { createdBy: { $in: refereeOids } }),
+  ]);
+  const bettingSet = new Set([
+    ...bettingParticipants.map((b) => String(b._id)),
+    ...bettingCreators.map(String),
+  ]);
+  return refereeIds.filter((id) => bettingSet.has(id)).length;
 }
 
 // GET /api/influencer-public?code=REFERRALCODE
@@ -83,15 +103,7 @@ router.get('/', async (req, res) => {
       bet    = refereeIds.filter((id) => bettingSet.has(id)).length;
     }
 
-    // Earnings: rate × fully converted users (bet count)
-    let rate     = 0;
-    let earnings = null;
-    if (showEarnings) {
-      const rateRow = sqlite.prepare('SELECT rate FROM influencer_rates WHERE referral_code = ?').get(referralCode.toUpperCase());
-      rate     = rateRow ? rateRow.rate : 0;
-      earnings = rate * bet;
-    }
-
+    // Earnings are NOT returned here — they require password verification via POST /verify
     res.json({
       referralCode,
       username:     user.username,
@@ -100,13 +112,59 @@ router.get('/', async (req, res) => {
       funded:       showFunnel ? funded : null,
       bet:          showFunnel ? bet    : null,
       showFunnel,
-      showEarnings,
-      rate:         showEarnings ? rate     : null,
-      earnings:     showEarnings ? earnings : null,
+      showEarnings, // boolean only — actual figures require /verify
     });
   } catch (err) {
     console.error('[influencer-public] error:', err.message);
     res.status(500).json({ error: 'Failed to load stats' });
+  }
+});
+
+// POST /api/influencer-public/verify
+// Verifies the influencer's platform password and returns earnings if correct.
+router.post('/verify', async (req, res) => {
+  try {
+    const code     = (req.body.code     || '').trim().toUpperCase();
+    const password = (req.body.password || '').trim();
+    if (!code || !password)
+      return res.status(400).json({ ok: false, error: 'Code and password required' });
+
+    const db     = getDb();
+    const sqlite = getSQLite();
+
+    // Find user including password hash
+    const user = await db.collection('users').findOne(
+      { referralCode: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+      { projection: { _id: 1, referralCode: 1, password: 1 } },
+    );
+    if (!user)
+      return res.status(404).json({ ok: false, error: 'Referral code not found' });
+    if (!user.password)
+      return res.status(400).json({ ok: false, error: 'No password set for this account' });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(401).json({ ok: false, error: 'Incorrect password' });
+
+    // Password correct — calculate earnings
+    const referralCode = user.referralCode || code;
+    const rateRow = sqlite.prepare('SELECT rate FROM influencer_rates WHERE referral_code = ?').get(referralCode.toUpperCase());
+    const rate = rateRow ? rateRow.rate : 0;
+
+    const referralDocs = await db.collection('referrals').find(
+      { referrer: user._id },
+      { projection: { referee: 1, referredUser: 1, newUser: 1 } },
+    ).toArray();
+    const refereeIds = referralDocs.map((d) =>
+      String(d.referee || d.referredUser || d.newUser || '')
+    ).filter(Boolean);
+
+    const bet = await getBetCount(db, refereeIds);
+
+    res.json({ ok: true, earnings: rate * bet, rate });
+  } catch (err) {
+    console.error('[influencer-public/verify] error:', err.message);
+    res.status(500).json({ ok: false, error: 'Failed to verify' });
   }
 });
 
