@@ -389,6 +389,8 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       code:                'TEST-ABCD',
       mode:                'Multiplayer',
       slots:               10,
+      bet_type:            'SHOTSOFFGOAL',
+      handicap:            '-1',
       minutes_until_match: 60,
       kickoff_time:        kickoffTime,
       match_date:          new Date().toLocaleDateString('en-GB'),

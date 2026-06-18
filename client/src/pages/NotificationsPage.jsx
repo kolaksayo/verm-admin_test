@@ -235,6 +235,8 @@ const PREVIEW_VARS = {
   code:                'TEST-ABCD',
   mode:                'Multiplayer',
   slots:               10,
+  bet_type:            'SHOTSOFFGOAL',
+  handicap:            '-1',
   minutes_until_match: 60,
   kickoff_time:        '20:00',
   match_date:          new Date().toLocaleDateString('en-GB'),

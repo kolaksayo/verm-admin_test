@@ -233,6 +233,8 @@ const GAME_BET_MACROS = [
   { key: '{{mode}}',      desc: 'Bet mode (e.g. Multiplayer)' },
   { key: '{{slots}}',     desc: 'Max participants' },
   { key: '{{league}}',    desc: 'League name' },
+  { key: '{{bet_type}}',  desc: 'Bet type (e.g. SHOTSOFFGOAL)' },
+  { key: '{{handicap}}',  desc: 'Handicap value from optionsCreatedBy (blank if not set)' },
 ];
 
 const MULTI_BASE_MACROS = [
@@ -802,6 +804,8 @@ async function pollNewBets(db, since) {
           mode:      formatMode(bet),
           slots:     bet.capacity ?? bet.maxParticipants ?? '—',
           league:    fixture.league || '—',
+          bet_type:  bet.betType || '—',
+          handicap:  bet.optionsCreatedBy != null ? String(bet.optionsCreatedBy) : '',
         };
       }
       const message = renderTemplate(template, vars);
