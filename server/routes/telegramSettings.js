@@ -420,8 +420,14 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
       return res.json({ ok: false, reason: 'All configured channels have notifications disabled' });
     }
 
-    const [tgResult] = await Promise.allSettled(sends);
-    res.json(tgResult.status === 'fulfilled' ? tgResult.value : { ok: false, reason: tgResult.reason?.message });
+    const results = await Promise.allSettled(sends);
+    const success = results.find(r => r.status === 'fulfilled' && r.value?.ok);
+    const first   = results[0];
+    res.json(
+      success
+        ? success.value
+        : first.status === 'fulfilled' ? first.value : { ok: false, reason: first.reason?.message }
+    );
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
