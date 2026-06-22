@@ -4,6 +4,7 @@ const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
+const { getBettingSet } = require('../utils/bettingSet');
 
 const router = express.Router();
 
@@ -115,18 +116,12 @@ router.get('/', auth, async (req, res) => {
     const referrerIds = Object.keys(referrerMap);
 
     // 2. In parallel: funded set, betting set, referrer user docs
-    const [fundedUserIds, bettingParticipants, bettingCreators, referrerDocs] = await Promise.all([
+    const [fundedUserIds, bettingSet, referrerDocs] = await Promise.all([
       // All-time funded users (no date filter — a referee who funded later still counts)
       db.collection('transactions').distinct('user', DEPOSIT_FILTER),
 
-      // All users who participated in any bet (via participants.user)
-      db.collection('game_bet').aggregate([
-        { $unwind: '$participants' },
-        { $group: { _id: '$participants.user' } },
-      ]).toArray(),
-
-      // All users who created a bet
-      db.collection('game_bet').distinct('createdBy'),
+      // All-time bettors = participants ∪ creators (see utils/bettingSet.js)
+      getBettingSet(db),
 
       // Referrer user documents for display names + referral codes
       db.collection('users').find(
@@ -136,10 +131,6 @@ router.get('/', auth, async (req, res) => {
     ]);
 
     const fundedSet  = new Set(fundedUserIds.map(String));
-    const bettingSet = new Set([
-      ...bettingParticipants.map((b) => String(b._id)),
-      ...bettingCreators.map(String),
-    ]);
 
     const referrerDocMap = {};
     referrerDocs.forEach((u) => {

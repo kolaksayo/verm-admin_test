@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const escapeRegex = require('../utils/escapeRegex');
 
 const router = express.Router();
 
@@ -29,12 +30,13 @@ router.get('/', auth, async (req, res) => {
     }
 
     if (search) {
+      const safe = escapeRegex(search);
       matchStage.$or = [
-        { 'gateWayResponse.data.debitAccountName':   { $regex: search, $options: 'i' } },
-        { 'gateWayResponse.data.debitAccountNumber':  { $regex: search, $options: 'i' } },
-        { 'gateWayResponse.data.creditAccountNumber': { $regex: search, $options: 'i' } },
-        { 'gateWayResponse.data.paymentReference':    { $regex: search, $options: 'i' } },
-        { 'gateWayResponse.data.narration':           { $regex: search, $options: 'i' } },
+        { 'gateWayResponse.data.debitAccountName':   { $regex: safe, $options: 'i' } },
+        { 'gateWayResponse.data.debitAccountNumber':  { $regex: safe, $options: 'i' } },
+        { 'gateWayResponse.data.creditAccountNumber': { $regex: safe, $options: 'i' } },
+        { 'gateWayResponse.data.paymentReference':    { $regex: safe, $options: 'i' } },
+        { 'gateWayResponse.data.narration':           { $regex: safe, $options: 'i' } },
       ];
     }
 

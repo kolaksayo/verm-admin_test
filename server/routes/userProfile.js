@@ -160,7 +160,7 @@ router.get('/:id', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('User profile error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to fetch user profile' });
   }
 });
 
@@ -184,7 +184,7 @@ router.get('/:id/transaction-descriptions', auth, async (req, res) => {
     res.json(descriptions.filter(Boolean).sort());
   } catch (err) {
     console.error('Transaction descriptions error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to fetch transaction descriptions' });
   }
 });
 
@@ -244,7 +244,7 @@ router.get('/:id/transactions', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('User transactions error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to fetch user transactions' });
   }
 });
 

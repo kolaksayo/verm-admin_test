@@ -118,58 +118,65 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
     }
   }
 
-  // Fetch matching admin adjustments (credits + debits) from SQLite
+  // Admin adjustments (credits + debits) from SQLite are surfaced alongside the
+  // transactions collection. They are treated as a block at the front of the
+  // result set (ordered by created_at desc) and paginated consistently across
+  // every page — so totals and page boundaries stay correct once they exist,
+  // instead of being injected only on page 1 while still inflating the count.
   const lc = search.toLowerCase();
-  const adminAdjDocs = (() => {
+  const matchesAdmin = !search ||
+    'admin top up'.includes(lc) || 'admin debit'.includes(lc) ||
+    lc.includes('admin') || lc.includes('top up') ||
+    lc.includes('debit') || lc.includes('credit');
+
+  const mapAdminRow = (r) => ({
+    _id:         `admin-credit-${r.id}`,
+    type:        r.tx_type || 'CREDIT',
+    description: r.description,
+    amount:      r.amount,
+    user:        r.user_id,   // maps to the DataTable reference lookup → shows username
+    status:      'COMPLETED',
+    createdAt:   r.created_at,
+    adminUser:   r.admin_user,
+    notes:       r.notes || undefined,
+  });
+
+  // True admin-adjustment count (for correct totals) + this page's admin slice.
+  const start = (page - 1) * limit;
+  let adminCount = 0;
+  let adminSlice = [];
+  if (matchesAdmin) {
     try {
-      const matchesAdmin = !search ||
-        'admin top up'.includes(lc) || 'admin debit'.includes(lc) ||
-        lc.includes('admin') || lc.includes('top up') ||
-        lc.includes('debit') || lc.includes('credit');
-      if (!matchesAdmin) return [];
-      return getSQLite().prepare(
-        `SELECT * FROM admin_credits ORDER BY created_at DESC LIMIT 500`
-      ).all().map((r) => ({
-        _id:         `admin-credit-${r.id}`,
-        type:        r.tx_type || 'CREDIT',
-        description: r.description,
-        amount:      r.amount,
-        user:        r.user_id,   // maps to the DataTable reference lookup → shows username
-        status:      'COMPLETED',
-        createdAt:   r.created_at,
-        adminUser:   r.admin_user,
-        notes:       r.notes || undefined,
-      }));
-    } catch { return []; }
-  })();
+      const sqlite = getSQLite();
+      adminCount = sqlite.prepare(`SELECT COUNT(*) AS cnt FROM admin_credits`).get().cnt;
+      const adminSkip = Math.min(start, adminCount);
+      const adminTake = Math.max(0, Math.min(limit, adminCount - adminSkip));
+      if (adminTake > 0) {
+        adminSlice = sqlite.prepare(
+          `SELECT * FROM admin_credits ORDER BY created_at DESC LIMIT ? OFFSET ?`
+        ).all(adminTake, adminSkip).map(mapAdminRow);
+      }
+    } catch { adminCount = 0; adminSlice = []; }
+  }
+
+  // Mongo docs fill whatever space the admin block leaves on this page.
+  const mongoSkip  = Math.max(0, start - adminCount);
+  const mongoLimit = limit - adminSlice.length;
 
   const [mongoTotal, mongoDocs] = await Promise.all([
     db.collection('transactions').countDocuments(mongoQuery),
-    db.collection('transactions')
-      .find(mongoQuery)
-      .sort({ [sortField]: sortOrder })
-      .skip((page - 1) * limit)
-      .limit(page === 1 ? limit - Math.min(adminAdjDocs.length, limit) : limit)
-      .toArray(),
+    mongoLimit > 0
+      ? db.collection('transactions')
+          .find(mongoQuery)
+          .sort({ [sortField]: sortOrder })
+          .skip(mongoSkip)
+          .limit(mongoLimit)
+          .toArray()
+      : Promise.resolve([]),
   ]);
 
-  // Page 1: merge admin adjustments with mongo docs sorted by date, cap at limit
-  let docs;
-  if (page === 1 && adminAdjDocs.length > 0) {
-    const merged = [...adminAdjDocs, ...mongoDocs];
-    if (sortField === 'createdAt') {
-      merged.sort((a, b) => {
-        const av = new Date(a.createdAt).getTime();
-        const bv = new Date(b.createdAt).getTime();
-        return sortOrder === 1 ? av - bv : bv - av;
-      });
-    }
-    docs = merged.slice(0, limit);
-  } else {
-    docs = mongoDocs;
-  }
-
-  const total = mongoTotal + adminAdjDocs.length;
+  const docs  = [...adminSlice, ...mongoDocs];
+  const total = mongoTotal + adminCount;
   return { docs, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 

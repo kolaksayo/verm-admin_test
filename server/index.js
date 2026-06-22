@@ -51,16 +51,27 @@ const searchLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please slow down.' },
 });
+// Stricter limiter for auth (protects login + privilege elevation from brute force)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+});
 
 app.use(compression());
-app.use(cors());
+// CORS: lock to an explicit allow-list when CORS_ORIGINS is set (comma-separated);
+// otherwise fall back to permissive (preserves existing dev/deploy behavior).
+const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean);
+app.use(cors({ origin: corsOrigins && corsOrigins.length ? corsOrigins : true, credentials: true }));
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/collections', heavyLimiter, collectionsRoutes);
 app.use('/api/lookup', lookupRoutes);
-app.use('/api/admin-users', adminUsersRoutes);
+app.use('/api/admin-users', heavyLimiter, adminUsersRoutes);
 app.use('/api/fixtures', searchLimiter, fixturesRoutes);
 app.use('/api/user-profile', userProfileRoutes);
 app.use('/api/game-bets', gameBetsRoutes);
@@ -73,8 +84,8 @@ app.use('/api/telegram',         telegramSettingsRoutes);
 app.use('/api/whatsapp',         whatsappSettingsRoutes);
 app.use('/api/notifications/dm', dmSettingsRoutes);
 app.use('/api/campaigns',        campaignRoutes);
-app.use('/api/audit',            auditRoutes);
-app.use('/api/admin-credit',     adminCreditRoutes);
+app.use('/api/audit',            heavyLimiter, auditRoutes);
+app.use('/api/admin-credit',     heavyLimiter, adminCreditRoutes);
 app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 app.use('/api/influencer-dashboard', influencerDashboardRoutes);
 app.use('/api/influencer-public',   searchLimiter, influencerPublicRoutes);
