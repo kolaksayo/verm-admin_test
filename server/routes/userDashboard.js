@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { getBettingSet } = require('../utils/bettingSet');
 
 const router = express.Router();
 
@@ -42,9 +43,10 @@ router.get('/snapshot', auth, async (req, res) => {
     const [
       totalUsers,
       depositedUserIds,
-      bettingUserIds,
+      bettingSet,
       walletAgg,
       referralDocs,
+      referralTotal,
       pendingWithdrawals,
     ] = await Promise.all([
 
@@ -52,10 +54,8 @@ router.get('/snapshot', auth, async (req, res) => {
 
       db.collection('transactions').distinct('user', DEPOSIT_FILTER),
 
-      db.collection('game_bet').aggregate([
-        { $unwind: '$participants' },
-        { $group: { _id: '$participants.user' } },
-      ]).toArray(),
+      // Bettors = participants ∪ creators (see utils/bettingSet.js)
+      getBettingSet(db),
 
       db.collection('walletusers').aggregate([
         { $group: {
@@ -74,6 +74,8 @@ router.get('/snapshot', auth, async (req, res) => {
         {}, { projection: { referee: 1, referredUser: 1, newUser: 1 } }
       ).limit(5000).toArray(),
 
+      db.collection('referrals').countDocuments(),
+
       db.collection('transactions').aggregate([
         { $match: { ...WITHDRAWAL_FILTER, status: { $regex: /pending|processing/i } } },
         { $group: { _id: null, count: { $sum: 1 }, totalUSD: { $sum: '$amount' } } },
@@ -81,7 +83,6 @@ router.get('/snapshot', auth, async (req, res) => {
     ]);
 
     const depositedSet = new Set(depositedUserIds.map(String));
-    const bettingSet   = new Set(bettingUserIds.map((b) => String(b._id)));
     const idleCount    = [...depositedSet].filter((id) => !bettingSet.has(id)).length;
 
     const referredIds = referralDocs.map((r) => String(r.referee || r.referredUser || r.newUser)).filter(Boolean);
@@ -117,7 +118,9 @@ router.get('/snapshot', auth, async (req, res) => {
         pct:    depositedSet.size > 0 ? Math.round((idleCount / depositedSet.size) * 100) : 0,
       },
       referrals: {
-        total:          referralDocs.length,
+        total:          referralTotal,
+        sampled:        referralDocs.length,
+        truncated:      referralTotal > referralDocs.length,
         converted:      referredConverted,
         conversionRate: referralDocs.length > 0 ? Math.round((referredConverted / referralDocs.length) * 100) : 0,
       },
@@ -128,7 +131,7 @@ router.get('/snapshot', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('User snapshot error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load snapshot' });
   }
 });
 
@@ -153,6 +156,7 @@ router.get('/activity', auth, async (req, res) => {
       topBettors,
       recentWithdrawals,
       referralDocs,
+      referralTotal,
       depositedUserIds,
     ] = await Promise.all([
 
@@ -200,8 +204,11 @@ router.get('/activity', auth, async (req, res) => {
         dateFilter, { projection: { referee: 1, referredUser: 1, newUser: 1 } }
       ).limit(5000).toArray(),
 
-      // All-time deposit set for referral conversion check
-      db.collection('transactions').distinct('user', DEPOSIT_FILTER),
+      db.collection('referrals').countDocuments(dateFilter),
+
+      // Deposit set scoped to the same period as the referrals (so conversion is
+      // measured within the window, not against all-time deposits)
+      db.collection('transactions').distinct('user', depFilter),
     ]);
 
     const depositedSet = new Set(depositedUserIds.map(String));
@@ -239,14 +246,16 @@ router.get('/activity', auth, async (req, res) => {
         status: w.status, createdAt: w.createdAt,
       })),
       referrals: {
-        total:          referralDocs.length,
+        total:          referralTotal,
+        sampled:        referralDocs.length,
+        truncated:      referralTotal > referralDocs.length,
         converted:      referredConverted,
         conversionRate: referralDocs.length > 0 ? Math.round((referredConverted / referralDocs.length) * 100) : 0,
       },
     });
   } catch (err) {
     console.error('User activity error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load activity' });
   }
 });
 

@@ -3,7 +3,7 @@ const { ObjectId } = require('mongodb');
 const { getDb, getWriteDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
-const { requireEditMode } = require('../middleware/auth');
+const { requireEditMode, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -134,7 +134,7 @@ router.post('/', auth, requireEditMode, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[admin-credit] credit error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Failed to apply credit' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to apply credit' });
   }
 });
 
@@ -153,12 +153,12 @@ router.post('/debit', auth, requireEditMode, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[admin-credit] debit error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Failed to apply debit' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to apply debit' });
   }
 });
 
 // GET /api/admin-credit/history/:userId — adjustment history for a specific user
-router.get('/history/:userId', auth, (req, res) => {
+router.get('/history/:userId', auth, requireRole('superadmin', 'admin'), (req, res) => {
   try {
     const rows = getSQLite().prepare(
       `SELECT * FROM admin_credits WHERE user_id = ? ORDER BY id DESC LIMIT 200`
@@ -179,7 +179,7 @@ router.get('/history/:userId', auth, (req, res) => {
     })));
   } catch (err) {
     console.error('[admin-credit] history error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to fetch adjustment history' });
   }
 });
 

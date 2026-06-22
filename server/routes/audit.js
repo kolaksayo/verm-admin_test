@@ -3,16 +3,17 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
+const { requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-const SYSTEM_USER_ID = '692765c58c3db7d510b352c6';
+const SYSTEM_USER_ID = process.env.SYSTEM_USER_ID || '692765c58c3db7d510b352c6';
 
 // GET /api/audit/orphaned-wallets
 // Wallet records whose user/userId reference is null/missing or points to a
 // non-existent user document, plus users who have no wallet at all.
 // The system user (SYSTEM_USER_ID) is excluded from both checks.
-router.get('/orphaned-wallets', auth, async (req, res) => {
+router.get('/orphaned-wallets', auth, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const db = getDb();
 
@@ -127,7 +128,7 @@ router.get('/orphaned-wallets', auth, async (req, res) => {
 
 // GET /api/audit/finance-log
 // Admin credit/debit history — structured finance audit log from admin_credits
-router.get('/finance-log', auth, (req, res) => {
+router.get('/finance-log', auth, requireRole('superadmin', 'admin'), (req, res) => {
   try {
     const sqlite   = getSQLite();
     const limit    = Math.min(500, parseInt(req.query.limit) || 200);
@@ -168,7 +169,7 @@ router.get('/finance-log', auth, (req, res) => {
 
 // GET /api/audit/activity-log
 // Admin action log — document edits/deletes (excludes credit/debit wallet adjustments)
-router.get('/activity-log', auth, (req, res) => {
+router.get('/activity-log', auth, requireRole('superadmin', 'admin'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const limit = Math.min(500, parseInt(req.query.limit) || 100);

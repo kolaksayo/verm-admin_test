@@ -5,6 +5,18 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+// ISO-8601 week-of-year + week-year for a UTC date — matches MongoDB's
+// $isoWeek / $isoWeekYear so admin-credit weekly buckets align with the
+// deposit/withdrawal/betFee weekly series.
+function isoWeek(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  d.setUTCDate(d.getUTCDate() - dayNum + 3); // shift to the Thursday of this week
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round((d - firstThursday) / (7 * 86400000));
+  return { year: d.getUTCFullYear(), week };
+}
+
 const DEPOSIT_FILTER = {
   type: { $regex: /^CREDIT$/i },
   description: { $regex: /^TOP\s*UP$/i },
@@ -158,8 +170,9 @@ router.get('/summary', auth, async (req, res) => {
         { $sort: { '_id.year': 1, '_id.month': 1 } },
       ]).toArray(),
 
-      // ── Type breakdown ───────────────────────────────────────────────────────
+      // ── Type breakdown (scoped to the selected date range, like the rest of the page) ──
       db.collection('transactions').aggregate([
+        { $match: dateFilter },
         { $group: { _id: { type: '$type', description: '$description' }, count: { $sum: 1 }, totalAmount: { $sum: '$amount' } } },
         { $sort: { count: -1 } },
         { $limit: 50 },
@@ -206,6 +219,20 @@ router.get('/summary', auth, async (req, res) => {
           .map((r) => ({ year: +r.year, month: +r.month, day: +r.day, count: r.count, totalUSD: r.totalUSD }));
         obj.monthly = sqlite.prepare(timelineSql(txType, 'month')).all()
           .map((r) => ({ year: +r.year, month: +r.month, count: r.count, totalUSD: r.totalUSD }));
+
+        // Roll the daily rows up into ISO weeks in JS so the week numbering matches
+        // the Mongo deposit/withdrawal/betFee weekly series ($isoWeek/$isoWeekYear).
+        // SQLite's strftime('%W') is not ISO-week, so we derive it from each day.
+        const weekMap = new Map();
+        for (const d of obj.daily) {
+          const { year, week } = isoWeek(new Date(Date.UTC(d.year, d.month - 1, d.day)));
+          const key = `${year}-${week}`;
+          const cur = weekMap.get(key) || { year, week, count: 0, totalUSD: 0 };
+          cur.count    += d.count;
+          cur.totalUSD += d.totalUSD;
+          weekMap.set(key, cur);
+        }
+        obj.weekly = [...weekMap.values()].sort((a, b) => a.year - b.year || a.week - b.week);
       }
     } catch { /* non-fatal */ }
 
@@ -291,8 +318,8 @@ router.get('/summary', auth, async (req, res) => {
         deposits: depWeekly.map(serDep),
         withdrawals: witWeekly.map(serWit),
         betFees: betFeeWeekly.map(serBet),
-        adminCredits: [],
-        adminDebits:  [],
+        adminCredits: adminCredits.weekly,
+        adminDebits:  adminDebits.weekly,
       },
       monthly: {
         deposits: depMonthly.map(serDep),
