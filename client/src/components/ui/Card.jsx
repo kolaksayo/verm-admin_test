@@ -9,7 +9,7 @@ export const Card = forwardRef(function Card({ className, ...props }, ref) {
   return (
     <div
       ref={ref}
-      className={cn('rounded-xl border border-vs-border bg-vs-card text-vs-text shadow-sm', className)}
+      className={cn('rounded-xl border border-vs-border bg-vs-card text-vs-text shadow-card', className)}
       {...props}
     />
   );

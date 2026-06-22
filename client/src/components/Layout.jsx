@@ -65,17 +65,22 @@ const NAV_GROUPS = [
   },
 ];
 
+// Sidebar is always dark (Gentelella signature) — use fixed colours, not vs-* tokens
+// so it stays navy in both dark and light app themes.
+const SIDEBAR_BG      = '#1a2332';
+const SIDEBAR_BORDER  = '#243448';
+
 const ROLE_COLORS = {
-  superadmin: 'text-vs-purple-light',
+  superadmin: 'text-[#64dcc8]',   /* light teal */
   admin:      'text-vs-lime',
-  viewer:     'text-vs-text-3',
+  viewer:     'text-[#7b8fa3]',
 };
 
 const linkClass = ({ isActive }) =>
   `flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-colors ${
     isActive
-      ? 'bg-vs-purple text-white font-medium'
-      : 'text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
+      ? 'bg-[#1ABB9C]/15 text-[#64dcc8] font-medium'
+      : 'text-[#7b8fa3] hover:bg-[#26374e] hover:text-white'
   }`;
 
 function ElevationBanner({ expiry, onDrop }) {
@@ -144,14 +149,14 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-vs-bg">
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 bg-vs-card flex flex-col transition-all duration-200 border-r border-vs-border`}>
+      {/* Sidebar — always dark (Gentelella signature dark-navy panel) */}
+      <aside style={{ backgroundColor: SIDEBAR_BG, borderColor: SIDEBAR_BORDER }} className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 flex flex-col transition-all duration-200 border-r`}>
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-vs-border flex-shrink-0">
+        <div style={{ borderColor: SIDEBAR_BORDER }} className="flex items-center gap-2.5 px-4 py-4 border-b flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-vs-purple flex items-center justify-center flex-shrink-0">
             <span className="text-white text-sm font-bold">V</span>
           </div>
-          <span className="text-vs-text font-bold text-sm tracking-wide">VermoSports Admin</span>
+          <span className="text-white font-bold text-sm tracking-wide">VermoSports Admin</span>
         </div>
 
         {/* Nav */}
@@ -160,7 +165,7 @@ export default function Layout() {
             <div key={group.label} className={`${gi > 0 ? 'mt-4' : ''} mb-1`}>
               <button
                 onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a6080] hover:text-[#7b8fa3] transition-colors"
               >
                 <span>{group.label}</span>
                 <ChevronDown
@@ -198,7 +203,7 @@ export default function Layout() {
             <div className="mt-4 mb-1">
               <button
                 onClick={() => toggleGroup('Admin')}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a6080] hover:text-[#7b8fa3] transition-colors"
               >
                 <span>Admin</span>
                 <ChevronDown
@@ -219,22 +224,22 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-3 border-t border-vs-border flex-shrink-0">
+        <div style={{ borderColor: SIDEBAR_BORDER }} className="px-4 py-3 border-t flex-shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-7 h-7 rounded-full bg-vs-purple flex items-center justify-center flex-shrink-0">
               <span className="text-white text-xs font-bold">{(user || '?')[0].toUpperCase()}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-vs-text font-medium truncate">{user}</p>
-              <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-vs-text-3'}`}>{role}</span>
+              <p className="text-xs text-white font-medium truncate">{user}</p>
+              <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-[#7b8fa3]'}`}>{role}</span>
             </div>
           </div>
           <div className="flex items-center gap-3 pl-9">
-            <NavLink to="/profile" className="text-xs text-vs-text-3 hover:text-vs-text-2 transition-colors">
+            <NavLink to="/profile" className="text-xs text-[#7b8fa3] hover:text-white transition-colors">
               Profile
             </NavLink>
-            <span className="text-vs-border text-xs">·</span>
-            <button onClick={handleLogout} className="text-xs text-vs-text-3 hover:text-vs-danger transition-colors">
+            <span className="text-[#4a6080] text-xs">·</span>
+            <button onClick={handleLogout} className="text-xs text-[#7b8fa3] hover:text-vs-danger transition-colors">
               Sign out
             </button>
           </div>

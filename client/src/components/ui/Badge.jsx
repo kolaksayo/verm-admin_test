@@ -14,6 +14,10 @@ export const badgeVariants = cva(
         warning:   'bg-vs-warning/15 text-vs-warning',
         danger:    'bg-vs-danger/15 text-vs-danger',
         outline:   'border border-vs-border text-vs-text-3',
+        // Gentelella-style status dot: small coloured circle + label text.
+        // Colour the dot via a `before:bg-*` className on the Badge itself,
+        // e.g. <Badge variant="dot" className="before:bg-vs-success">Active</Badge>
+        dot: 'rounded-none px-0 gap-1.5 text-xs font-medium text-vs-text-2 before:content-[""] before:w-2 before:h-2 before:rounded-full before:flex-shrink-0',
       },
     },
     defaultVariants: { variant: 'default' },
