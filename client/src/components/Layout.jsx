@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Sun, Moon, Menu, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../api';
@@ -94,8 +95,9 @@ function ElevationBanner({ expiry, onDrop }) {
 
   return (
     <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
-      <span className="text-amber-400 font-medium">
-        ⚠ Edit mode active — all changes are logged.
+      <span className="flex items-center gap-1.5 text-amber-400 font-medium">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Edit mode active — all changes are logged.
         {minsLeft != null && <span className="opacity-70 ml-1">({minsLeft} min remaining)</span>}
       </span>
       <button
@@ -161,12 +163,9 @@ export default function Layout() {
                 className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
               >
                 <span>{group.label}</span>
-                <svg
+                <ChevronDown
                   className={`w-2.5 h-2.5 transition-transform ${collapsed[group.label] ? '-rotate-90' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
               {!collapsed[group.label] && (
                 <ul className="px-2 space-y-0.5 mt-1">
@@ -202,12 +201,9 @@ export default function Layout() {
                 className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
               >
                 <span>Admin</span>
-                <svg
+                <ChevronDown
                   className={`w-2.5 h-2.5 transition-transform ${collapsed['Admin'] ? '-rotate-90' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
               {!collapsed['Admin'] && (
                 <ul className="px-2 space-y-0.5 mt-1">
@@ -254,9 +250,7 @@ export default function Layout() {
             className="text-vs-text-3 hover:text-vs-text p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
             aria-label="Toggle sidebar"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <Menu className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-vs-success inline-block" />
@@ -267,9 +261,9 @@ export default function Layout() {
           <button
             onClick={toggle}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="ml-auto p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors text-base leading-none"
+            className="ml-auto p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors"
           >
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
         </header>
 
