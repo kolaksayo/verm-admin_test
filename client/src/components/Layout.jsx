@@ -65,22 +65,21 @@ const NAV_GROUPS = [
   },
 ];
 
-// Sidebar is always dark (Gentelella signature) — use fixed colours, not vs-* tokens
-// so it stays navy in both dark and light app themes.
-const SIDEBAR_BG      = '#1a2332';
-const SIDEBAR_BORDER  = '#243448';
+// Sidebar is always dark (globe colour) — fixed so it stays dark in both themes.
+const SIDEBAR_BG      = '#1C1B20';   // globe
+const SIDEBAR_BORDER  = '#303030';   // divider light
 
 const ROLE_COLORS = {
-  superadmin: 'text-[#64dcc8]',   /* light teal */
-  admin:      'text-vs-lime',
-  viewer:     'text-[#7b8fa3]',
+  superadmin: 'text-[#B19CFF]',   // accent_primary (light purple)
+  admin:      'text-vs-lime',      // secondary (lime)
+  viewer:     'text-[#9F9F9F]',   // text tertiary
 };
 
 const linkClass = ({ isActive }) =>
   `flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-colors ${
     isActive
-      ? 'bg-[#1ABB9C]/15 text-[#64dcc8] font-medium'
-      : 'text-[#7b8fa3] hover:bg-[#26374e] hover:text-white'
+      ? 'bg-[#775CDF]/15 text-[#B19CFF] font-medium'
+      : 'text-[#9F9F9F] hover:bg-[#313038] hover:text-white'
   }`;
 
 function ElevationBanner({ expiry, onDrop }) {
@@ -165,7 +164,7 @@ export default function Layout() {
             <div key={group.label} className={`${gi > 0 ? 'mt-4' : ''} mb-1`}>
               <button
                 onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a6080] hover:text-[#7b8fa3] transition-colors"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a4858] hover:text-[#9F9F9F] transition-colors"
               >
                 <span>{group.label}</span>
                 <ChevronDown
@@ -203,7 +202,7 @@ export default function Layout() {
             <div className="mt-4 mb-1">
               <button
                 onClick={() => toggleGroup('Admin')}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a6080] hover:text-[#7b8fa3] transition-colors"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a4858] hover:text-[#9F9F9F] transition-colors"
               >
                 <span>Admin</span>
                 <ChevronDown
@@ -235,10 +234,10 @@ export default function Layout() {
             </div>
           </div>
           <div className="flex items-center gap-3 pl-9">
-            <NavLink to="/profile" className="text-xs text-[#7b8fa3] hover:text-white transition-colors">
+            <NavLink to="/profile" className="text-xs text-[#9F9F9F] hover:text-white transition-colors">
               Profile
             </NavLink>
-            <span className="text-[#4a6080] text-xs">·</span>
+            <span className="text-[#4a4858] text-xs">·</span>
             <button onClick={handleLogout} className="text-xs text-[#7b8fa3] hover:text-vs-danger transition-colors">
               Sign out
             </button>

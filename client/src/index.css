@@ -2,40 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Dark theme (default) — Gentelella v4 dark palette ──────────────────── */
+/* ── Dark theme (default) — brand design system ──────────────────────────── */
 :root {
-  --vs-bg:           15 22 35;        /* #0f1623 */
-  --vs-card:         24 33 50;        /* #182132 */
-  --vs-elevated:     30 45 64;        /* #1e2d40 */
-  --vs-hover:        38 55 78;        /* #26374e */
-  --vs-purple:       26 187 156;      /* #1ABB9C  Gentelella teal accent */
-  --vs-purple-on:    20 159 133;      /* #149F85  darker teal for hover */
-  --vs-purple-light: 100 220 200;     /* light teal for text links on dark */
-  --vs-lime:         181 219 28;      /* keep brand lime for deposit amounts */
-  --vs-lime-on:      126 158 0;
-  --vs-text:         230 235 242;     /* #e6ebf2 */
-  --vs-text-2:       180 192 208;     /* #b4c0d0 */
-  --vs-text-3:       123 143 163;     /* #7b8fa3 */
-  --vs-border:       40 55 78;        /* #28374e */
-  --vs-ring:         26 187 156;      /* teal focus ring */
-  --vs-danger:       235 51 51;
-  --vs-success:      28 219 47;
-  --vs-warning:      245 203 62;
+  --vs-bg:           28 27 32;        /* #1C1B20  globe */
+  --vs-card:         36 35 42;        /* #24232A  island */
+  --vs-elevated:     49 48 56;        /* #313038  on_island */
+  --vs-hover:        59 58 66;        /* #3B3A42  on_island_hover */
+  --vs-purple:       119 92 223;      /* #775CDF  button primary */
+  --vs-purple-on:    98 71 207;       /* #6247CF  primary_on_tap */
+  --vs-purple-light: 177 156 255;     /* #B19CFF  accent_primary */
+  --vs-lime:         181 219 28;      /* #B5DB1C  button secondary */
+  --vs-lime-on:      126 158 0;       /* #7E9E00  secondary_on_tap */
+  --vs-text:         255 255 255;     /* #FFFFFF  text primary */
+  --vs-text-2:       226 226 226;     /* #E2E2E2  text secondary */
+  --vs-text-3:       159 159 159;     /* #9F9F9F  text tertiary */
+  --vs-border:       48 48 48;        /* #303030  divider light */
+  --vs-ring:         119 92 223;      /* #775CDF  accent purple */
+  --vs-danger:       235 51 51;       /* #EB3333 */
+  --vs-success:      28 219 47;       /* #1CDB2F */
+  --vs-warning:      245 203 62;      /* #F5CB3E */
+  --vs-disabled:     49 47 55;        /* #312F37  disabled state */
 }
 
-/* ── Light theme — Gentelella v4 light palette ───────────────────────────── */
+/* ── Light theme — soft purple-tinted whites ─────────────────────────────── */
 html.light {
-  --vs-bg:           245 247 251;     /* #f5f7fb */
+  --vs-bg:           245 244 250;     /* soft purple-tinted white */
   --vs-card:         255 255 255;
-  --vs-elevated:     249 250 251;     /* #f9fafb */
-  --vs-hover:        240 242 246;
-  --vs-text:         30 38 51;        /* #1e2633 */
-  --vs-text-2:       98 109 125;      /* #626d7d */
-  --vs-text-3:       126 136 150;     /* #7e8896 */
-  --vs-border:       230 231 235;     /* #e6e7eb */
-  --vs-ring:         26 187 156;
-  /* teal stays readable on white */
-  --vs-purple-light: 26 187 156;
+  --vs-elevated:     240 239 247;
+  --vs-hover:        232 231 242;
+  --vs-text:         28 27 32;        /* #1C1B20  inverted globe */
+  --vs-text-2:       74 72 88;
+  --vs-text-3:       120 118 135;
+  --vs-border:       220 219 228;
+  --vs-ring:         119 92 223;      /* brand purple */
+  --vs-purple-light: 119 92 223;      /* brand purple readable on white */
 }
 
 @layer base {
@@ -49,9 +49,9 @@ html.light {
 }
 
 @layer utilities {
-  /* Gentelella-style card shadow */
+  /* Elevation via background colour only — subtle purple ring, no drop shadow */
   .shadow-card {
-    box-shadow: 0 0 0 1px rgba(4,32,69,0.08), 0 2px 4px 0 rgba(30,38,51,0.04);
+    box-shadow: 0 0 0 1px rgba(119, 92, 223, 0.08);
   }
 
   .scrollbar-thin {
