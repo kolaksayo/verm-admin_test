@@ -8,6 +8,7 @@ import UserProfileModal from '../components/UserProfileModal';
 import GameBetModal from '../components/GameBetModal';
 import UserRankingsView from '../components/UserRankingsView';
 import InfluencerDashboard from './InfluencerDashboard';
+import SignupBonusDashboard from './SignupBonusDashboard';
 
 function formatName(name) {
   return name
@@ -165,7 +166,7 @@ export default function Collection({ collectionName }) {
 
       {name === 'referrals' && (
         <div className="flex gap-1 mb-5 border-b border-vs-border">
-          {['records', 'influencers'].map((tab) => (
+          {['records', 'influencers', 'bonuses'].map((tab) => (
             <button
               key={tab}
               onClick={() => setReferralsTab(tab)}
@@ -175,19 +176,20 @@ export default function Collection({ collectionName }) {
                   : 'border-transparent text-vs-text-3 hover:text-vs-text-2'
               }`}
             >
-              {tab === 'records' ? 'Records' : 'Influencers'}
+              {{ records: 'Records', influencers: 'Influencers', bonuses: 'Bonuses' }[tab]}
             </button>
           ))}
         </div>
       )}
 
       {name === 'referrals' && referralsTab === 'influencers' && <InfluencerDashboard embedded />}
+      {name === 'referrals' && referralsTab === 'bonuses' && <SignupBonusDashboard embedded />}
 
       {name === 'football_fixtures' && <FixturesView />}
       {name === 'game_bet_leaderboard' && <LeaderboardView onUserClick={handleUserClick} />}
       {name === 'game_bet_user_rankings' && <UserRankingsView onUserClick={handleUserClick} />}
 
-      {!isCustom && !(name === 'referrals' && referralsTab === 'influencers') && (
+      {!isCustom && !(name === 'referrals' && referralsTab !== 'records') && (
         loading ? (
           <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">
             Loading…

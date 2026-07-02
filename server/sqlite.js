@@ -134,6 +134,34 @@ function getDb() {
       );
       CREATE INDEX IF NOT EXISTS idx_admin_credits_user
         ON admin_credits(user_id);
+
+      CREATE TABLE IF NOT EXISTS signup_bonus_rules (
+        referral_code  TEXT PRIMARY KEY,
+        amount         REAL NOT NULL DEFAULT 0,
+        currency_id    TEXT NOT NULL,
+        currency_name  TEXT,
+        active         INTEGER NOT NULL DEFAULT 1,
+        notes          TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS signup_bonus_grants (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id          TEXT NOT NULL UNIQUE,
+        referral_id      TEXT,
+        referral_code    TEXT,
+        currency_name    TEXT,
+        wallet_id        TEXT,
+        admin_credit_id  INTEGER,
+        status           TEXT NOT NULL DEFAULT 'pending',
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        error            TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_signup_bonus_grants_status
+        ON signup_bonus_grants(status);
     `);
 
     // Safe additive migrations
