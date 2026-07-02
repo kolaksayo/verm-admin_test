@@ -7,7 +7,8 @@ const POLL_INTERVAL_MS    = 2 * 60 * 1000; // 2 min — matches gameBetWatcher's
 const MAX_RETRY_ATTEMPTS  = 10;            // ~20 min of retries for no_wallet/error before giving up
 const BACKLOG_LIMIT       = 200;
 
-const SIGNUP_BONUS_ACTOR = 'signup-bonus-watcher';
+const SIGNUP_BONUS_ACTOR      = 'signup-bonus-watcher';
+const SIGNUP_BONUS_DESCRIPTION = 'Signup Bonus';
 
 const watcherState = {
   started:     false,
@@ -69,23 +70,42 @@ function sqliteDatetimeToDate(str) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// ── Rule matching — this comparison is the actual forward-only guarantee: a rule only
-// matches signups at/after its own creation time, so editing rules or adding new ones
-// can never reach back into pre-existing referral history. ──────────────────────────────
+// ── Rule matching ────────────────────────────────────────────────────────────────
 
+// Unconditional lookup — used once eligibility has already been locked in (see
+// processGrant) to re-read the rule's *current* amount/currency on every retry,
+// regardless of its active flag (active only gates whether a signup newly qualifies,
+// not whether a bonus already promised to a qualifying user still gets paid).
+function findRuleByCode(referralCode) {
+  if (!referralCode) return null;
+  return getSQLite()
+    .prepare('SELECT * FROM signup_bonus_rules WHERE referral_code = ?')
+    .get(referralCode.toUpperCase()) || null;
+}
+
+// This comparison is the actual forward-only guarantee: a rule only matches signups
+// at/after its own creation time, so editing rules or adding new ones can never reach
+// back into pre-existing referral history. Only used for the *first* eligibility check
+// on a referral (see processGrant) — never re-applied on retries.
 function findActiveRule(referralCode, referralCreatedAt) {
-  if (!referralCode || !referralCreatedAt) return null;
-  const rule = getSQLite()
-    .prepare('SELECT * FROM signup_bonus_rules WHERE referral_code = ? AND active = 1')
-    .get(referralCode.toUpperCase());
-  if (!rule) return null;
+  if (!referralCreatedAt) return null;
+  const rule = findRuleByCode(referralCode);
+  if (!rule || !rule.active) return null;
   const ruleCreatedAt = sqliteDatetimeToDate(rule.created_at);
   return (ruleCreatedAt && ruleCreatedAt <= referralCreatedAt) ? rule : null;
 }
 
-// ── Grant helpers ──────────────────────────────────────────────────────────────
+// Has this user already received a signup bonus? Checked before every credit attempt so a
+// crash (or any other interruption) between applyAdjustment succeeding and this grant row
+// being marked 'granted' can never cause a second credit on retry — the admin_credits row
+// written inside applyAdjustment is the authoritative record, not this grants table.
+function findExistingCredit(userId) {
+  return getSQLite()
+    .prepare('SELECT id FROM admin_credits WHERE user_id = ? AND description = ? LIMIT 1')
+    .get(userId, SIGNUP_BONUS_DESCRIPTION) || null;
+}
 
-const TERMINAL_STATUSES = new Set(['granted', 'no_rule', 'gave_up']);
+// ── Grant helpers ──────────────────────────────────────────────────────────────
 
 function claimGrant(userId, referralId) {
   getSQLite().prepare(`
@@ -104,37 +124,68 @@ function updateGrant(userId, patch) {
 }
 
 function bumpAttemptsOrGiveUp(userId, status, error) {
-  const row = getSQLite().prepare('SELECT attempts FROM signup_bonus_grants WHERE user_id = ?').get(userId);
-  const attempts    = (row?.attempts || 0) + 1;
-  const finalStatus = attempts >= MAX_RETRY_ATTEMPTS ? 'gave_up' : status;
-  updateGrant(userId, { status: finalStatus, attempts, error: error || null });
+  getSQLite().prepare(`
+    UPDATE signup_bonus_grants
+    SET attempts   = attempts + 1,
+        status     = CASE WHEN attempts + 1 >= ? THEN 'gave_up' ELSE ? END,
+        error      = ?,
+        updated_at = datetime('now')
+    WHERE user_id = ?
+  `).run(MAX_RETRY_ATTEMPTS, status, error || null, userId);
 }
 
 // ── Per-grant processing ────────────────────────────────────────────────────────
 
 async function processGrant(db, grant, referralDoc) {
-  const userId     = grant.user_id;
-  const referrerId = String(referralDoc.referrer || '');
+  const userId = grant.user_id;
 
-  let referrerOid;
-  try { referrerOid = new ObjectId(referrerId); } catch { referrerOid = null; }
-  const referrer = referrerOid
-    ? await db.collection('users').findOne({ _id: referrerOid }, { projection: { referralCode: 1 } })
-    : null;
-  const code = (referrer?.referralCode || '').toUpperCase();
+  // Eligibility (was there an active rule for this code as of signup time?) is decided
+  // once and locked in by persisting referral_code on the grant. Later rule edits/toggles
+  // must not strand a user who legitimately qualified while their credit was still
+  // retrying (e.g. on no_wallet) — so once locked in, only the rule's *current*
+  // amount/currency are re-read here (decision: amount applies at credit time), and the
+  // rule's active flag is no longer consulted for this specific, already-qualified user.
+  let rule;
+  if (grant.referral_code) {
+    rule = findRuleByCode(grant.referral_code);
+    if (!rule) {
+      updateGrant(userId, { status: 'no_rule' });
+      return;
+    }
+  } else {
+    const referrerId = String(referralDoc.referrer || '');
+    let referrerOid;
+    try { referrerOid = new ObjectId(referrerId); } catch { referrerOid = null; }
+    const referrer = referrerOid
+      ? await db.collection('users').findOne({ _id: referrerOid }, { projection: { referralCode: 1 } })
+      : null;
+    const code = (referrer?.referralCode || '').toUpperCase();
 
-  if (!code) {
-    updateGrant(userId, { status: 'no_rule', referral_code: null });
+    if (!code) {
+      updateGrant(userId, { status: 'no_rule', referral_code: null });
+      return;
+    }
+
+    rule = findActiveRule(code, referralDoc.createdAt);
+    if (!rule) {
+      updateGrant(userId, { status: 'no_rule', referral_code: code });
+      return;
+    }
+    updateGrant(userId, { referral_code: code, currency_name: rule.currency_name });
+  }
+
+  // Idempotency guard: if a Signup Bonus credit for this user already exists, a previous
+  // pass must have completed the money-move but crashed/failed before this row was marked
+  // granted. Adopt that existing credit instead of moving money again.
+  const existingCredit = findExistingCredit(userId);
+  if (existingCredit) {
+    updateGrant(userId, { status: 'granted', admin_credit_id: existingCredit.id, error: null });
     return;
   }
 
-  const rule = findActiveRule(code, referralDoc.createdAt);
-  if (!rule) {
-    updateGrant(userId, { status: 'no_rule', referral_code: code });
-    return;
-  }
-
-  updateGrant(userId, { referral_code: code, currency_name: rule.currency_name });
+  // Re-check the global kill switch immediately before the money-moving step, in case it
+  // was flipped off after this poll's backlog was already assembled.
+  if (!isEnabled()) return;
 
   // Look up the referred user's wallet on the write DB — same connection applyAdjustment
   // itself reads from, so a decision that moves money never sees stale replica state.
@@ -160,9 +211,9 @@ async function processGrant(db, grant, referralDoc) {
     walletId:    wallet._id,
     userId,
     amount:      rule.amount,
-    notes:       `Referral code: ${code}`,
+    notes:       `Referral code: ${rule.referral_code}`,
     txType:      'CREDIT',
-    description: 'Signup Bonus',
+    description: SIGNUP_BONUS_DESCRIPTION,
     action:      'credit',
     adminUser:   SIGNUP_BONUS_ACTOR,
     sessionId:   null,
@@ -170,6 +221,7 @@ async function processGrant(db, grant, referralDoc) {
 
   updateGrant(userId, {
     status:          'granted',
+    currency_name:   rule.currency_name,
     wallet_id:       String(wallet._id),
     admin_credit_id: result.creditId,
     error:           null,
@@ -214,13 +266,21 @@ async function pollSignupBonuses(db, since) {
     console.warn(`[SignupBonusWatcher] Backlog hit the ${BACKLOG_LIMIT}-row limit — some retries may be delayed to the next poll.`);
   }
 
+  const referralOids = backlog
+    .map((g) => { try { return new ObjectId(g.referral_id); } catch { return null; } })
+    .filter(Boolean);
+  const referralDocs = referralOids.length
+    ? await db.collection('referrals').find({ _id: { $in: referralOids } }).toArray()
+    : [];
+  const referralDocMap = new Map(referralDocs.map((d) => [String(d._id), d]));
+
   for (const grant of backlog) {
-    let referralOid;
-    try { referralOid = new ObjectId(grant.referral_id); } catch { referralOid = null; }
-    const referralDoc = referralOid ? await db.collection('referrals').findOne({ _id: referralOid }) : null;
+    const referralDoc = referralDocMap.get(grant.referral_id) || null;
 
     if (!referralDoc) {
-      updateGrant(grant.user_id, { status: 'error', error: 'Referral document no longer found' });
+      // Bounded like every other retry path — a permanently missing referral doc must
+      // eventually reach 'gave_up' rather than occupy a backlog slot forever.
+      bumpAttemptsOrGiveUp(grant.user_id, 'error', 'Referral document no longer found');
       continue;
     }
 

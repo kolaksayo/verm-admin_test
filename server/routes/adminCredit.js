@@ -9,8 +9,16 @@ const router = express.Router();
 
 // Shared helper — applies a wallet balance adjustment and logs it to SQLite.
 // Callable from an authenticated route (pass adminUser/sessionId from req.user/req.editSessionId)
-// or from a background job (pass a synthetic adminUser and sessionId: null).
+// or from a background job (pass a synthetic adminUser and sessionId: null). This function
+// does NOT itself check auth/role/edit-session — it bypasses the auth/requireEditMode HTTP
+// middleware entirely, so every caller is responsible for its own authorization before
+// invoking it.
 async function applyAdjustment({ walletId, userId, amount, notes, txType, description, action, adminUser, sessionId }) {
+  if (!adminUser) throw Object.assign(new Error('adminUser is required'), { status: 400 });
+  if (typeof amount !== 'number' || !isFinite(amount) || amount === 0) {
+    throw Object.assign(new Error('amount must be a non-zero finite number'), { status: 400 });
+  }
+
   const rDb = getDb();
   const wDb = getWriteDb();
 

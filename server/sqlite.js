@@ -135,6 +135,11 @@ function getDb() {
       CREATE INDEX IF NOT EXISTS idx_admin_credits_user
         ON admin_credits(user_id);
 
+      -- Defense-in-depth: at most one Signup Bonus credit can ever exist per user, at the
+      -- database level, independent of any application-side idempotency logic.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_credits_signup_bonus_once
+        ON admin_credits(user_id) WHERE description = 'Signup Bonus';
+
       CREATE TABLE IF NOT EXISTS signup_bonus_rules (
         referral_code  TEXT PRIMARY KEY,
         amount         REAL NOT NULL DEFAULT 0,

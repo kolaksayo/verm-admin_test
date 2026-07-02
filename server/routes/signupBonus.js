@@ -122,9 +122,10 @@ router.post('/rules/:referralCode', auth, requireEditMode, async (req, res) => {
 // since admin_credits is the single source of truth for what was actually credited.
 router.get('/grants', auth, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    const sqlite = getSQLite();
-    const limit  = Math.min(500, parseInt(req.query.limit) || 200);
-    const status = req.query.status || null;
+    const sqlite     = getSQLite();
+    const parsedLimit = parseInt(req.query.limit);
+    const limit      = Math.min(500, Number.isNaN(parsedLimit) ? 200 : parsedLimit);
+    const status     = req.query.status || null;
 
     const conditions = [];
     const params = [];
