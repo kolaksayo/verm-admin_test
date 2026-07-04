@@ -5,6 +5,7 @@ const QRCode = require('qrcode');
 const { getDb } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireRole } = require('../middleware/auth');
+const { isValidPair } = require('../permissionCategories');
 
 const router = express.Router();
 
@@ -226,6 +227,54 @@ router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
 
   const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
   res.json(safeUser(updated));
+});
+
+// ── Category/subcategory permission grants ───────────────────────────────────
+
+router.get('/:id/permissions', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const grants = db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(id);
+  res.json({ grants });
+});
+
+// Full-replace semantics — the caller sends the complete desired grant set every time.
+router.put('/:id/permissions', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const { grants } = req.body;
+
+  if (!Array.isArray(grants)) {
+    return res.status(400).json({ error: 'grants must be an array' });
+  }
+
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'superadmin') {
+    return res.status(400).json({ error: 'Superadmin accounts cannot have restricted permissions' });
+  }
+
+  const deduped = new Map();
+  for (const g of grants) {
+    const key = g && `${g.category}:${g.subcategory}`;
+    if (!g || typeof g.category !== 'string' || typeof g.subcategory !== 'string' || !isValidPair(g.category, g.subcategory)) {
+      return res.status(400).json({ error: `Invalid category/subcategory pair: ${g?.category}/${g?.subcategory}` });
+    }
+    deduped.set(key, { category: g.category, subcategory: g.subcategory });
+  }
+
+  const replace = db.transaction((rows) => {
+    db.prepare('DELETE FROM admin_permission_grants WHERE user_id = ?').run(id);
+    const insert = db.prepare('INSERT INTO admin_permission_grants (user_id, category, subcategory) VALUES (?, ?, ?)');
+    for (const row of rows) insert.run(id, row.category, row.subcategory);
+  });
+  replace([...deduped.values()]);
+
+  const saved = db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(id);
+  res.json({ grants: saved });
 });
 
 router.delete('/:id/2fa', auth, requireRole('superadmin'), (req, res) => {

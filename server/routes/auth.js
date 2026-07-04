@@ -12,6 +12,12 @@ function getSetting(db, key, defaultVal) {
   return row ? row.value : defaultVal;
 }
 
+// Superadmin has no grant rows (permissions are meaningless for it — always full access).
+function loadPermissions(db, userId, role) {
+  if (role === 'superadmin') return [];
+  return db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(userId);
+}
+
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -47,7 +53,7 @@ router.post('/login', (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
-    return res.json({ token, username: user.username, role: user.role });
+    return res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
   }
 });
 
@@ -86,7 +92,7 @@ router.post('/verify-2fa', (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
-  res.json({ token, username: user.username, role: user.role });
+  res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
 });
 
 router.post('/complete-mfa-setup', (req, res) => {
@@ -108,11 +114,16 @@ router.post('/complete-mfa-setup', (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
-  res.json({ token, username: user.username, role: user.role });
+  res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
 });
 
 router.get('/me', authMiddleware, (req, res) => {
-  res.json({ username: req.user.username, role: req.user.role });
+  const db = getDb();
+  res.json({
+    username: req.user.username,
+    role: req.user.role,
+    permissions: loadPermissions(db, req.user.id, req.user.role),
+  });
 });
 
 const EDIT_DURATION_MINUTES = 10;

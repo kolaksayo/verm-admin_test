@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ function depGroupFields() {
 
 // ── GET /api/cashflow/summary ──────────────────────────────────────────────────
 
-router.get('/summary', auth, async (req, res) => {
+router.get('/summary', auth, requirePermission('overview', 'cash_flow'), async (req, res) => {
   try {
     const db = getDb();
 

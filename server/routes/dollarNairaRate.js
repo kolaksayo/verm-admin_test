@@ -3,6 +3,7 @@ const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const { snapshot } = require('../rateSnapshotJob');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ function todayNigeria() {
 }
 
 // GET /api/dollar-naira-rate/current
-router.get('/current', auth, async (req, res) => {
+router.get('/current', auth, requirePermission('system', 'dollar_naira_rate'), async (req, res) => {
   try {
     const db     = getDb();
     const sqlite = getSQLite();
@@ -45,7 +46,7 @@ router.get('/current', auth, async (req, res) => {
 });
 
 // GET /api/dollar-naira-rate?page=&limit= — SQLite snapshot history grouped by date
-router.get('/', auth, (req, res) => {
+router.get('/', auth, requirePermission('system', 'dollar_naira_rate'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const page   = Math.max(1, parseInt(req.query.page)  || 1);
@@ -77,7 +78,7 @@ router.get('/', auth, (req, res) => {
 // ── SQLite snapshot endpoints ─────────────────────────────────────────────────
 
 // GET /api/dollar-naira-rate/sqlite — paginated SQLite snapshot history
-router.get('/sqlite', auth, (req, res) => {
+router.get('/sqlite', auth, requirePermission('system', 'dollar_naira_rate'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const page   = Math.max(1, parseInt(req.query.page)  || 1);
@@ -96,7 +97,7 @@ router.get('/sqlite', auth, (req, res) => {
 });
 
 // GET /api/dollar-naira-rate/sqlite/current — best rate from SQLite for right now
-router.get('/sqlite/current', auth, (req, res) => {
+router.get('/sqlite/current', auth, requirePermission('system', 'dollar_naira_rate'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const today  = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
@@ -118,7 +119,7 @@ router.get('/sqlite/current', auth, (req, res) => {
 });
 
 // POST /api/dollar-naira-rate/sqlite/snapshot — manually trigger a snapshot now
-router.post('/sqlite/snapshot', auth, async (req, res) => {
+router.post('/sqlite/snapshot', auth, requirePermission('system', 'dollar_naira_rate'), async (req, res) => {
   try {
     const h      = (new Date().getUTCHours() + 1) % 24;
     const period = req.body.period

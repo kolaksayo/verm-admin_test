@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ function extractStatus(f) {
 
 // GET /api/fixtures/leagues
 
-router.get('/leagues', auth, async (req, res) => {
+router.get('/leagues', auth, requirePermission('football', 'fixtures'), async (req, res) => {
   try {
     const db = getDb();
     const leagues = await db
@@ -68,7 +69,7 @@ router.get('/leagues', auth, async (req, res) => {
 
 // ── GET /api/fixtures ─────────────────────────────────────────────────────────
 
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requirePermission('football', 'fixtures'), async (req, res) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page) || 1);

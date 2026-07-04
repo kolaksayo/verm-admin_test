@@ -167,6 +167,17 @@ function getDb() {
       );
       CREATE INDEX IF NOT EXISTS idx_signup_bonus_grants_status
         ON signup_bonus_grants(status);
+
+      CREATE TABLE IF NOT EXISTS admin_permission_grants (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+        category    TEXT    NOT NULL,
+        subcategory TEXT    NOT NULL,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id, category, subcategory)
+      );
+      CREATE INDEX IF NOT EXISTS idx_permission_grants_user
+        ON admin_permission_grants(user_id);
     `);
 
     // Safe additive migrations

@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const escapeRegex = require('../utils/escapeRegex');
 
 const router = express.Router();
@@ -14,7 +15,7 @@ const WITHDRAWAL_FILTER = {
 const toOid = (id) => { try { return new ObjectId(id.toString()); } catch { return null; } };
 
 // GET /api/ngn-withdrawals?page=&limit=&search=&dateFrom=&dateTo=&status=
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requirePermission('users_finance', 'transactions'), async (req, res) => {
   try {
     const db = getDb();
     const page   = Math.max(1, parseInt(req.query.page)  || 1);

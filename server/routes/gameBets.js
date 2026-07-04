@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ function getPeriodMatch(period) {
   return base;
 }
 
-router.get('/user-rankings', auth, async (req, res) => {
+router.get('/user-rankings', auth, requirePermission('betting', 'user_rankings'), async (req, res) => {
   try {
     const db     = getDb();
     const page   = Math.max(1, parseInt(req.query.page) || 1);
@@ -96,7 +97,7 @@ router.get('/user-rankings', auth, async (req, res) => {
   }
 });
 
-router.get('/leaderboard', auth, async (req, res) => {
+router.get('/leaderboard', auth, requirePermission('betting', 'leaderboard'), async (req, res) => {
   try {
     const db = getDb();
     const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -161,7 +162,7 @@ router.get('/leaderboard', auth, async (req, res) => {
   }
 });
 
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', auth, requirePermission('betting', 'game_bets'), async (req, res) => {
   try {
     const db = getDb();
     const oid = toOid(req.params.id);

@@ -5,6 +5,7 @@ const { getDb } = require('../db');
 const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
 const { ObjectId } = require('mongodb');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ function buildWelcomeText(name) {
 
 
 
-router.get('/config', auth, (req, res) => {
+router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const db  = getSQLite();
     const get = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? null;
@@ -53,7 +54,7 @@ router.get('/config', auth, (req, res) => {
   }
 });
 
-router.post('/config', auth, (req, res) => {
+router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const db  = getSQLite();
     const set = (k, v) => db.prepare(`
@@ -97,7 +98,7 @@ router.post('/config', auth, (req, res) => {
 
 // ── Logs ───────────────────────────────────────────────────────────────────────
 
-router.get('/logs', auth, (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const rows  = getSQLite()
@@ -111,7 +112,7 @@ router.get('/logs', auth, (req, res) => {
 
 // ── Welcome DM status for a specific user ────────────────────────────────────
 
-router.get('/user-status/:userId', auth, (req, res) => {
+router.get('/user-status/:userId', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const row = getSQLite()
       .prepare("SELECT ok, error, sent_at FROM whatsapp_user_dms WHERE user_id = ? AND trigger = 'user_registered'")
@@ -125,7 +126,7 @@ router.get('/user-status/:userId', auth, (req, res) => {
 
 // ── Send welcome DM to a specific user ───────────────────────────────────────
 
-router.post('/send-welcome/:userId', auth, async (req, res) => {
+router.post('/send-welcome/:userId', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { userId } = req.params;
   try {
     const existing = getSQLite()
@@ -161,7 +162,7 @@ router.post('/send-welcome/:userId', auth, async (req, res) => {
 
 // ── Test ───────────────────────────────────────────────────────────────────────
 
-router.post('/test', auth, async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
@@ -173,7 +174,7 @@ router.post('/test', auth, async (req, res) => {
 
 // ── Retry ──────────────────────────────────────────────────────────────────────
 
-router.post('/logs/:id/retry', auth, async (req, res) => {
+router.post('/logs/:id/retry', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { id } = req.params;
   try {
     const db  = getSQLite();
@@ -215,7 +216,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
 
 // ── Retry all failed DMs ──────────────────────────────────────────────────────
 
-router.post('/retry-all-failed', auth, async (req, res) => {
+router.post('/retry-all-failed', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     const sqlDb   = getSQLite();
     const mongoDb = getDb();
@@ -262,7 +263,7 @@ router.post('/retry-all-failed', auth, async (req, res) => {
 
 // ── Test settled DM by booking code ───────────────────────────────────────────
 
-router.post('/test-settled', auth, async (req, res) => {
+router.post('/test-settled', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { bookingCode } = req.body;
   if (!bookingCode) return res.status(400).json({ error: 'bookingCode required' });
 
@@ -324,7 +325,7 @@ router.post('/test-settled', auth, async (req, res) => {
   }
 });
 
-router.get('/stats', auth, (req, res) => {
+router.get('/stats', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const db = getSQLite();
     const sentThisWeek   = db.prepare("SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE ok = 1 AND sent_at >= datetime('now', '-7 days')").get()?.c || 0;
@@ -347,7 +348,7 @@ router.get('/stats', auth, (req, res) => {
 
 // ── DM Evolution connection health ────────────────────────────────────────────
 
-router.get('/health', auth, async (req, res) => {
+router.get('/health', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     res.json(await checkDmHealth());
   } catch (err) {

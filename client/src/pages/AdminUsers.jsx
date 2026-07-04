@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
+import { CATEGORIES, ALWAYS_ALLOWED_CATEGORY } from '../config/navCategories';
 
 const ROLE_BADGE_VARIANT = {
   superadmin: 'default',
@@ -37,6 +38,68 @@ function Modal({ title, onClose, children }) {
   );
 }
 
+// Checkbox editor for category/subcategory grants — a full replace-set is
+// sent to PUT /admin-users/:id/permissions, so `grants` here is always the
+// complete desired set, not a diff.
+function PermissionsEditor({ grants, onChange, disabled }) {
+  const isChecked = (category, subcategory) =>
+    grants.some((g) => g.category === category && g.subcategory === subcategory);
+
+  const toggleSubcategory = (category, subcategory) => {
+    if (isChecked(category, subcategory)) {
+      onChange(grants.filter((g) => !(g.category === category && g.subcategory === subcategory)));
+    } else {
+      onChange([...grants, { category, subcategory }]);
+    }
+  };
+
+  const isCategoryFullyChecked = (cat) => cat.subcategories.every((s) => isChecked(cat.slug, s.slug));
+
+  const toggleCategory = (cat) => {
+    if (isCategoryFullyChecked(cat)) {
+      onChange(grants.filter((g) => g.category !== cat.slug));
+    } else {
+      const others = grants.filter((g) => g.category !== cat.slug);
+      onChange([...others, ...cat.subcategories.map((s) => ({ category: cat.slug, subcategory: s.slug }))]);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {CATEGORIES.map((cat) => {
+        const isBetting = cat.slug === ALWAYS_ALLOWED_CATEGORY;
+        return (
+          <div key={cat.slug} className="border border-vs-border rounded-lg p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-vs-text mb-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isBetting || isCategoryFullyChecked(cat)}
+                disabled={disabled || isBetting}
+                onChange={() => toggleCategory(cat)}
+              />
+              {cat.label}
+              {isBetting && <span className="text-xs text-vs-text-3 font-normal">(always included)</span>}
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 pl-6">
+              {cat.subcategories.map((sub) => (
+                <label key={sub.slug} className="flex items-center gap-2 text-xs text-vs-text-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isBetting || isChecked(cat.slug, sub.slug)}
+                    disabled={disabled || isBetting}
+                    onChange={() => toggleSubcategory(cat.slug, sub.slug)}
+                  />
+                  {sub.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
@@ -49,11 +112,18 @@ export default function AdminUsers() {
   const [deleteUser, setDeleteUser] = useState(null);
 
   const [form, setForm] = useState({ email: '', username: '', password: '', role: 'viewer' });
+  const [formGrants, setFormGrants] = useState([]);
   const [editRole, setEditRole] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editGrants, setEditGrants] = useState([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  // Tracks which user's grants the in-flight GET belongs to, so a slow response for a
+  // previously-opened edit target can't clobber a different user's grants if the admin
+  // switches targets before it resolves.
+  const editUserIdRef = useRef(null);
 
   const load = () => {
     setLoading(true);
@@ -70,13 +140,23 @@ export default function AdminUsers() {
     e.preventDefault();
     setFormError('');
     setSaving(true);
+    let created = null;
     try {
-      await api.post('/admin-users', form);
+      const res = await api.post('/admin-users', form);
+      created = res.data;
+      if (form.role !== 'superadmin' && formGrants.length) {
+        await api.put(`/admin-users/${created.id}/permissions`, { grants: formGrants });
+      }
       setShowCreate(false);
       setForm({ email: '', username: '', password: '', role: 'viewer' });
+      setFormGrants([]);
       load();
     } catch (err) {
-      setFormError(err.response?.data?.error || 'Failed to create user');
+      // The user account itself may already exist even if this specific step failed —
+      // say so explicitly rather than implying nothing happened.
+      const base = err.response?.data?.error || (created ? 'Failed to save access permissions' : 'Failed to create user');
+      setFormError(created ? `User created, but ${base.charAt(0).toLowerCase()}${base.slice(1)} — edit them to set access.` : base);
+      load();
     } finally {
       setSaving(false);
     }
@@ -132,6 +212,7 @@ export default function AdminUsers() {
 
   const handleEdit = async (e) => {
     e.preventDefault();
+    if (grantsLoading) return; // don't let a save race ahead of the grants fetch and wipe them
     setFormError('');
     setSaving(true);
     try {
@@ -140,9 +221,13 @@ export default function AdminUsers() {
       if (editPassword) payload.password = editPassword;
       if (editEmail.trim() && editEmail.trim().toLowerCase() !== (editUser.email || '')) payload.email = editEmail.trim();
       if (Object.keys(payload).length) await api.patch(`/admin-users/${editUser.id}`, payload);
+      if (editRole !== 'superadmin') {
+        await api.put(`/admin-users/${editUser.id}/permissions`, { grants: editGrants });
+      }
       setEditUser(null);
       setEditPassword('');
       setEditEmail('');
+      setEditGrants([]);
       load();
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to update user');
@@ -242,7 +327,18 @@ export default function AdminUsers() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => { setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError(''); }}
+                      onClick={() => {
+                        editUserIdRef.current = u.id;
+                        setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError('');
+                        setEditGrants([]);
+                        if (u.role !== 'superadmin') {
+                          setGrantsLoading(true);
+                          api.get(`/admin-users/${u.id}/permissions`)
+                            .then((r) => { if (editUserIdRef.current === u.id) setEditGrants(r.data.grants); })
+                            .catch(() => {})
+                            .finally(() => { if (editUserIdRef.current === u.id) setGrantsLoading(false); });
+                        }
+                      }}
                     >
                       Edit
                     </Button>
@@ -289,6 +385,12 @@ export default function AdminUsers() {
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
+            {form.role !== 'superadmin' && (
+              <div>
+                <label className={labelCls}>Dashboard Access</label>
+                <PermissionsEditor grants={formGrants} onChange={setFormGrants} disabled={saving} />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create User'}</Button>
@@ -318,6 +420,16 @@ export default function AdminUsers() {
               <input type="password" minLength={8} value={editPassword} placeholder="Min. 8 characters"
                 onChange={(e) => setEditPassword(e.target.value)} className={inputCls} />
             </div>
+            {editRole !== 'superadmin' && (
+              <div>
+                <label className={labelCls}>Dashboard Access</label>
+                {grantsLoading ? (
+                  <p className="text-xs text-vs-text-3">Loading current access…</p>
+                ) : (
+                  <PermissionsEditor grants={editGrants} onChange={setEditGrants} disabled={saving} />
+                )}
+              </div>
+            )}
             {editUser.two_factor_enabled && (
               <div className="rounded-lg border border-vs-warning/40 bg-vs-warning/10 px-3 py-2">
                 <div className="flex items-center justify-between">
@@ -356,7 +468,7 @@ export default function AdminUsers() {
             )}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</Button>
+              <Button type="submit" disabled={saving || grantsLoading}>{saving ? 'Saving…' : 'Save Changes'}</Button>
             </div>
           </form>
         </Modal>

@@ -4,6 +4,7 @@ const { getDb, getWriteDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
+const { requireCollectionPermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -180,7 +181,7 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
   return { docs, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
-router.get('/:name', auth, async (req, res) => {
+router.get('/:name', auth, requireCollectionPermission, async (req, res) => {
   const { name } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -264,7 +265,7 @@ router.get('/:name', auth, async (req, res) => {
   }
 });
 
-router.get('/:name/:id', auth, async (req, res) => {
+router.get('/:name/:id', auth, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -345,7 +346,7 @@ async function writeAuditLog(rDb, { adminUser, sessionId, action, collection, do
 }
 
 // PATCH /api/collections/:name/:id — update a document (edit mode required)
-router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
+router.patch('/:name/:id', auth, requireEditMode, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -393,7 +394,7 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
 });
 
 // DELETE /api/collections/:name/:id — delete a document (edit mode required)
-router.delete('/:name/:id', auth, requireEditMode, async (req, res) => {
+router.delete('/:name/:id', auth, requireEditMode, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });

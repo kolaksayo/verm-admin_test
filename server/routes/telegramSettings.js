@@ -29,6 +29,7 @@ const {
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const TRIGGERS = [
   // ── Single bet mode ──────────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ async function resolveTeamNameLocal(db, val) {
 }
 
 // GET /api/telegram/status
-router.get('/status', auth, (req, res) => {
+router.get('/status', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { token, chatId } = getConfig();
   const row = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
   const enabled = row ? row.value !== '0' : true;
@@ -166,7 +167,7 @@ router.get('/status', auth, (req, res) => {
 });
 
 // GET /api/telegram/health — live probe of bot token + chat (no message sent)
-router.get('/health', auth, async (req, res) => {
+router.get('/health', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     res.json(await checkHealth());
   } catch (err) {
@@ -175,7 +176,7 @@ router.get('/health', auth, async (req, res) => {
 });
 
 // GET /api/telegram/config — returns current saved values (token masked)
-router.get('/config', auth, (req, res) => {
+router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { token, chatId } = getConfig();
   const sqlite = getSQLite();
   const threshold = sqlite
@@ -193,7 +194,7 @@ router.get('/config', auth, (req, res) => {
 });
 
 // POST /api/telegram/config — save bot token, chat ID, and/or threshold
-router.post('/config', auth, (req, res) => {
+router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { botToken, chatId, largeStakeThreshold, rankingsTopN, enabled } = req.body;
 
   const hasToken     = botToken != null && String(botToken).trim() !== '';
@@ -227,7 +228,7 @@ router.post('/config', auth, (req, res) => {
 });
 
 // POST /api/telegram/test
-router.post('/test', auth, async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
   }
@@ -241,7 +242,7 @@ router.post('/test', auth, async (req, res) => {
 
 // GET /api/telegram/logs — recent send log from SQLite
 // ?channel=telegram|whatsapp|all  (default: telegram)
-router.get('/logs', auth, (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const sqlite  = getSQLite();
     const limit   = Math.min(200, parseInt(req.query.limit) || 100);
@@ -256,7 +257,7 @@ router.get('/logs', auth, (req, res) => {
 });
 
 // GET /api/telegram/templates — list all trigger templates
-router.get('/templates', auth, (req, res) => {
+router.get('/templates', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const rows   = sqlite.prepare('SELECT * FROM telegram_templates').all();
@@ -281,7 +282,7 @@ router.get('/templates', auth, (req, res) => {
 });
 
 // POST /api/telegram/templates/:trigger — save template
-router.post('/templates/:trigger', auth, (req, res) => {
+router.post('/templates/:trigger', auth, requirePermission('system', 'notifications'), (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
 
@@ -304,7 +305,7 @@ router.post('/templates/:trigger', auth, (req, res) => {
 });
 
 // POST /api/telegram/templates/:trigger/test — send a test preview to all configured channels
-router.post('/templates/:trigger/test', auth, async (req, res) => {
+router.post('/templates/:trigger/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
 
@@ -434,12 +435,12 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
 });
 
 // GET /api/telegram/watcher-status
-router.get('/watcher-status', auth, (req, res) => {
+router.get('/watcher-status', auth, requirePermission('system', 'notifications'), (req, res) => {
   res.json(getWatcherState());
 });
 
 // POST /api/telegram/watcher-settings — toggle individual polls on/off
-router.post('/watcher-settings', auth, (req, res) => {
+router.post('/watcher-settings', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { pollNewBetEnabled, pollProgressEnabled, pollUserDmEnabled } = req.body;
   try {
     const sqlite = getSQLite();
@@ -458,7 +459,7 @@ router.post('/watcher-settings', auth, (req, res) => {
 });
 
 // POST /api/telegram/logs/:id/retry — re-send a failed message
-router.post('/logs/:id/retry', auth, async (req, res) => {
+router.post('/logs/:id/retry', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'Telegram not configured' });
   }
@@ -476,7 +477,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
 });
 
 // POST /api/telegram/rankings/send — manual send with optional custom period and channel selection
-router.post('/rankings/send', auth, async (req, res) => {
+router.post('/rankings/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { period, weekStart, monthOf, channels } = req.body;
   if (!['weekly', 'monthly'].includes(period)) {
     return res.status(400).json({ ok: false, error: 'period must be "weekly" or "monthly"' });
@@ -521,7 +522,7 @@ router.post('/rankings/send', auth, async (req, res) => {
 });
 
 // POST /api/telegram/resend-for-bet — re-send a notification for a bet by booking code
-router.post('/resend-for-bet', auth, async (req, res) => {
+router.post('/resend-for-bet', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { bookingCode, trigger } = req.body;
   if (!bookingCode?.trim()) return res.status(400).json({ ok: false, error: 'bookingCode is required' });
 
@@ -589,7 +590,7 @@ router.post('/resend-for-bet', auth, async (req, res) => {
 });
 
 // POST /api/telegram/send — manual message from admin
-router.post('/send', auth, async (req, res) => {
+router.post('/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
   if (!isConfigured()) return res.status(400).json({ ok: false, error: 'Telegram not configured' });

@@ -2,6 +2,7 @@ const express = require('express');
 const { sendMessage, sendToChannel, isConfigured, getConfig, checkHealth } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ function getWhatsAppEnabled(sqlite) {
 }
 
 // GET /api/whatsapp/status
-router.get('/status', auth, (req, res) => {
+router.get('/status', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
@@ -29,7 +30,7 @@ router.get('/status', auth, (req, res) => {
 });
 
 // GET /api/whatsapp/config
-router.get('/config', auth, (req, res) => {
+router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, method } = getConfig();
   const sqlite = getSQLite();
   res.json({
@@ -44,7 +45,7 @@ router.get('/config', auth, (req, res) => {
 });
 
 // POST /api/whatsapp/config
-router.post('/config', auth, (req, res) => {
+router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId, channelId, enabled, evolutionMethod } = req.body;
   const hasUrl      = evolutionUrl      != null && String(evolutionUrl).trim()      !== '';
   const hasApiKey   = evolutionApiKey   != null && String(evolutionApiKey).trim()   !== '';
@@ -86,7 +87,7 @@ router.post('/config', auth, (req, res) => {
 });
 
 // GET /api/whatsapp/health — live probe of the Evolution connection (no message sent)
-router.get('/health', auth, async (req, res) => {
+router.get('/health', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     res.json(await checkHealth());
   } catch (err) {
@@ -95,7 +96,7 @@ router.get('/health', auth, async (req, res) => {
 });
 
 // POST /api/whatsapp/test
-router.post('/test', auth, async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'WhatsApp not configured — save your Evolution API URL, API Key, Instance Name and Group ID first.' });
   }
@@ -104,7 +105,7 @@ router.post('/test', auth, async (req, res) => {
 });
 
 // POST /api/whatsapp/test-channel — send a test message to the WhatsApp channel
-router.post('/test-channel', auth, async (req, res) => {
+router.post('/test-channel', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { channelId } = getConfig();
   if (!channelId) {
     return res.status(400).json({ ok: false, error: 'WhatsApp channel not configured — save a Channel ID first.' });
@@ -114,7 +115,7 @@ router.post('/test-channel', auth, async (req, res) => {
 });
 
 // POST /api/whatsapp/send-channel — manual message to the WhatsApp channel
-router.post('/send-channel', auth, async (req, res) => {
+router.post('/send-channel', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
   const { channelId } = getConfig();
@@ -124,7 +125,7 @@ router.post('/send-channel', auth, async (req, res) => {
 });
 
 // GET /api/whatsapp/logs
-router.get('/logs', auth, (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const limit  = Math.min(200, parseInt(req.query.limit) || 100);
@@ -138,7 +139,7 @@ router.get('/logs', auth, (req, res) => {
 });
 
 // POST /api/whatsapp/logs/:id/retry
-router.post('/logs/:id/retry', auth, async (req, res) => {
+router.post('/logs/:id/retry', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'WhatsApp not configured' });
   }
@@ -156,7 +157,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
 });
 
 // POST /api/whatsapp/send — manual message from admin
-router.post('/send', auth, async (req, res) => {
+router.post('/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
   if (!isConfigured()) return res.status(400).json({ ok: false, error: 'WhatsApp not configured' });

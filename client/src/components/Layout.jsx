@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Sun, Moon, Menu, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { NAV_ITEM_PERMISSIONS } from '../config/navCategories';
 import api from '../api';
 
 const NAV_GROUPS = [
@@ -114,9 +115,21 @@ function ElevationBanner({ expiry, onDrop }) {
   );
 }
 
+// Dashboard is always visible — it's the post-login landing page and is
+// intentionally outside the permission model (see NAV_ITEM_PERMISSIONS).
+function isNavItemVisible(item, hasPermission) {
+  if (item.path === '/') return true;
+  const perm = NAV_ITEM_PERMISSIONS[item.path ?? item.name];
+  return perm ? hasPermission(perm.category, perm.subcategory) : false;
+}
+
 export default function Layout() {
-  const { user, role, logout, editMode, elevationExpiry, dropElevation } = useAuth();
+  const { user, role, hasPermission, logout, editMode, elevationExpiry, dropElevation } = useAuth();
   const { theme, toggle } = useTheme();
+
+  const visibleGroups = NAV_GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => isNavItemVisible(item, hasPermission)) }))
+    .filter((group) => group.items.length > 0);
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [collapsed, setCollapsed] = useState(() => {
@@ -160,7 +173,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
-          {NAV_GROUPS.map((group, gi) => (
+          {visibleGroups.map((group, gi) => (
             <div key={group.label} className={`${gi > 0 ? 'mt-4' : ''} mb-1`}>
               <button
                 onClick={() => toggleGroup(group.label)}
