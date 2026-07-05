@@ -118,6 +118,7 @@ export default function AdminUsers() {
   const [editEmail, setEditEmail] = useState('');
   const [editGrants, setEditGrants] = useState([]);
   const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantsError, setGrantsError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   // Tracks which user's grants the in-flight GET belongs to, so a slow response for a
@@ -212,7 +213,7 @@ export default function AdminUsers() {
 
   const handleEdit = async (e) => {
     e.preventDefault();
-    if (grantsLoading) return; // don't let a save race ahead of the grants fetch and wipe them
+    if (grantsLoading || grantsError) return; // don't save an empty/stale grant set over a fetch that never completed
     setFormError('');
     setSaving(true);
     try {
@@ -331,11 +332,12 @@ export default function AdminUsers() {
                         editUserIdRef.current = u.id;
                         setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError('');
                         setEditGrants([]);
+                        setGrantsError(false);
                         if (u.role !== 'superadmin') {
                           setGrantsLoading(true);
                           api.get(`/admin-users/${u.id}/permissions`)
                             .then((r) => { if (editUserIdRef.current === u.id) setEditGrants(r.data.grants); })
-                            .catch(() => {})
+                            .catch(() => { if (editUserIdRef.current === u.id) setGrantsError(true); })
                             .finally(() => { if (editUserIdRef.current === u.id) setGrantsLoading(false); });
                         }
                       }}
@@ -425,6 +427,10 @@ export default function AdminUsers() {
                 <label className={labelCls}>Dashboard Access</label>
                 {grantsLoading ? (
                   <p className="text-xs text-vs-text-3">Loading current access…</p>
+                ) : grantsError ? (
+                  <p className="text-xs text-vs-danger">
+                    Failed to load current access — saving is disabled until this loads to avoid wiping it. Close and reopen to retry.
+                  </p>
                 ) : (
                   <PermissionsEditor grants={editGrants} onChange={setEditGrants} disabled={saving} />
                 )}
@@ -468,7 +474,7 @@ export default function AdminUsers() {
             )}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
-              <Button type="submit" disabled={saving || grantsLoading}>{saving ? 'Saving…' : 'Save Changes'}</Button>
+              <Button type="submit" disabled={saving || grantsLoading || grantsError}>{saving ? 'Saving…' : 'Save Changes'}</Button>
             </div>
           </form>
         </Modal>

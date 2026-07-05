@@ -4,7 +4,8 @@ const { getDb, getWriteDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
-const { requireCollectionPermission } = require('../middleware/permissions');
+const { requireCollectionPermission, canAccess } = require('../middleware/permissions');
+const { COLLECTION_PERMISSION_MAP } = require('../permissionCategories');
 
 const router = express.Router();
 
@@ -23,8 +24,14 @@ const ALLOWED_COLLECTIONS = [
   'referrals', 'transactions', 'userchatsubscriptions', 'users', 'walletusers',
 ];
 
+// Only list collections the requester can actually access — otherwise a viewer
+// scoped to a single category could enumerate the names of every gated collection.
 router.get('/', auth, (req, res) => {
-  res.json(ALLOWED_COLLECTIONS);
+  const visible = ALLOWED_COLLECTIONS.filter((name) => {
+    const mapping = COLLECTION_PERMISSION_MAP[name];
+    return mapping && canAccess(req.user, mapping.category, mapping.subcategory);
+  });
+  res.json(visible);
 });
 
 // Enriched walletusers handler — joins email and mobile from the users collection
