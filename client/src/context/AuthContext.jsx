@@ -113,7 +113,8 @@ export function AuthProvider({ children }) {
   const hasPermission = useCallback((category, subcategory) => {
     if (role === 'superadmin') return true;
     if (category === ALWAYS_ALLOWED_CATEGORY) return true;
-    return permissions.some((p) => p.category === category && p.subcategory === subcategory);
+    const list = Array.isArray(permissions) ? permissions : [];
+    return list.some((p) => p.category === category && p.subcategory === subcategory);
   }, [role, permissions]);
 
   const requestElevation = async (reason = '') => {
