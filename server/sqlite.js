@@ -186,6 +186,32 @@ function getDb() {
     try { db.exec(`ALTER TABLE admin_credits ADD COLUMN tx_type TEXT NOT NULL DEFAULT 'CREDIT'`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_users ADD COLUMN email TEXT UNIQUE`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_users ADD COLUMN two_factor_exempt INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+
+    // One-time seed: DM WhatsApp config used to silently fall back to the group's
+    // Evolution credentials when the dm_* keys were blank. That fallback is gone
+    // (group and DM configs are now fully independent), so copy the group values
+    // into the dm_* keys once for installs that relied on the old behavior.
+    try {
+      const marker = db.prepare("SELECT value FROM admin_settings WHERE key = 'dm_config_seeded'").get();
+      if (!marker) {
+        const getSetting = db.prepare('SELECT value FROM admin_settings WHERE key = ?');
+        const putSetting = db.prepare(`
+          INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+          ON CONFLICT(key) DO NOTHING
+        `);
+        const seedPairs = [
+          ['evolution_api_url',  'dm_evolution_api_url'],
+          ['evolution_api_key',  'dm_evolution_api_key'],
+          ['evolution_instance', 'dm_evolution_instance'],
+        ];
+        for (const [groupKey, dmKey] of seedPairs) {
+          const groupVal = getSetting.get(groupKey)?.value;
+          const dmVal    = getSetting.get(dmKey)?.value;
+          if (groupVal && !dmVal) putSetting.run(dmKey, groupVal);
+        }
+        putSetting.run('dm_config_seeded', '1');
+      }
+    } catch { /* non-fatal — worst case the admin re-enters DM credentials */ }
   }
   return db;
 }

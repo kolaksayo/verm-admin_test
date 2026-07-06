@@ -7,18 +7,22 @@ function getConfig() {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
     return {
+      provider:          get('whatsapp_provider')   || 'evolution',
       evolutionUrl:      get('evolution_api_url')  || process.env.EVOLUTION_API_URL      || '',
       evolutionApiKey:   get('evolution_api_key')  || process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: get('evolution_instance') || process.env.EVOLUTION_INSTANCE     || '',
+      whapiToken:        get('whapi_api_token')     || '',
       groupId:           get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         get('whatsapp_channel_id')|| process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            get('evolution_method')   || 'baileys',
     };
   } catch {
     return {
+      provider:          'evolution',
       evolutionUrl:      process.env.EVOLUTION_API_URL      || '',
       evolutionApiKey:   process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: process.env.EVOLUTION_INSTANCE     || '',
+      whapiToken:        '',
       groupId:           process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            'baileys',
@@ -27,24 +31,28 @@ function getConfig() {
 }
 
 // Separate credentials for direct messages (welcome, settled-bet DMs).
-// Falls back to the shared group config if DM-specific keys are not set.
+// Fully independent from the group/channel config — no fallback. A one-time
+// seed migration in sqlite.js copies the group Evolution values into the dm_*
+// keys for pre-existing installs that relied on the old implicit fallback.
 function getDmConfig() {
   try {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
-    const shared = getConfig();
     return {
-      evolutionUrl:      get('dm_evolution_api_url')  || shared.evolutionUrl,
-      evolutionApiKey:   get('dm_evolution_api_key')  || shared.evolutionApiKey,
-      evolutionInstance: get('dm_evolution_instance') || shared.evolutionInstance,
+      provider:          get('dm_whatsapp_provider')  || 'evolution',
+      evolutionUrl:      get('dm_evolution_api_url')  || '',
+      evolutionApiKey:   get('dm_evolution_api_key')  || '',
+      evolutionInstance: get('dm_evolution_instance') || '',
+      whapiToken:        get('dm_whapi_api_token')    || '',
       method:            get('dm_evolution_method')   || 'baileys',
     };
   } catch {
-    const shared = getConfig();
     return {
-      evolutionUrl:      shared.evolutionUrl,
-      evolutionApiKey:   shared.evolutionApiKey,
-      evolutionInstance: shared.evolutionInstance,
+      provider:          'evolution',
+      evolutionUrl:      '',
+      evolutionApiKey:   '',
+      evolutionInstance: '',
+      whapiToken:        '',
       method:            'baileys',
     };
   }
@@ -96,6 +104,39 @@ async function evolutionPostTemplate(to, templateName, languageCode, bodyParams,
   return { ok, json };
 }
 
+// ── Whapi.Cloud helpers ───────────────────────────────────────────────────────
+
+const WHAPI_BASE_URL = 'https://gate.whapi.cloud';
+
+// whapi accepts `to` as bare intl digits (2348012345678), a contact JID
+// (...@s.whatsapp.net), a group JID (...@g.us), or a newsletter ID — so the
+// same target strings used with Evolution pass through unchanged.
+async function whapiPost(to, text, { whapiToken: token }) {
+  if (!/^[\x00-\x7F]+$/.test(token || '')) throw new Error('api_key_invalid: stored whapi token contains non-ASCII characters — re-enter the full token in Settings');
+  const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/text`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, body: text }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
+  return { ok, json };
+}
+
+// Provider dispatch — every text send funnels through here so the per-scope
+// provider choice (cfg.provider from getConfig/getDmConfig) is honored without
+// any call-site changes.
+function dispatchText(to, text, cfg) {
+  return cfg.provider === 'whapi' ? whapiPost(to, text, cfg) : evolutionPost(to, text, cfg);
+}
+
+// A scope is send-ready when its selected provider has its own credentials.
+function providerReady(cfg) {
+  return cfg.provider === 'whapi'
+    ? !!cfg.whapiToken
+    : !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance);
+}
+
 // ── Logging helpers ───────────────────────────────────────────────────────────
 
 function logSend(trigger, text, ok, error = null) {
@@ -142,13 +183,13 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
   const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.groupId) {
+  if (!providerReady(cfg) || !cfg.groupId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await evolutionPost(cfg.groupId, plain, cfg);
+    const { ok, json } = await dispatchText(cfg.groupId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -169,13 +210,13 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
   const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.channelId) {
+  if (!providerReady(cfg) || !cfg.channelId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await evolutionPost(cfg.channelId, plain, cfg);
+    const { ok, json } = await dispatchText(cfg.channelId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -195,13 +236,13 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
 async function sendDirectMessage(phone, text, trigger = 'manual') {
   const cfg = getDmConfig();
   const digits = normalizePhone(phone);
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !digits) {
+  if (!providerReady(cfg) || !digits) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
   const plain = stripHtml(text);
   try {
-    const { ok, json } = await evolutionPost(digits, plain, cfg);
+    const { ok, json } = await dispatchText(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
@@ -221,14 +262,14 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
     return { ok: false, reason: 'no_phone' };
   }
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
+  if (!providerReady(cfg)) {
     logUserDm(userId, phone, username, trigger, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   const plain = stripHtml(text);
   try {
-    const { ok, json } = await evolutionPost(digits, plain, cfg);
+    const { ok, json } = await dispatchText(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
@@ -248,7 +289,7 @@ async function sendWelcomeTemplate(userId, phone, username) {
     return { ok: false, reason: 'no_phone' };
   }
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
+  if (!providerReady(cfg)) {
     logUserDm(userId, phone, username, 'user_registered', false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
@@ -285,7 +326,9 @@ async function sendWelcomeTemplate(userId, phone, username) {
 
   try {
     let ok, json;
-    if (cfg.method === 'cloud_api') {
+    // Evolution cloud_api templates don't exist on whapi — whapi always sends
+    // the plain-text welcome, same as the Baileys path.
+    if (cfg.provider !== 'whapi' && cfg.method === 'cloud_api') {
       let templateName = '', templateLanguage = '';
       try {
         const sqlite = getSQLite();
@@ -300,8 +343,8 @@ async function sendWelcomeTemplate(userId, phone, username) {
       }
       ({ ok, json } = await evolutionPostTemplate(digits, templateName, templateLanguage, [username || 'there'], cfg));
     } else {
-      // Baileys (default): plain text via sendText
-      ({ ok, json } = await evolutionPost(digits, WELCOME_TEXT, cfg));
+      // Baileys (default) or whapi: plain text
+      ({ ok, json } = await dispatchText(digits, WELCOME_TEXT, cfg));
     }
     const errMsg = ok ? null : (json?.message || json?.error?.message || 'api_error');
     logUserDm(userId, phone, username, 'user_registered', ok, errMsg);
@@ -316,31 +359,39 @@ async function sendWelcomeTemplate(userId, phone, username) {
 // ── Status checks ─────────────────────────────────────────────────────────────
 
 function isConfigured() {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId } = getConfig();
-  return !!(evolutionUrl && evolutionApiKey && evolutionInstance && groupId);
+  const cfg = getConfig();
+  return providerReady(cfg) && !!cfg.groupId;
 }
 
 function isDmConfigured() {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance } = getDmConfig();
-  return !!(evolutionUrl && evolutionApiKey && evolutionInstance);
+  return providerReady(getDmConfig());
 }
 
 // ── Health probes ───────────────────────────────────────────────────────────
 
-async function checkHealth() {
-  const cfg = getConfig();
-  const result = {
-    configured:          !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
-    urlReachable:        false,
-    apiKeyValid:         false,
-    instanceConnected:   false,
-    state:               null,
-    groupIdConfigured:   /@g\.us$/.test(cfg.groupId || ''),
-    channelIdConfigured: /@newsletter$/.test(cfg.channelId || ''),
-    checkedAt:           new Date().toISOString(),
-  };
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
+// Shared probe: Evolution hits /instance/connectionState, whapi hits
+// gate.whapi.cloud/health. Both map onto the same result fields the UI reads
+// (urlReachable / apiKeyValid / instanceConnected / state).
+async function probeProvider(cfg, result) {
+  if (cfg.provider === 'whapi') {
+    if (!cfg.whapiToken) return;
+    try {
+      const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/health`, {
+        method: 'GET', headers: { 'Authorization': `Bearer ${cfg.whapiToken}` },
+      });
+      result.urlReachable = true;
+      result.apiKeyValid = res.status !== 401 && res.status !== 403;
+      const json = await res.json().catch(() => ({}));
+      const status = json.status?.text || json.status || null;
+      result.state = typeof status === 'string' ? status : null;
+      result.instanceConnected = res.ok && result.apiKeyValid;
+    } catch {
+      // network error / timeout — urlReachable stays false
+    }
+    return;
+  }
 
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return;
   try {
     const res = await fetchWithTimeout(
       `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
@@ -355,37 +406,37 @@ async function checkHealth() {
   } catch {
     // network error / timeout — urlReachable stays false
   }
+}
 
+async function checkHealth() {
+  const cfg = getConfig();
+  const result = {
+    provider:            cfg.provider,
+    configured:          providerReady(cfg),
+    urlReachable:        false,
+    apiKeyValid:         false,
+    instanceConnected:   false,
+    state:               null,
+    groupIdConfigured:   /@g\.us$/.test(cfg.groupId || ''),
+    channelIdConfigured: /@newsletter$/.test(cfg.channelId || ''),
+    checkedAt:           new Date().toISOString(),
+  };
+  await probeProvider(cfg, result);
   return result;
 }
 
 async function checkDmHealth() {
   const cfg = getDmConfig();
   const result = {
-    configured:        !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
+    provider:          cfg.provider,
+    configured:        providerReady(cfg),
     urlReachable:      false,
     apiKeyValid:       false,
     instanceConnected: false,
     state:             null,
     checkedAt:         new Date().toISOString(),
   };
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
-
-  try {
-    const res = await fetchWithTimeout(
-      `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
-      { method: 'GET', headers: { 'apikey': cfg.evolutionApiKey } },
-    );
-    result.urlReachable = true;
-    result.apiKeyValid = res.status !== 401 && res.status !== 403;
-    const json = await res.json().catch(() => ({}));
-    const state = json.instance?.state || json.state || null;
-    result.state = state;
-    result.instanceConnected = state === 'open';
-  } catch {
-    // network error / timeout
-  }
-
+  await probeProvider(cfg, result);
   return result;
 }
 

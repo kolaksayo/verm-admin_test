@@ -919,10 +919,12 @@ export default function NotificationsPage() {
   const [waStatus, setWaStatus]                 = useState(null);
   const [waEnabled, setWaEnabled]               = useState(true);
   const [togglingWa, setTogglingWa]             = useState(false);
+  const [waProvider, setWaProvider]                 = useState('evolution');
   const [waEvolutionUrl, setWaEvolutionUrl]         = useState('');
   const [waEvolutionApiKey, setWaEvolutionApiKey]   = useState('');
   const [waEvolutionInstance, setWaEvolutionInstance] = useState('');
   const [waEvolutionMethod, setWaEvolutionMethod]   = useState('baileys');
+  const [waWhapiToken, setWaWhapiToken]             = useState('');
   const [waGroupId, setWaGroupId]                   = useState('');
   const [waChannelId, setWaChannelId]           = useState('');
   const [waSaving, setWaSaving]                 = useState(false);
@@ -988,6 +990,9 @@ export default function NotificationsPage() {
   const [dmEvolutionApiKeyPreview, setDmEvolutionApiKeyPreview] = useState('');
   const [dmEvolutionHealth, setDmEvolutionHealth]           = useState(null);
   const [dmEvolutionMethod, setDmEvolutionMethod]           = useState('baileys');
+  const [dmProvider, setDmProvider]                         = useState('evolution');
+  const [dmWhapiToken, setDmWhapiToken]                     = useState('');
+  const [dmWhapiTokenPreview, setDmWhapiTokenPreview]       = useState('');
   const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
   const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
@@ -1060,9 +1065,10 @@ export default function NotificationsPage() {
       setDmCountryCode(r.data.countryCode || '');
       setDmTemplateName(r.data.welcomeTemplateName || '');
       setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
-      // Baileys: use the editable custom text; Cloud API: show approved preview
-      const method = r.data.dmEvolutionMethod || 'baileys';
-      if (method === 'baileys') {
+      // Baileys or whapi: use the editable custom text; Cloud API: show approved preview
+      const method   = r.data.dmEvolutionMethod || 'baileys';
+      const provider = r.data.dmProvider || 'evolution';
+      if (provider === 'whapi' || method === 'baileys') {
         setDmTemplate(r.data.welcomeText || r.data.welcomePreview || '');
       } else {
         setDmTemplate(r.data.welcomePreview || '');
@@ -1071,6 +1077,8 @@ export default function NotificationsPage() {
       setDmEvolutionInstance(r.data.dmEvolutionInstance || '');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
       setDmEvolutionMethod(r.data.dmEvolutionMethod || 'baileys');
+      setDmProvider(provider);
+      setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
@@ -1131,6 +1139,7 @@ export default function NotificationsPage() {
       if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
       if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
       if (r.data.evolutionMethod)   setWaEvolutionMethod(r.data.evolutionMethod);
+      if (r.data.provider)          setWaProvider(r.data.provider);
     }).catch(() => {});
     recheckHealth();
     loadChannelLogs();
@@ -1344,14 +1353,18 @@ export default function NotificationsPage() {
         dmEvolutionApiKey:   dmEvolutionApiKey   || undefined,
         dmEvolutionInstance: dmEvolutionInstance || undefined,
         dmEvolutionMethod,
+        dmProvider,
+        dmWhapiToken:        dmWhapiToken        || undefined,
       });
       setDmEvolutionSaveMsg('Saved!');
       setDmEvolutionApiKey('');
+      setDmWhapiToken('');
       setDmEvolutionUrlSaved(dmEvolutionUrl);
       setDmEvolutionInstanceSaved(dmEvolutionInstance);
       // Refresh preview + health
       const r = await api.get('/notifications/dm/config');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
+      setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
       const h = await api.get('/notifications/dm/health');
       setDmEvolutionHealth(h.data);
     } catch (err) {
@@ -1760,38 +1773,62 @@ export default function NotificationsPage() {
 
                     {selectedChannel === 'wa_group' && (
                       <>
-                        <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
-                          onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <SecretConfigRow label="API Key" savedPreview={waStatus?.evolutionApiKeyPreview}
-                          inputValue={waEvolutionApiKey} onChange={setWaEvolutionApiKey}
-                          onSave={async () => { const msg = await saveWaField({ evolutionApiKey: waEvolutionApiKey }); setWaSaveMsg(msg); setWaEvolutionApiKey(''); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <TextConfigRow label="Instance Name" fieldValue={waEvolutionInstance} placeholder="Vermo Sports" mono
-                          onSave={async (val) => { const msg = await saveWaField({ evolutionInstance: val }); setWaSaveMsg(msg); setWaEvolutionInstance(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
-                          onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
                         <div>
-                          <p className="text-xs text-vs-text-3 mb-1.5">Send Method</p>
+                          <p className="text-xs text-vs-text-3 mb-1.5">Provider</p>
                           <div className="flex gap-2">
-                            {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                            {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud']].map(([val, label]) => (
                               <button key={val} type="button"
-                                onClick={async () => { setWaEvolutionMethod(val); await saveWaField({ evolutionMethod: val }); }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                onClick={async () => { setWaProvider(val); const msg = await saveWaField({ provider: val }); setWaSaveMsg(msg); }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
                                 {label}
                               </button>
                             ))}
                           </div>
+                          <p className="text-xs text-vs-text-3 mt-1">Applies to both group and channel broadcasts. Direct messages have their own provider setting.</p>
                         </div>
+                        {waProvider === 'whapi' ? (
+                          <SecretConfigRow label="Whapi API Token" savedPreview={waStatus?.whapiTokenSet ? 'Token saved' : null}
+                            inputValue={waWhapiToken} onChange={setWaWhapiToken}
+                            onSave={async () => { const msg = await saveWaField({ whapiToken: waWhapiToken }); setWaSaveMsg(msg); setWaWhapiToken(''); }}
+                            saving={waSaving} saveMsg={waSaveMsg} />
+                        ) : (
+                          <>
+                            <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
+                              onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <SecretConfigRow label="API Key" savedPreview={waStatus?.evolutionApiKeyPreview}
+                              inputValue={waEvolutionApiKey} onChange={setWaEvolutionApiKey}
+                              onSave={async () => { const msg = await saveWaField({ evolutionApiKey: waEvolutionApiKey }); setWaSaveMsg(msg); setWaEvolutionApiKey(''); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <TextConfigRow label="Instance Name" fieldValue={waEvolutionInstance} placeholder="Vermo Sports" mono
+                              onSave={async (val) => { const msg = await saveWaField({ evolutionInstance: val }); setWaSaveMsg(msg); setWaEvolutionInstance(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                          </>
+                        )}
+                        <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
+                          onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                        {waProvider === 'evolution' && (
+                          <div>
+                            <p className="text-xs text-vs-text-3 mb-1.5">Send Method</p>
+                            <div className="flex gap-2">
+                              {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                                <button key={val} type="button"
+                                  onClick={async () => { setWaEvolutionMethod(val); await saveWaField({ evolutionMethod: val }); }}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
                     {selectedChannel === 'wa_channel' && (
                       <>
                         <div className="mb-3 px-3 py-2 bg-vs-elevated/60 border border-vs-border rounded-lg text-xs text-vs-text-3">
-                          Shared Evolution connection — configure URL, Key & Instance on the WhatsApp Group panel.
+                          Shared connection — configure the provider and credentials on the WhatsApp Group panel.
                         </div>
                         <TextConfigRow label="Channel ID" fieldValue={waChannelId} placeholder="120363xxxxxxxxxx@newsletter" mono
                           onSave={async (val) => { const msg = await saveWaField({ channelId: val }); setWaSaveMsg(msg); setWaChannelId(val); }}
@@ -2130,12 +2167,13 @@ export default function NotificationsPage() {
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-semibold text-vs-text-2">DM Evolution Connection</p>
+                          <p className="text-xs font-semibold text-vs-text-2">DM WhatsApp Connection</p>
                           <div className="flex items-center gap-2">
                             {dmEvolutionHealth && (
                               <span className={`flex items-center gap-1.5 text-xs ${dmEvolutionHealth.instanceConnected ? 'text-vs-success' : dmEvolutionHealth.configured ? 'text-yellow-400' : 'text-vs-danger'}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${dmEvolutionHealth.instanceConnected ? 'bg-vs-success' : dmEvolutionHealth.configured ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
-                                {dmEvolutionHealth.instanceConnected ? `Connected (${dmEvolutionHealth.state})` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
+                                {dmEvolutionHealth.instanceConnected ? `Connected${dmEvolutionHealth.state ? ` (${dmEvolutionHealth.state})` : ''}` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
+                                {dmEvolutionHealth.provider ? ` · ${dmEvolutionHealth.provider === 'whapi' ? 'Whapi.Cloud' : 'Evolution'}` : ''}
                               </span>
                             )}
                             <button type="button" onClick={recheckDmHealth} className="text-xs text-vs-text-3 hover:text-vs-text underline">Check</button>
@@ -2143,35 +2181,58 @@ export default function NotificationsPage() {
                         </div>
                         <div className="space-y-3">
                           <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
-                            <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
-                              placeholder="https://evolution.example.com"
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
-                            <input type="password" value={dmEvolutionApiKey} onChange={(e) => setDmEvolutionApiKey(e.target.value)}
-                              placeholder={dmEvolutionApiKeyPreview || 'Enter API key'}
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                            {dmEvolutionApiKeyPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
-                            <input type="text" value={dmEvolutionInstance} onChange={(e) => setDmEvolutionInstance(e.target.value)}
-                              placeholder="e.g. vermo-dm"
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Send Method</label>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Provider</label>
                             <div className="flex gap-2">
-                              {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
-                                <button key={val} type="button" onClick={() => setDmEvolutionMethod(val)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                              {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud']].map(([val, label]) => (
+                                <button key={val} type="button" onClick={() => setDmProvider(val)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
                                   {label}
                                 </button>
                               ))}
                             </div>
                           </div>
+                          {dmProvider === 'whapi' ? (
+                            <div>
+                              <label className="text-xs text-vs-text-3 block mb-1.5">Whapi API Token</label>
+                              <input type="password" value={dmWhapiToken} onChange={(e) => setDmWhapiToken(e.target.value)}
+                                placeholder={dmWhapiTokenPreview || 'Enter whapi.cloud token'}
+                                className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              {dmWhapiTokenPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current token.</p>}
+                            </div>
+                          ) : (
+                            <>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
+                                <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
+                                  placeholder="https://evolution.example.com"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
+                                <input type="password" value={dmEvolutionApiKey} onChange={(e) => setDmEvolutionApiKey(e.target.value)}
+                                  placeholder={dmEvolutionApiKeyPreview || 'Enter API key'}
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                                {dmEvolutionApiKeyPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
+                                <input type="text" value={dmEvolutionInstance} onChange={(e) => setDmEvolutionInstance(e.target.value)}
+                                  placeholder="e.g. vermo-dm"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Send Method</label>
+                                <div className="flex gap-2">
+                                  {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                                    <button key={val} type="button" onClick={() => setDmEvolutionMethod(val)}
+                                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
                           <div className="flex items-center gap-3">
                             <button type="button" onClick={handleSaveDmEvolution} disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
@@ -2179,7 +2240,7 @@ export default function NotificationsPage() {
                             </button>
                             {dmEvolutionSaveMsg && <p className={`text-xs ${dmEvolutionSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmEvolutionSaveMsg}</p>}
                           </div>
-                          <p className="text-xs text-vs-text-3">Separate from the group/channel broadcast instance.</p>
+                          <p className="text-xs text-vs-text-3">Fully independent from the group/channel broadcast connection — nothing is shared between the two.</p>
                         </div>
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
@@ -2216,14 +2277,14 @@ export default function NotificationsPage() {
                   <div className="bg-vs-card border border-vs-border rounded-xl p-5">
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm font-semibold text-vs-text">C. Welcome Message</p>
-                      {dmEvolutionMethod === 'baileys'
+                      {(dmProvider === 'whapi' || dmEvolutionMethod === 'baileys')
                         ? <span className="px-2 py-0.5 text-xs rounded-full bg-vs-elevated text-vs-text-2 border border-vs-border font-semibold">Editable</span>
                         : <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
                       }
                     </div>
 
-                    {dmEvolutionMethod === 'baileys' ? (
-                      /* ── Editable welcome text (Baileys mode) ── */
+                    {(dmProvider === 'whapi' || dmEvolutionMethod === 'baileys') ? (
+                      /* ── Editable welcome text (Baileys or whapi — plain text) ── */
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs text-vs-text-3">Insert variable:</span>

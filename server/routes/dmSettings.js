@@ -1,5 +1,5 @@
 const express = require('express');
-const { getDmConfig, sendDM, sendDirectMessage, sendWelcomeTemplate, stripHtml, isDmConfigured, checkDmHealth } = require('../whatsapp');
+const { sendDM, sendDirectMessage, sendWelcomeTemplate, stripHtml, isDmConfigured, checkDmHealth } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
@@ -28,8 +28,8 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
   try {
     const db  = getSQLite();
     const get = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? null;
-    const dmCfg = getDmConfig();
     const rawDmKey = get('dm_evolution_api_key') || '';
+    const rawDmWhapiToken = get('dm_whapi_api_token') || '';
     res.json({
       enabled:              get('whatsapp_dm_enabled') === '1',
       groupLink:            get('whatsapp_group_link')      || '',
@@ -40,14 +40,14 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
       welcomeText:          get('dm_welcome_text')         || '',
       welcomeTemplateName:  get('welcome_template_name')    || '',
       welcomeTemplateLanguage: get('welcome_template_language') || '',
+      dmProvider:           get('dm_whatsapp_provider')     || 'evolution',
       dmEvolutionUrl:       get('dm_evolution_api_url')     || '',
       dmEvolutionInstance:  get('dm_evolution_instance')    || '',
       dmEvolutionApiKeyPreview: rawDmKey ? rawDmKey.slice(0, 8) + '…' + rawDmKey.slice(-4) : '',
       dmEvolutionApiKeySet: !!rawDmKey,
+      dmWhapiTokenPreview:  rawDmWhapiToken ? rawDmWhapiToken.slice(0, 8) + '…' + rawDmWhapiToken.slice(-4) : '',
+      dmWhapiTokenSet:      !!rawDmWhapiToken,
       dmEvolutionMethod:    get('dm_evolution_method')      || 'baileys',
-      // resolved values (with shared-config fallback) — for status display
-      dmEvolutionUrlResolved:      dmCfg.evolutionUrl,
-      dmEvolutionInstanceResolved: dmCfg.evolutionInstance,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,15 +64,23 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     `).run(k, String(v));
 
     const { enabled, groupLink, channelLink, telegramLink, countryCode, welcomeText, welcomeTemplateName, welcomeTemplateLanguage,
-            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod } = req.body;
+            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken } = req.body;
 
     if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
       return res.status(400).json({ ok: false, error: 'dmEvolutionMethod must be baileys or cloud_api' });
+    }
+    if (dmProvider != null && !['evolution', 'whapi'].includes(dmProvider)) {
+      return res.status(400).json({ ok: false, error: 'dmProvider must be evolution or whapi' });
     }
 
     if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '') {
       if (!/^[\x00-\x7F]+$/.test(String(dmEvolutionApiKey))) {
         return res.status(400).json({ ok: false, error: 'API key contains invalid characters — enter the full key, not the masked preview.' });
+      }
+    }
+    if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '') {
+      if (!/^[\x00-\x7F]+$/.test(String(dmWhapiToken))) {
+        return res.status(400).json({ ok: false, error: 'Whapi token contains invalid characters — enter the full token, not the masked preview.' });
       }
     }
 
@@ -89,6 +97,9 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
                                        set('dm_evolution_api_key',      String(dmEvolutionApiKey).trim());
     if (dmEvolutionInstance != null)   set('dm_evolution_instance',     String(dmEvolutionInstance).trim());
     if (dmEvolutionMethod != null)     set('dm_evolution_method',       dmEvolutionMethod);
+    if (dmProvider != null)            set('dm_whatsapp_provider',      dmProvider);
+    if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '')
+                                       set('dm_whapi_api_token',        String(dmWhapiToken).trim());
 
     res.json({ ok: true });
   } catch (err) {
