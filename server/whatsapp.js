@@ -134,22 +134,29 @@ function dispatchText(to, text, cfg) {
 
 async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
+  const body = {
+    number:    to,
+    mediatype: 'image',
+    mimetype,
+    caption,
+    fileName:  filename,
+  };
+  // Prefer inline base64 — it needs no reachable URL and is exactly the
+  // "base64 data" some Evolution builds demand. `media` is the stock field
+  // (works for the broadcast instance); `base64` is added for builds whose
+  // error is "Missing base64 data and mediaUrl". Only fall back to a hosted
+  // URL if we somehow have no base64.
+  if (base64) {
+    body.media = base64;
+    body.base64 = base64;
+  } else if (mediaUrl) {
+    body.media = mediaUrl;
+    body.mediaUrl = mediaUrl;
+  }
   const res = await fetchWithTimeout(`${url}/message/sendMedia/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      number:    to,
-      mediatype: 'image',
-      mimetype,
-      caption,
-      // Prefer a hosted URL when provided (some Evolution instances reject
-      // inline base64); otherwise fall back to raw base64 (no data: prefix).
-      media:     mediaUrl || base64,
-      // Some Evolution builds read the URL from a differently-named field
-      // ("Missing base64 data and mediaUrl"); include it too when we have one.
-      ...(mediaUrl ? { mediaUrl } : {}),
-      fileName:  filename,
-    }),
+    body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && !!(json.key?.id);
@@ -161,8 +168,8 @@ async function whapiPostMedia(to, { base64, url: mediaUrl, mimetype, caption }, 
   const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/image`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    // whapi accepts either a URL or a base64 data URI in `media`.
-    body: JSON.stringify({ to, media: mediaUrl || `data:${mimetype};base64,${base64}`, caption }),
+    // Prefer the inline base64 data URI (no fetch needed); URL only as fallback.
+    body: JSON.stringify({ to, media: base64 ? `data:${mimetype};base64,${base64}` : mediaUrl, caption }),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
