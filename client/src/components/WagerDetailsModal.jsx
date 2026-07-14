@@ -1,10 +1,21 @@
-import { useState } from 'react';
 import { computePrizes } from '../config/prizeTiers';
 import { formatMoney } from '../utils/currency';
 
 // Prize Projector is USD-only per product decision — the contest's own currency
 // is intentionally ignored for display here.
 const USD = { name: 'USD', symbol: '$' };
+
+// Exact Figma palette (also the app's vs-* tokens).
+const C = {
+  globe:    '#1C1B20',
+  island:   '#24232A',
+  onIsland: '#313038',
+  purple:   '#775CDF',
+  lime:     '#B5DB1C',
+  text:     '#FFFFFF',
+  text2:    '#E2E2E2',
+  text3:    '#9F9F9F',
+};
 
 const WAGER_TYPE_LABELS = {
   GOALSANDCARDS: 'Goals & Cards',
@@ -13,23 +24,17 @@ const WAGER_TYPE_LABELS = {
 };
 
 function titleCase(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return String(s || '').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
 function wagerTypeLabel(betType) {
   if (!betType) return '—';
   return WAGER_TYPE_LABELS[betType] || titleCase(betType);
 }
-
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
-
 function fmtGameDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -37,123 +42,164 @@ function fmtGameDate(iso) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function Row({ label, value, valueClass = 'text-vs-text', sub }) {
+// ── iOS status-bar glyphs ─────────────────────────────────────────────────────
+function Signal() {
   return (
-    <div className="flex items-center justify-between gap-2 py-1">
-      <span className="text-sm text-vs-text-3">{label}</span>
-      <span className="flex items-center gap-2">
-        {sub != null && <span className="text-[10px] text-vs-text-3">{sub}</span>}
-        <span className={`text-sm text-right ${valueClass}`}>{value}</span>
-      </span>
+    <svg width="18" height="12" viewBox="0 0 18 12" fill={C.text} aria-hidden>
+      <rect x="0" y="8" width="3" height="4" rx="1" />
+      <rect x="4.7" y="5.5" width="3" height="6.5" rx="1" />
+      <rect x="9.4" y="3" width="3" height="9" rx="1" />
+      <rect x="14.1" y="0.5" width="3" height="11.5" rx="1" />
+    </svg>
+  );
+}
+function Wifi() {
+  return (
+    <svg width="17" height="12" viewBox="0 0 17 12" fill="none" aria-hidden>
+      <path d="M2.4 4.7a9 9 0 0112.2 0" stroke={C.text} strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M4.8 7.1a5.4 5.4 0 017.4 0" stroke={C.text} strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M8.5 9.5a1.3 1.3 0 100 2.6 1.3 1.3 0 000-2.6z" fill={C.text} />
+    </svg>
+  );
+}
+function Battery() {
+  return (
+    <svg width="28" height="13" viewBox="0 0 28 13" fill="none" aria-hidden>
+      <rect x="0.5" y="0.5" width="23" height="12" rx="3.5" stroke={C.text} opacity="0.4" />
+      <rect x="2" y="2" width="18" height="9" rx="2" fill={C.text} />
+      <path d="M25.3 4.2c.9.4.9 4.2 0 4.6V4.2z" fill={C.text} opacity="0.5" />
+    </svg>
+  );
+}
+
+// ── Rows ──────────────────────────────────────────────────────────────────────
+function DetailRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-2" style={{ height: 30 }}>
+      <span style={{ fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>{label}</span>
+      <span style={{ fontSize: 14, color: C.text, letterSpacing: '-0.01em', textAlign: 'right' }}>{value}</span>
     </div>
   );
 }
 
 export default function WagerDetailsModal({ contest, onClose }) {
-  const [mode, setMode] = useState('maximum'); // 'maximum' | 'current'
-
   if (!contest) return null;
 
-  const pot = contest.amount * (mode === 'maximum' ? contest.capacity : contest.participantCount);
+  // Full-capacity ("Maximum") projected pot — matches the projector's headline view.
+  const pot = contest.amount * contest.capacity;
   const prizes = computePrizes(pot, contest.capacity);
 
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-2xl overflow-hidden max-h-[90vh] overflow-y-auto shadow-2xl"
-        style={{ backgroundColor: '#1C1B20' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Top bar */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b" style={{ backgroundColor: '#24232A', borderColor: '#313038' }}>
-          <button onClick={onClose} aria-label="Close" className="p-1 -ml-1 text-vs-text-2 hover:text-white transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-          <p className="flex-1 text-center text-[17px] font-semibold text-white pr-5">
-            Wager – {contest.bookingCode || '—'}
-          </p>
-        </div>
+  const chip = (label, active) => (
+    <span
+      key={label}
+      style={{
+        display: 'inline-flex', alignItems: 'center', padding: '9px 14px',
+        fontSize: 14, borderRadius: 8, whiteSpace: 'nowrap', userSelect: 'none',
+        letterSpacing: '-0.01em',
+        background: active ? C.purple : C.island,
+        color: C.text, fontWeight: active ? 500 : 400,
+      }}
+    >
+      {label}
+    </span>
+  );
 
-        <div className="p-4 space-y-4">
-          {/* Chips row — Wager Details active; others presentational */}
-          <div className="flex gap-3">
-            {['Leader Board', 'Selections'].map((c) => (
-              <span key={c} className="px-3.5 py-2 rounded-lg text-sm text-white select-none" style={{ backgroundColor: '#24232A' }}>
-                {c}
-              </span>
-            ))}
-            <span className="px-3.5 py-2 rounded-lg text-sm font-medium text-white select-none" style={{ backgroundColor: '#775CDF' }}>
-              Wager Details
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 375, maxWidth: '100%', maxHeight: '92vh',
+          background: C.globe, borderRadius: 30, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+          fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        }}
+      >
+        {/* ── Top app bar (island): status bar + nav row ── */}
+        <div style={{ background: C.island, borderBottom: `0.5px solid ${C.onIsland}` }}>
+          {/* Status bar */}
+          <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 21px' }}>
+            <span style={{ color: C.text, fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em' }}>9:41</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Signal /><Wifi /><Battery />
+            </div>
+          </div>
+          {/* Nav row */}
+          <div style={{ position: 'relative', height: 44, display: 'flex', alignItems: 'center' }}>
+            <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', left: 8, padding: 8, color: C.text2, display: 'flex' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.text2} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <p style={{ flex: 1, textAlign: 'center', color: C.text, fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em' }}>
+              Wager – {contest.bookingCode || '—'}
+            </p>
+            <span aria-hidden style={{ position: 'absolute', right: 12, padding: '10px 9px', display: 'flex', color: C.text }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke={C.text} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.6 8.3A8 8 0 004.1 4.6M2.4 11.7A8 8 0 0015.9 15.4" />
+                <path d="M17.5 3v3.5H14" /><path d="M2.5 17v-3.5H6" />
+              </svg>
             </span>
           </div>
+        </div>
 
-          {/* Maximum | Current toggle */}
-          <div className="inline-flex gap-1 rounded-full p-1" style={{ backgroundColor: '#313038' }}>
-            {[['maximum', 'Maximum'], ['current', 'Current']].map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setMode(val)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  mode === val ? 'bg-vs-purple text-white' : 'text-vs-text-2 hover:text-white'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        {/* ── Scrollable content ── */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {/* Chips */}
+          <div style={{ display: 'flex', gap: 12, padding: '12px 16px' }}>
+            {chip('Leader Board', false)}
+            {chip('Selections', false)}
+            {chip('Wager Details', true)}
           </div>
 
-          {/* Card 1 — details */}
-          <div className="rounded-lg px-3 py-2" style={{ backgroundColor: '#24232A' }}>
-            <Row label="Wager Code" value={contest.bookingCode || '—'} />
-            <Row label="Players" value={`${contest.participantCount.toLocaleString()} / ${contest.capacity.toLocaleString()}`} />
-            <Row label="Tournament" value={contest.betMode ? titleCase(contest.betMode) : '—'} />
-            <Row label="Wager Type" value={wagerTypeLabel(contest.betType)} />
-            <Row label="First Game" value={fmtGameDate(contest.firstGame)} />
-            <Row label="Last Game" value={fmtGameDate(contest.lastGame)} />
-          </div>
-
-          {/* Card 2 — stake & prizes */}
-          <div className="rounded-lg px-3 py-2" style={{ backgroundColor: '#24232A' }}>
-            <div className="flex items-center justify-between gap-2 pb-3 border-b" style={{ borderColor: '#313038' }}>
-              <span className="text-sm text-vs-text-3">Stake</span>
-              <span className="text-sm font-bold text-vs-lime">{formatMoney(contest.amount, USD)}</span>
+          {/* Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '0 16px 20px' }}>
+            {/* Card 1 — details */}
+            <div style={{ background: C.island, borderRadius: 8, padding: '8px 12px' }}>
+              <DetailRow label="Wager Code" value={contest.bookingCode || '—'} />
+              <DetailRow label="Players" value={`${contest.participantCount.toLocaleString()} / ${contest.capacity.toLocaleString()}`} />
+              <DetailRow label="Tournament" value={contest.betMode ? titleCase(contest.betMode) : '—'} />
+              <DetailRow label="Wager Type" value={wagerTypeLabel(contest.betType)} />
+              <DetailRow label="First Game" value={fmtGameDate(contest.firstGame)} />
+              <DetailRow label="Last Game" value={fmtGameDate(contest.lastGame)} />
             </div>
-            <div className="pt-2">
-              {prizes.map((row) => (
-                <Row
-                  key={row.position}
-                  label={`${ordinal(row.position)} Place`}
-                  sub={`${row.pct}%`}
-                  value={formatMoney(row.amount, USD)}
-                  valueClass="text-vs-lime font-bold"
-                />
-              ))}
+
+            {/* Card 2 — stake & prizes */}
+            <div style={{ background: C.island, borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, borderBottom: `1px solid ${C.onIsland}` }}>
+                <span style={{ fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>Stake</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.lime, letterSpacing: '-0.01em' }}>{formatMoney(contest.amount, USD)}</span>
+              </div>
+              <div style={{ paddingTop: 8 }}>
+                {prizes.map((row) => (
+                  <div key={row.position} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 26 }}>
+                    <span style={{ fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>{ordinal(row.position)} Place</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10, color: C.text3, letterSpacing: '-0.01em' }}>{row.pct}%</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.lime, letterSpacing: '-0.01em' }}>{formatMoney(row.amount, USD)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Card 3 — wager rules */}
+            <div style={{ background: C.island, borderRadius: 8, padding: '12px' }}>
+              <p style={{ fontSize: 12, fontWeight: 500, color: C.text, letterSpacing: '-0.01em', marginBottom: 8 }}>Wager Rules</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  `Minimum ${contest.minParticipants} players required to start`,
+                  `Top ${prizes.length} player${prizes.length !== 1 ? 's' : ''} win prizes`,
+                  'No refunds after wager confirmation',
+                ].map((rule) => (
+                  <div key={rule} style={{ display: 'flex', gap: 8, fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>
+                    <span aria-hidden>•</span><span>{rule}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-
-          {/* Card 3 — wager rules */}
-          <div className="rounded-lg px-3 py-3" style={{ backgroundColor: '#24232A' }}>
-            <p className="text-xs font-medium text-white mb-2">Wager Rules</p>
-            <ul className="space-y-2">
-              {[
-                `Minimum ${contest.minParticipants} players required to start`,
-                `Top ${prizes.length} player${prizes.length !== 1 ? 's' : ''} win prizes`,
-                'No refunds after wager confirmation',
-              ].map((rule) => (
-                <li key={rule} className="flex gap-2 text-sm text-vs-text-3">
-                  <span aria-hidden>•</span>
-                  <span>{rule}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p className="text-[11px] text-vs-text-3 text-center">
-            Projected winnings — amounts each player receives.
-          </p>
         </div>
       </div>
     </div>
