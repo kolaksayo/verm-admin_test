@@ -248,6 +248,10 @@ router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req,
 
     const items = open.map((bet) => {
       const fx = bet.gameFixtureId ? fixtureMap[String(bet.gameFixtureId)] : null;
+      // firstGame/lastGame use the resolved main-fixture date. For multi-fixture
+      // (GOALSANDCARDS) bets this is an approximation — true first/last would need
+      // per-participant fixture resolution, out of scope for the list endpoint.
+      const gameDate = fx?.date || bet.possibleStartPeriod || null;
       return {
         id:               bet._id.toString(),
         bookingCode:      bet.bookingCode || null,
@@ -255,12 +259,16 @@ router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req,
         capacity:         Number(bet.capacity || bet.maxParticipants) || 0,
         participantCount: participantCountOf(bet),
         minParticipants:  Number(bet.minParticipants) || 2,
+        betType:          bet.betType || null,
+        betMode:          bet.betMode || null,
         currency:         bet.currencyType ? (currencyMap[String(bet.currencyType)] || { name: null, symbol: null }) : { name: null, symbol: null },
         match: {
           homeTeam: fx?.homeTeam || null,
           awayTeam: fx?.awayTeam || null,
-          date:     fx?.date || bet.possibleStartPeriod || null,
+          date:     gameDate,
         },
+        firstGame:        gameDate,
+        lastGame:         gameDate,
         status: bet.status || null,
       };
     });
