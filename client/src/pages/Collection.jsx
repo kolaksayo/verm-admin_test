@@ -9,6 +9,7 @@ import GameBetModal from '../components/GameBetModal';
 import UserRankingsView from '../components/UserRankingsView';
 import InfluencerDashboard from './InfluencerDashboard';
 import SignupBonusDashboard from './SignupBonusDashboard';
+import PrizeProjector from './PrizeProjector';
 
 function formatName(name) {
   return name
@@ -35,6 +36,7 @@ export default function Collection({ collectionName }) {
   const [profileUser, setProfileUser] = useState(null);
   const [gameBet, setGameBet] = useState(null);
   const [referralsTab, setReferralsTab] = useState('records');
+  const [gameBetTab, setGameBetTab] = useState('bets');
 
   const isCustom = CUSTOM_VIEWS.includes(name);
 
@@ -103,7 +105,7 @@ export default function Collection({ collectionName }) {
           )}
         </div>
 
-        {!isCustom && name !== 'referrals' && (
+        {!isCustom && name !== 'referrals' && !(name === 'game_bet' && gameBetTab !== 'bets') && (
           <form onSubmit={handleSearch} className="flex items-center gap-2">
             <input
               type="text"
@@ -185,11 +187,31 @@ export default function Collection({ collectionName }) {
       {name === 'referrals' && referralsTab === 'influencers' && <InfluencerDashboard embedded />}
       {name === 'referrals' && referralsTab === 'bonuses' && <SignupBonusDashboard embedded />}
 
+      {name === 'game_bet' && (
+        <div className="flex gap-1 mb-5 border-b border-vs-border">
+          {['bets', 'projector'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setGameBetTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                gameBetTab === tab
+                  ? 'border-vs-purple text-vs-purple'
+                  : 'border-transparent text-vs-text-3 hover:text-vs-text-2'
+              }`}
+            >
+              {{ bets: 'Bets', projector: 'Prize Projector' }[tab]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {name === 'game_bet' && gameBetTab === 'projector' && <PrizeProjector embedded />}
+
       {name === 'football_fixtures' && <FixturesView />}
       {name === 'game_bet_leaderboard' && <LeaderboardView onUserClick={handleUserClick} />}
       {name === 'game_bet_user_rankings' && <UserRankingsView onUserClick={handleUserClick} />}
 
-      {!isCustom && !(name === 'referrals' && referralsTab !== 'records') && (
+      {!isCustom && !(name === 'referrals' && referralsTab !== 'records') && !(name === 'game_bet' && gameBetTab !== 'bets') && (
         loading ? (
           <div className="bg-vs-card rounded-xl border border-vs-border p-8 text-center text-vs-text-3 text-sm animate-pulse">
             Loading…

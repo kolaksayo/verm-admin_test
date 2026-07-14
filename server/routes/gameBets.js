@@ -162,6 +162,123 @@ router.get('/leaderboard', auth, requirePermission('betting', 'leaderboard'), as
   }
 });
 
+// Terminal statuses — a bet in any of these is no longer joinable.
+const TERMINAL_STATUS = /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED)$/i;
+
+function participantCountOf(bet) {
+  if (Array.isArray(bet.participants)) return bet.participants.length;
+  if (Array.isArray(bet.players)) return bet.players.length;
+  if (typeof bet.currentParticipants === 'number') return bet.currentParticipants;
+  if (typeof bet.participantCount === 'number') return bet.participantCount;
+  return 1;
+}
+
+// GET /api/game-bets/open — open, joinable, not-full multiplayer contests
+// (capacity >= 5), enriched with team names + currency for the Prize Projector.
+// MUST be declared before '/:id' or Express routes '/open' into that handler.
+router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req, res) => {
+  try {
+    const db = getDb();
+
+    const raw = await db.collection('game_bet')
+      .find({ status: { $not: TERMINAL_STATUS }, resolved: { $ne: true } })
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .toArray();
+
+    // Keep only multiplayer (capacity >= 5) contests that still have room.
+    const open = raw.filter((bet) => {
+      const capacity = Number(bet.capacity || bet.maxParticipants) || 0;
+      return capacity >= 5 && participantCountOf(bet) < capacity;
+    });
+
+    // ── Batch-resolve fixtures → team names, and currencies ──────────────────
+    const fixtureIds = new Set();
+    const currencyIds = new Set();
+    open.forEach((bet) => {
+      if (bet.gameFixtureId) fixtureIds.add(String(bet.gameFixtureId));
+      if (bet.currencyType)  currencyIds.add(String(bet.currencyType));
+    });
+
+    const [fixtures, currencies] = await Promise.all([
+      fixtureIds.size
+        ? db.collection('football_fixtures')
+            .find({ _id: { $in: [...fixtureIds].map(toOid).filter(Boolean) } })
+            .toArray()
+        : [],
+      currencyIds.size
+        ? db.collection('currencytypes')
+            .find({ _id: { $in: [...currencyIds].map(toOid).filter(Boolean) } }, { projection: { name: 1, symbol: 1 } })
+            .toArray()
+        : [],
+    ]);
+
+    // Collect team ids from the fixtures, resolve names in one batch.
+    const teamIds = new Set();
+    fixtures.forEach((f) => {
+      [f.homeTeam, f.awayTeam].forEach((t) => {
+        if (t && !(typeof t === 'object' && !(t instanceof ObjectId))) teamIds.add(String(t));
+      });
+    });
+    const teams = teamIds.size
+      ? await db.collection('football_teams')
+          .find({ _id: { $in: [...teamIds].map(toOid).filter(Boolean) } }, { projection: { name: 1 } })
+          .toArray()
+      : [];
+    const teamMap = {};
+    teams.forEach((t) => { teamMap[t._id.toString()] = t.name; });
+
+    const teamName = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object' && !(val instanceof ObjectId)) return val.name || val.teamName || null;
+      return teamMap[String(val)] || null;
+    };
+
+    const fixtureMap = {};
+    fixtures.forEach((f) => {
+      fixtureMap[f._id.toString()] = {
+        homeTeam: teamName(f.homeTeam) || 'TBD',
+        awayTeam: teamName(f.awayTeam) || 'TBD',
+        date: f.firstPeriod || f.date || f.fixture?.date || null,
+      };
+    });
+
+    const currencyMap = {};
+    currencies.forEach((c) => { currencyMap[c._id.toString()] = { name: c.name || null, symbol: c.symbol || null }; });
+
+    const items = open.map((bet) => {
+      const fx = bet.gameFixtureId ? fixtureMap[String(bet.gameFixtureId)] : null;
+      return {
+        id:               bet._id.toString(),
+        bookingCode:      bet.bookingCode || null,
+        amount:           bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : 0,
+        capacity:         Number(bet.capacity || bet.maxParticipants) || 0,
+        participantCount: participantCountOf(bet),
+        minParticipants:  Number(bet.minParticipants) || 2,
+        currency:         bet.currencyType ? (currencyMap[String(bet.currencyType)] || { name: null, symbol: null }) : { name: null, symbol: null },
+        match: {
+          homeTeam: fx?.homeTeam || null,
+          awayTeam: fx?.awayTeam || null,
+          date:     fx?.date || bet.possibleStartPeriod || null,
+        },
+        status: bet.status || null,
+      };
+    });
+
+    // Soonest kickoff first (nulls last), then newest.
+    items.sort((a, b) => {
+      const da = a.match.date ? new Date(a.match.date).getTime() : Infinity;
+      const dbt = b.match.date ? new Date(b.match.date).getTime() : Infinity;
+      return da - dbt;
+    });
+
+    res.json(items.slice(0, 100));
+  } catch (err) {
+    console.error('Open game bets error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', auth, requirePermission('betting', 'game_bets'), async (req, res) => {
   try {
     const db = getDb();
