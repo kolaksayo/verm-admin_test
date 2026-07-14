@@ -222,16 +222,21 @@ router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req,
     });
     const teams = teamIds.size
       ? await db.collection('football_teams')
-          .find({ _id: { $in: [...teamIds].map(toOid).filter(Boolean) } }, { projection: { name: 1 } })
+          .find({ _id: { $in: [...teamIds].map(toOid).filter(Boolean) } }, { projection: { name: 1, logo: 1 } })
           .toArray()
       : [];
     const teamMap = {};
-    teams.forEach((t) => { teamMap[t._id.toString()] = t.name; });
+    teams.forEach((t) => { teamMap[t._id.toString()] = { name: t.name, logo: t.logo || null }; });
 
     const teamName = (val) => {
       if (!val) return null;
       if (typeof val === 'object' && !(val instanceof ObjectId)) return val.name || val.teamName || null;
-      return teamMap[String(val)] || null;
+      return teamMap[String(val)]?.name || null;
+    };
+    const teamLogo = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object' && !(val instanceof ObjectId)) return val.logo || val.image || null;
+      return teamMap[String(val)]?.logo || null;
     };
 
     const fixtureMap = {};
@@ -239,6 +244,8 @@ router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req,
       fixtureMap[f._id.toString()] = {
         homeTeam: teamName(f.homeTeam) || 'TBD',
         awayTeam: teamName(f.awayTeam) || 'TBD',
+        homeLogo: teamLogo(f.homeTeam),
+        awayLogo: teamLogo(f.awayTeam),
         date: f.firstPeriod || f.date || f.fixture?.date || null,
       };
     });
@@ -265,6 +272,8 @@ router.get('/open', auth, requirePermission('betting', 'game_bets'), async (req,
         match: {
           homeTeam: fx?.homeTeam || null,
           awayTeam: fx?.awayTeam || null,
+          homeLogo: fx?.homeLogo || null,
+          awayLogo: fx?.awayLogo || null,
           date:     gameDate,
         },
         firstGame:        gameDate,

@@ -19,6 +19,12 @@ export function pickTier(capacity) {
   return TIER_CAPS.find((t) => t >= cap) ?? 20;
 }
 
+// Minimum players required for a contest to start = 60% of capacity, rounded
+// up. e.g. 3 -> 2, 5 -> 3, 10 -> 6, 15 -> 9, 20 -> 12.
+export function minPlayersToStart(capacity) {
+  return Math.ceil((Number(capacity) || 0) * 0.6);
+}
+
 // Prizes per paying position for a given pot and capacity. Full precision —
 // callers round for display only. Prizes always sum exactly to the pot.
 export function computePrizes(pot, capacity) {

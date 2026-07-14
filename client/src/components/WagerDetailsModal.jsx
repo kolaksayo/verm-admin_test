@@ -1,4 +1,5 @@
-import { computePrizes } from '../config/prizeTiers';
+import { useState } from 'react';
+import { computePrizes, minPlayersToStart } from '../config/prizeTiers';
 import { formatMoney } from '../utils/currency';
 
 // Prize Projector is USD-only per product decision — the contest's own currency
@@ -72,6 +73,32 @@ function Battery() {
   );
 }
 
+// ── Team crest — logo with first-initial circle fallback (FixturesView pattern) ──
+function Crest({ logo, name }) {
+  const [failed, setFailed] = useState(false);
+  const showImg = logo && !failed;
+  return (
+    <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      {showImg ? (
+        <img
+          src={logo}
+          alt={name || ''}
+          style={{ width: 40, height: 40, objectFit: 'contain' }}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%', background: C.onIsland,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: C.text3, fontSize: 13, fontWeight: 700,
+        }}>
+          {name?.[0]?.toUpperCase() || '?'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Rows ──────────────────────────────────────────────────────────────────────
 function DetailRow({ label, value }) {
   return (
@@ -82,12 +109,20 @@ function DetailRow({ label, value }) {
   );
 }
 
-export default function WagerDetailsModal({ contest, onClose }) {
+export default function WagerDetailsModal({ contest, mode = 'maximum', onClose }) {
   if (!contest) return null;
 
-  // Full-capacity ("Maximum") projected pot — matches the projector's headline view.
-  const pot = contest.amount * contest.capacity;
+  // Pot basis chosen on the list page (no toggle inside the pop-up):
+  //   Maximum → entry fee × capacity;  Current → entry fee × players joined.
+  const isMax = mode !== 'current';
+  const pot = isMax
+    ? contest.amount * contest.capacity
+    : contest.amount * contest.participantCount;
+  const modeLabel = isMax ? 'Maximum payout' : 'Current payout';
   const prizes = computePrizes(pot, contest.capacity);
+  const homeTeam = contest.match?.homeTeam;
+  const awayTeam = contest.match?.awayTeam;
+  const hasTeams = homeTeam && awayTeam;
 
   const chip = (label, active) => (
     <span
@@ -153,6 +188,22 @@ export default function WagerDetailsModal({ contest, onClose }) {
             {chip('Wager Details', true)}
           </div>
 
+          {/* Match crest row + selected payout basis (label only — no toggle) */}
+          <div style={{ padding: '0 16px 12px' }}>
+            {hasTeams && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                <Crest logo={contest.match?.homeLogo} name={homeTeam} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: C.text, letterSpacing: '-0.01em', textAlign: 'center' }}>
+                  {homeTeam} <span style={{ color: C.text3, fontWeight: 400 }}>vs</span> {awayTeam}
+                </span>
+                <Crest logo={contest.match?.awayLogo} name={awayTeam} />
+              </div>
+            )}
+            <p style={{ marginTop: hasTeams ? 8 : 0, textAlign: 'center', fontSize: 12, fontWeight: 500, color: C.purple, letterSpacing: '-0.01em' }}>
+              {modeLabel}
+            </p>
+          </div>
+
           {/* Cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '0 16px 20px' }}>
             {/* Card 1 — details */}
@@ -189,7 +240,7 @@ export default function WagerDetailsModal({ contest, onClose }) {
               <p style={{ fontSize: 12, fontWeight: 500, color: C.text, letterSpacing: '-0.01em', marginBottom: 8 }}>Wager Rules</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
-                  `Minimum ${contest.minParticipants} players required to start`,
+                  `Minimum ${minPlayersToStart(contest.capacity)} players required to start`,
                   `Top ${prizes.length} player${prizes.length !== 1 ? 's' : ''} win prizes`,
                   'No refunds after wager confirmation',
                 ].map((rule) => (

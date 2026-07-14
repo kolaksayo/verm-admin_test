@@ -18,6 +18,7 @@ export default function PrizeProjector({ embedded = false }) {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [selected, setSelected] = useState(null);
+  const [mode, setMode]         = useState('maximum'); // 'maximum' | 'current'
 
   const load = useCallback(() => {
     setLoading(true);
@@ -65,6 +66,27 @@ export default function PrizeProjector({ embedded = false }) {
         </div>
       )}
 
+      {/* Payout basis — chosen here, then shown as a label inside the pop-up. */}
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <span className="text-xs text-vs-text-3">Projected payout basis</span>
+        <div className="inline-flex rounded-lg bg-vs-elevated p-1">
+          {[
+            { key: 'maximum', label: 'Maximum' },
+            { key: 'current', label: 'Current' },
+          ].map((o) => (
+            <button
+              key={o.key}
+              onClick={() => setMode(o.key)}
+              className={`text-xs px-3 py-1.5 rounded-md transition-colors ${
+                mode === o.key ? 'bg-vs-purple text-white' : 'text-vs-text-3 hover:text-vs-text-2'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-vs-card border border-vs-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -104,7 +126,7 @@ export default function PrizeProjector({ embedded = false }) {
         </div>
       </div>
 
-      {selected && <WagerDetailsModal contest={selected} onClose={() => setSelected(null)} />}
+      {selected && <WagerDetailsModal contest={selected} mode={mode} onClose={() => setSelected(null)} />}
     </div>
   );
 }
