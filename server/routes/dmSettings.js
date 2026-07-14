@@ -48,6 +48,7 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
       dmWhapiTokenPreview:  rawDmWhapiToken ? rawDmWhapiToken.slice(0, 8) + '…' + rawDmWhapiToken.slice(-4) : '',
       dmWhapiTokenSet:      !!rawDmWhapiToken,
       dmEvolutionMethod:    get('dm_evolution_method')      || 'baileys',
+      publicBaseUrl:        get('dm_public_base_url')        || '',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,7 +65,11 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     `).run(k, String(v));
 
     const { enabled, groupLink, channelLink, telegramLink, countryCode, welcomeText, welcomeTemplateName, welcomeTemplateLanguage,
-            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken } = req.body;
+            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken, publicBaseUrl } = req.body;
+
+    if (publicBaseUrl != null && String(publicBaseUrl).trim() !== '' && !/^https?:\/\/.+/i.test(String(publicBaseUrl).trim())) {
+      return res.status(400).json({ ok: false, error: 'Public base URL must start with http:// or https://' });
+    }
 
     if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
       return res.status(400).json({ ok: false, error: 'dmEvolutionMethod must be baileys or cloud_api' });
@@ -100,6 +105,7 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     if (dmProvider != null)            set('dm_whatsapp_provider',      dmProvider);
     if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '')
                                        set('dm_whapi_api_token',        String(dmWhapiToken).trim());
+    if (publicBaseUrl != null)         set('dm_public_base_url',        String(publicBaseUrl).trim());
 
     res.json({ ok: true });
   } catch (err) {

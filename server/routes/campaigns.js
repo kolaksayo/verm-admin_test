@@ -3,6 +3,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const { sendMessage: sendTelegram, sendPhoto: sendTelegramPhoto } = require('../telegram');
 const {
   sendMessage: sendToGroup, sendToChannel, sendMediaMessage, sendMediaToChannel,
@@ -76,13 +77,31 @@ function stashMedia(buffer, mimetype) {
   return token;
 }
 
-// Public base URL for provider-fetchable media links. Explicit env wins; else
-// derive from the (public) request, honoring a reverse proxy's forwarded proto.
-function publicBaseUrl(req) {
+// Public base URL for provider-fetchable media links. Explicit config wins so a
+// reverse proxy can't mislead the auto-derivation: env → admin setting →
+// forwarded host/proto → request host.
+function configuredBaseUrl() {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
-  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-  return `${proto}://${req.get('host')}`;
+  try {
+    const v = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get('dm_public_base_url')?.value;
+    if (v && v.trim()) return v.trim().replace(/\/+$/, '');
+  } catch { /* ignore */ }
+  return null;
 }
+
+function publicBaseUrl(req) {
+  const configured = configuredBaseUrl();
+  if (configured) return configured;
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = (req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  return `${proto}://${host}`;
+}
+
+// A tiny 1x1 transparent PNG for the reachability test route.
+const TEST_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 // ── Send ───────────────────────────────────────────────────────────────────────
 
@@ -238,6 +257,14 @@ router.post('/send-dm', auth, requireEditMode, requirePermission('system', 'camp
   const sent = results.filter((r) => r.ok).length;
   const failed = results.length - sent;
   res.json({ ok: sent > 0, sent, failed, results });
+});
+
+// Public reachability probe: if this image loads in a browser (or Evolution),
+// the configured public base URL can serve DM images. Stateless, no token.
+router.get('/media-test', (req, res) => {
+  res.set('Content-Type', 'image/png');
+  res.set('Cache-Control', 'no-store');
+  res.send(TEST_PNG);
 });
 
 // Public, unauthenticated so the WhatsApp provider can fetch DM images by token.

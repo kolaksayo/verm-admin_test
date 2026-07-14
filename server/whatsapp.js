@@ -134,29 +134,20 @@ function dispatchText(to, text, cfg) {
 
 async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
-  const body = {
-    number:    to,
-    mediatype: 'image',
-    mimetype,
-    caption,
-    fileName:  filename,
-  };
-  // Prefer inline base64 — it needs no reachable URL and is exactly the
-  // "base64 data" some Evolution builds demand. `media` is the stock field
-  // (works for the broadcast instance); `base64` is added for builds whose
-  // error is "Missing base64 data and mediaUrl". Only fall back to a hosted
-  // URL if we somehow have no base64.
-  if (base64) {
-    body.media = base64;
-    body.base64 = base64;
-  } else if (mediaUrl) {
-    body.media = mediaUrl;
-    body.mediaUrl = mediaUrl;
-  }
+  // Prefer a fetchable URL when provided (the DM Evolution instance rejects
+  // inline base64 but downloads a URL); otherwise fall back to raw base64,
+  // which the broadcast instance accepts. Single stock `media` field.
   const res = await fetchWithTimeout(`${url}/message/sendMedia/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      number:    to,
+      mediatype: 'image',
+      mimetype,
+      caption,
+      media:     mediaUrl || base64,
+      fileName:  filename,
+    }),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && !!(json.key?.id);
