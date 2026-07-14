@@ -145,6 +145,9 @@ async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filenam
       // Prefer a hosted URL when provided (some Evolution instances reject
       // inline base64); otherwise fall back to raw base64 (no data: prefix).
       media:     mediaUrl || base64,
+      // Some Evolution builds read the URL from a differently-named field
+      // ("Missing base64 data and mediaUrl"); include it too when we have one.
+      ...(mediaUrl ? { mediaUrl } : {}),
       fileName:  filename,
     }),
   });
@@ -164,6 +167,23 @@ async function whapiPostMedia(to, { base64, url: mediaUrl, mimetype, caption }, 
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
   return { ok, json };
+}
+
+// Pull a human-readable error out of a provider response, which varies by
+// provider/version: whapi uses { error: { message } }; Evolution uses
+// { message } or { response: { message: [...] } } or a bare { error }.
+function extractApiError(json) {
+  if (!json || typeof json !== 'object') return 'api_error';
+  const cands = [
+    json.message,
+    json.error?.message,
+    Array.isArray(json.response?.message) ? json.response.message.join('; ') : json.response?.message,
+    typeof json.error === 'string' ? json.error : null,
+  ];
+  const msg = cands.find((c) => typeof c === 'string' && c.trim());
+  if (!msg) return 'api_error';
+  // Keep the surfaced reason short for the UI/logs.
+  return String(msg).slice(0, 300);
 }
 
 function dispatchMedia(to, media, cfg) {
@@ -397,7 +417,12 @@ async function sendMediaDM(userId, phone, username, media, trigger = 'campaign_d
 
   try {
     const { ok, json } = await dispatchMedia(digits, payload, cfg);
-    const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
+    const errMsg = ok ? null : extractApiError(json);
+    if (!ok) {
+      // Surface the raw provider response so image-send failures can be diagnosed
+      // (e.g. Evolution couldn't fetch the media URL).
+      console.error('sendMediaDM failed:', { provider: cfg.provider, mediaUrl: media?.url || '(base64)', response: json });
+    }
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
