@@ -993,7 +993,6 @@ export default function NotificationsPage() {
   const [dmProvider, setDmProvider]                         = useState('evolution');
   const [dmWhapiToken, setDmWhapiToken]                     = useState('');
   const [dmWhapiTokenPreview, setDmWhapiTokenPreview]       = useState('');
-  const [dmPublicBaseUrl, setDmPublicBaseUrl]               = useState('');
   const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
   const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
@@ -1080,7 +1079,6 @@ export default function NotificationsPage() {
       setDmEvolutionMethod(r.data.dmEvolutionMethod || 'baileys');
       setDmProvider(provider);
       setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
-      setDmPublicBaseUrl(r.data.publicBaseUrl || '');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
@@ -1357,7 +1355,6 @@ export default function NotificationsPage() {
         dmEvolutionMethod,
         dmProvider,
         dmWhapiToken:        dmWhapiToken        || undefined,
-        publicBaseUrl:       dmPublicBaseUrl,
       });
       setDmEvolutionSaveMsg('Saved!');
       setDmEvolutionApiKey('');
@@ -2236,20 +2233,6 @@ export default function NotificationsPage() {
                               </div>
                             </>
                           )}
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Public base URL (image DMs)</label>
-                            <input type="text" value={dmPublicBaseUrl} onChange={(e) => setDmPublicBaseUrl(e.target.value)}
-                              placeholder="https://app.vermosports.com"
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                            <p className="text-xs text-vs-text-3 mt-1">
-                              Your dashboard's public address, so WhatsApp can fetch DM images. Leave blank to auto-detect.{' '}
-                              <a href={`${(dmPublicBaseUrl || '').trim().replace(/\/+$/, '') || window.location.origin}/api/campaigns/media-test`}
-                                target="_blank" rel="noopener noreferrer" className="text-vs-purple-light hover:underline">
-                                Test reachability
-                              </a>{' '}
-                              — a tiny image should load. Save first if you changed it.
-                            </p>
-                          </div>
                           <div className="flex items-center gap-3">
                             <button type="button" onClick={handleSaveDmEvolution} disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">

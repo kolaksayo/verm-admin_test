@@ -132,11 +132,8 @@ function dispatchText(to, text, cfg) {
 
 // ── Media (image) helpers — mirror the text path ─────────────────────────────
 
-async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+async function evolutionPostMedia(to, { base64, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
-  // Prefer a fetchable URL when provided (the DM Evolution instance rejects
-  // inline base64 but downloads a URL); otherwise fall back to raw base64,
-  // which the broadcast instance accepts. Single stock `media` field.
   const res = await fetchWithTimeout(`${url}/message/sendMedia/${instance}`, {
     method: 'POST',
     headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
@@ -145,7 +142,7 @@ async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filenam
       mediatype: 'image',
       mimetype,
       caption,
-      media:     mediaUrl || base64,
+      media:     base64,   // raw base64, no data: prefix
       fileName:  filename,
     }),
   });
@@ -154,13 +151,12 @@ async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filenam
   return { ok, json };
 }
 
-async function whapiPostMedia(to, { base64, url: mediaUrl, mimetype, caption }, { whapiToken: token }) {
+async function whapiPostMedia(to, { base64, mimetype, caption }, { whapiToken: token }) {
   if (!/^[\x00-\x7F]+$/.test(token || '')) throw new Error('api_key_invalid: stored whapi token contains non-ASCII characters — re-enter the full token in Settings');
   const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/image`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    // Prefer the inline base64 data URI (no fetch needed); URL only as fallback.
-    body: JSON.stringify({ to, media: base64 ? `data:${mimetype};base64,${base64}` : mediaUrl, caption }),
+    body: JSON.stringify({ to, media: `data:${mimetype};base64,${base64}`, caption }),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);

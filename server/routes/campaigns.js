@@ -1,9 +1,7 @@
 const express = require('express');
 const multer = require('multer');
-const crypto = require('crypto');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
-const { getDb: getSQLite } = require('../sqlite');
 const { sendMessage: sendTelegram, sendPhoto: sendTelegramPhoto } = require('../telegram');
 const {
   sendMessage: sendToGroup, sendToChannel, sendMediaMessage, sendMediaToChannel,
@@ -54,54 +52,6 @@ function normalizeChannels(raw) {
   }
   return [];
 }
-
-// ── Transient hosted media (for WhatsApp DMs) ────────────────────────────────────
-// Some Evolution instances reject inline base64 and require a fetchable URL, so
-// for DMs we stash the image in memory under a random token and expose it at a
-// public URL the provider can pull. Short-lived, no disk/DB (matches the
-// in-memory campaign philosophy). Assumes a single server instance.
-const MEDIA_TTL_MS = 30 * 60 * 1000; // 30 min
-const mediaStore = new Map(); // token -> { buffer, mimetype, expiresAt }
-
-function sweepMedia() {
-  const now = Date.now();
-  for (const [token, m] of mediaStore) {
-    if (m.expiresAt <= now) mediaStore.delete(token);
-  }
-}
-
-function stashMedia(buffer, mimetype) {
-  sweepMedia();
-  const token = crypto.randomBytes(24).toString('hex');
-  mediaStore.set(token, { buffer, mimetype, expiresAt: Date.now() + MEDIA_TTL_MS });
-  return token;
-}
-
-// Public base URL for provider-fetchable media links. Explicit config wins so a
-// reverse proxy can't mislead the auto-derivation: env → admin setting →
-// forwarded host/proto → request host.
-function configuredBaseUrl() {
-  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
-  try {
-    const v = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get('dm_public_base_url')?.value;
-    if (v && v.trim()) return v.trim().replace(/\/+$/, '');
-  } catch { /* ignore */ }
-  return null;
-}
-
-function publicBaseUrl(req) {
-  const configured = configuredBaseUrl();
-  if (configured) return configured;
-  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-  const host = (req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
-  return `${proto}://${host}`;
-}
-
-// A tiny 1x1 transparent PNG for the reachability test route.
-const TEST_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64',
-);
 
 // ── Send ───────────────────────────────────────────────────────────────────────
 
@@ -197,18 +147,13 @@ router.post('/send-dm', auth, requireEditMode, requirePermission('system', 'camp
   if (!userIds.length) return res.status(400).json({ error: 'at least one recipient required' });
 
   let media = null;
-  let mediaToken = null;
   if (req.file) {
     if (!ALLOWED_IMAGE_TYPES.includes(req.file.mimetype)) {
       return res.status(400).json({ error: 'Only JPEG, PNG, or WebP images are allowed' });
     }
-    // Host the image at a public URL and send that (Evolution DM instances may
-    // reject inline base64). base64 stays as a fallback for providers that want it.
-    mediaToken = stashMedia(req.file.buffer, req.file.mimetype);
     media = {
       buffer:   req.file.buffer,
       base64:   req.file.buffer.toString('base64'),
-      url:      `${publicBaseUrl(req)}/api/campaigns/media/${mediaToken}`,
       mimetype: req.file.mimetype,
       filename: req.file.originalname || 'image',
       caption:  content,
@@ -249,33 +194,9 @@ router.post('/send-dm', auth, requireEditMode, requirePermission('system', 'camp
     if (i < recipients.length - 1) await delay(DM_THROTTLE_MS);
   }
 
-  // Intentionally do NOT delete the token here: some providers fetch the URL
-  // slightly after their send call returns, so we let the TTL sweep expire it
-  // rather than risk pulling the image out from under a late fetch.
-  void mediaToken;
-
   const sent = results.filter((r) => r.ok).length;
   const failed = results.length - sent;
   res.json({ ok: sent > 0, sent, failed, results });
-});
-
-// Public reachability probe: if this image loads in a browser (or Evolution),
-// the configured public base URL can serve DM images. Stateless, no token.
-router.get('/media-test', (req, res) => {
-  res.set('Content-Type', 'image/png');
-  res.set('Cache-Control', 'no-store');
-  res.send(TEST_PNG);
-});
-
-// Public, unauthenticated so the WhatsApp provider can fetch DM images by token.
-// Random token + short TTL; nothing sensitive is exposed beyond the campaign image.
-router.get('/media/:token', (req, res) => {
-  sweepMedia();
-  const m = mediaStore.get(req.params.token);
-  if (!m || m.expiresAt <= Date.now()) return res.status(404).send('Not found');
-  res.set('Content-Type', m.mimetype);
-  res.set('Cache-Control', 'no-store');
-  res.send(m.buffer);
 });
 
 module.exports = router;
