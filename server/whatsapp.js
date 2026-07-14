@@ -132,7 +132,7 @@ function dispatchText(to, text, cfg) {
 
 // ── Media (image) helpers — mirror the text path ─────────────────────────────
 
-async function evolutionPostMedia(to, { base64, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+async function evolutionPostMedia(to, { base64, url: mediaUrl, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
   if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
   const res = await fetchWithTimeout(`${url}/message/sendMedia/${instance}`, {
     method: 'POST',
@@ -142,7 +142,9 @@ async function evolutionPostMedia(to, { base64, mimetype, filename, caption }, {
       mediatype: 'image',
       mimetype,
       caption,
-      media:     base64,   // raw base64, no data: prefix
+      // Prefer a hosted URL when provided (some Evolution instances reject
+      // inline base64); otherwise fall back to raw base64 (no data: prefix).
+      media:     mediaUrl || base64,
       fileName:  filename,
     }),
   });
@@ -151,12 +153,13 @@ async function evolutionPostMedia(to, { base64, mimetype, filename, caption }, {
   return { ok, json };
 }
 
-async function whapiPostMedia(to, { base64, mimetype, caption }, { whapiToken: token }) {
+async function whapiPostMedia(to, { base64, url: mediaUrl, mimetype, caption }, { whapiToken: token }) {
   if (!/^[\x00-\x7F]+$/.test(token || '')) throw new Error('api_key_invalid: stored whapi token contains non-ASCII characters — re-enter the full token in Settings');
   const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/image`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, media: `data:${mimetype};base64,${base64}`, caption }),
+    // whapi accepts either a URL or a base64 data URI in `media`.
+    body: JSON.stringify({ to, media: mediaUrl || `data:${mimetype};base64,${base64}`, caption }),
   });
   const json = await res.json().catch(() => ({}));
   const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
