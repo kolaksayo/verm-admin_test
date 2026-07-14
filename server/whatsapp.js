@@ -374,6 +374,36 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
   }
 }
 
+// Media DM — mirrors sendDM but sends an image with the message as caption,
+// using the DM-scope config. Same no_phone / not_configured guards + user-DM
+// logging (the caption is what gets logged).
+async function sendMediaDM(userId, phone, username, media, trigger = 'campaign_dm') {
+  const cfg = getDmConfig();
+  const digits = normalizePhone(phone);
+  const payload = { ...media, caption: stripHtml(media?.caption || '') };
+
+  if (!digits) {
+    logUserDm(userId, phone, username, trigger, false, 'no_phone');
+    return { ok: false, reason: 'no_phone' };
+  }
+
+  if (!providerReady(cfg)) {
+    logUserDm(userId, phone, username, trigger, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  try {
+    const { ok, json } = await dispatchMedia(digits, payload, cfg);
+    const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
+    logUserDm(userId, phone, username, trigger, ok, errMsg);
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logUserDm(userId, phone, username, trigger, false, reason);
+    return { ok: false, reason };
+  }
+}
+
 async function sendWelcomeTemplate(userId, phone, username) {
   const cfg = getDmConfig();
   const digits = normalizePhone(phone);
@@ -541,6 +571,7 @@ module.exports = {
   sendToChannel,
   sendMediaMessage,
   sendMediaToChannel,
+  sendMediaDM,
   sendWelcomeTemplate,
   isConfigured,
   isDmConfigured,

@@ -1,7 +1,12 @@
 const express = require('express');
 const multer = require('multer');
+const { ObjectId } = require('mongodb');
+const { getDb } = require('../db');
 const { sendMessage: sendTelegram, sendPhoto: sendTelegramPhoto } = require('../telegram');
-const { sendMessage: sendToGroup, sendToChannel, sendMediaMessage, sendMediaToChannel } = require('../whatsapp');
+const {
+  sendMessage: sendToGroup, sendToChannel, sendMediaMessage, sendMediaToChannel,
+  sendDM, sendMediaDM,
+} = require('../whatsapp');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -94,6 +99,104 @@ router.post('/send', auth, requireEditMode, requirePermission('system', 'campaig
 
   const anyOk = Object.values(results).some((r) => r.ok);
   res.json({ ok: anyOk, results });
+});
+
+// ── WhatsApp Direct Messages ─────────────────────────────────────────────────────
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const DM_THROTTLE_MS = 400; // small gap between sends to respect provider rate limits
+
+// Recipient picker source: lean list of users who have a phone on file, matched
+// by username/email/mobile. Purpose-built for the DM tab (not the generic
+// collections list, so it doesn't depend on the separate `users` permission).
+router.get('/recipients', auth, requirePermission('system', 'campaigns'), async (req, res) => {
+  const search = (req.query.search || '').trim();
+  if (search.length < 2) return res.json([]);
+  try {
+    const db = getDb();
+    const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = { $regex: safe, $options: 'i' };
+    const users = await db.collection('users')
+      .find(
+        {
+          mobile: { $exists: true, $nin: [null, ''] },
+          $or: [{ username: rx }, { email: rx }, { mobile: rx }],
+        },
+        { projection: { username: 1, email: 1, mobile: 1 }, limit: 30 },
+      )
+      .toArray();
+    res.json(users.map((u) => ({
+      id: u._id.toString(),
+      username: u.username || null,
+      email: u.email || null,
+      mobile: u.mobile || null,
+    })));
+  } catch (err) {
+    console.error('Campaign recipients search error:', err);
+    res.status(500).json({ error: 'Failed to search recipients' });
+  }
+});
+
+// Send a WhatsApp DM to each selected user, sequentially with a small throttle.
+// The message text is the caption when an image is attached (same convention as
+// /send). Uses the DM-scope WhatsApp config.
+router.post('/send-dm', auth, requireEditMode, requirePermission('system', 'campaigns'), uploadImage, async (req, res) => {
+  const { content } = req.body;
+  const userIds = normalizeChannels(req.body.userIds ?? []); // reuse array/JSON-string normalizer
+  if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+  if (!userIds.length) return res.status(400).json({ error: 'at least one recipient required' });
+
+  let media = null;
+  if (req.file) {
+    if (!ALLOWED_IMAGE_TYPES.includes(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Only JPEG, PNG, or WebP images are allowed' });
+    }
+    media = {
+      buffer:   req.file.buffer,
+      base64:   req.file.buffer.toString('base64'),
+      mimetype: req.file.mimetype,
+      filename: req.file.originalname || 'image',
+      caption:  content,
+    };
+  }
+
+  let db;
+  try { db = getDb(); } catch { return res.status(500).json({ error: 'Database unavailable' }); }
+
+  // Resolve recipients up front, preserving order and skipping bad/duplicate ids.
+  const seen = new Set();
+  const recipients = [];
+  for (const raw of userIds) {
+    const id = String(raw);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    let user = null;
+    try {
+      user = await db.collection('users').findOne(
+        { _id: new ObjectId(id) },
+        { projection: { mobile: 1, username: 1 } },
+      );
+    } catch { /* invalid ObjectId */ }
+    recipients.push({ id, username: user?.username || null, mobile: user?.mobile || null, found: !!user });
+  }
+
+  const results = [];
+  for (let i = 0; i < recipients.length; i++) {
+    const r = recipients[i];
+    if (!r.found || !r.mobile) {
+      results.push({ id: r.id, username: r.username, ok: false, reason: r.found ? 'no_phone' : 'not_found' });
+      continue;
+    }
+    const out = media
+      ? await sendMediaDM(r.id, r.mobile, r.username, media, 'campaign_dm').catch((e) => ({ ok: false, reason: e.message }))
+      : await sendDM(r.id, r.mobile, r.username, content, 'campaign_dm').catch((e) => ({ ok: false, reason: e.message }));
+    results.push({ id: r.id, username: r.username, ok: !!out.ok, reason: out.reason || null });
+    if (i < recipients.length - 1) await delay(DM_THROTTLE_MS);
+  }
+
+  const sent = results.filter((r) => r.ok).length;
+  const failed = results.length - sent;
+  res.json({ ok: sent > 0, sent, failed, results });
 });
 
 module.exports = router;
