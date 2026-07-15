@@ -12,6 +12,9 @@ function getConfig() {
       evolutionApiKey:   get('evolution_api_key')  || process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: get('evolution_instance') || process.env.EVOLUTION_INSTANCE     || '',
       whapiToken:        get('whapi_api_token')     || '',
+      gowaUrl:           get('gowa_api_url')         || '',
+      gowaBasicAuth:     get('gowa_basic_auth')      || '',
+      gowaDeviceId:      get('gowa_device_id')       || '',
       groupId:           get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         get('whatsapp_channel_id')|| process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            get('evolution_method')   || 'baileys',
@@ -23,6 +26,9 @@ function getConfig() {
       evolutionApiKey:   process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: process.env.EVOLUTION_INSTANCE     || '',
       whapiToken:        '',
+      gowaUrl:           '',
+      gowaBasicAuth:     '',
+      gowaDeviceId:      '',
       groupId:           process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            'baileys',
@@ -44,6 +50,9 @@ function getDmConfig() {
       evolutionApiKey:   get('dm_evolution_api_key')  || '',
       evolutionInstance: get('dm_evolution_instance') || '',
       whapiToken:        get('dm_whapi_api_token')    || '',
+      gowaUrl:           get('dm_gowa_api_url')        || '',
+      gowaBasicAuth:     get('dm_gowa_basic_auth')     || '',
+      gowaDeviceId:      get('dm_gowa_device_id')      || '',
       method:            get('dm_evolution_method')   || 'baileys',
     };
   } catch {
@@ -53,6 +62,9 @@ function getDmConfig() {
       evolutionApiKey:   '',
       evolutionInstance: '',
       whapiToken:        '',
+      gowaUrl:           '',
+      gowaBasicAuth:     '',
+      gowaDeviceId:      '',
       method:            'baileys',
     };
   }
@@ -123,11 +135,60 @@ async function whapiPost(to, text, { whapiToken: token }) {
   return { ok, json };
 }
 
+// ── GOWA helpers (go-whatsapp-web-multidevice) ────────────────────────────────
+// GOWA is self-hosted (default localhost:4500). Auth is HTTP Basic (from its
+// APP_BASIC_AUTH, "user:pass"); optional X-Device-Id selects a device in
+// multi-device mode. `to` is the recipient put straight into the `phone` field:
+// a bare intl number, or a full JID — group `<id>@g.us`, channel `<id>@newsletter`.
+function gowaBase(cfg) {
+  return String(cfg.gowaUrl || '').replace(/\/+$/, '');
+}
+function gowaHeaders(cfg, extra = {}) {
+  const h = { ...extra };
+  if (cfg.gowaBasicAuth) h['Authorization'] = `Basic ${Buffer.from(cfg.gowaBasicAuth).toString('base64')}`;
+  if (cfg.gowaDeviceId)  h['X-Device-Id'] = cfg.gowaDeviceId;
+  return h;
+}
+// GOWA success is HTTP 200 AND body.code === 'SUCCESS'.
+function gowaOk(res, json) {
+  return res.ok && json?.code === 'SUCCESS';
+}
+
+async function gowaPost(to, text, cfg) {
+  const res = await fetchWithTimeout(`${gowaBase(cfg)}/send/message`, {
+    method: 'POST',
+    headers: gowaHeaders(cfg, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ phone: to, message: text }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: gowaOk(res, json), json };
+}
+
+async function gowaPostMedia(to, { base64, mimetype, filename, caption }, cfg) {
+  // GOWA /send/image takes multipart form-data with a file part `image`
+  // (no base64 field) — reconstruct the bytes from our stored base64.
+  const fd = new FormData();
+  fd.append('phone', to);
+  if (caption) fd.append('caption', caption);
+  const bytes = Buffer.from(base64 || '', 'base64');
+  fd.append('image', new Blob([bytes], { type: mimetype || 'application/octet-stream' }), filename || 'image');
+  // No Content-Type header — fetch sets the multipart boundary.
+  const res = await fetchWithTimeout(`${gowaBase(cfg)}/send/image`, {
+    method: 'POST',
+    headers: gowaHeaders(cfg),
+    body: fd,
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: gowaOk(res, json), json };
+}
+
 // Provider dispatch — every text send funnels through here so the per-scope
 // provider choice (cfg.provider from getConfig/getDmConfig) is honored without
 // any call-site changes.
 function dispatchText(to, text, cfg) {
-  return cfg.provider === 'whapi' ? whapiPost(to, text, cfg) : evolutionPost(to, text, cfg);
+  if (cfg.provider === 'whapi') return whapiPost(to, text, cfg);
+  if (cfg.provider === 'gowa')  return gowaPost(to, text, cfg);
+  return evolutionPost(to, text, cfg);
 }
 
 // ── Media (image) helpers — mirror the text path ─────────────────────────────
@@ -181,14 +242,16 @@ function extractApiError(json) {
 }
 
 function dispatchMedia(to, media, cfg) {
-  return cfg.provider === 'whapi' ? whapiPostMedia(to, media, cfg) : evolutionPostMedia(to, media, cfg);
+  if (cfg.provider === 'whapi') return whapiPostMedia(to, media, cfg);
+  if (cfg.provider === 'gowa')  return gowaPostMedia(to, media, cfg);
+  return evolutionPostMedia(to, media, cfg);
 }
 
 // A scope is send-ready when its selected provider has its own credentials.
 function providerReady(cfg) {
-  return cfg.provider === 'whapi'
-    ? !!cfg.whapiToken
-    : !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance);
+  if (cfg.provider === 'whapi') return !!cfg.whapiToken;
+  if (cfg.provider === 'gowa')  return !!cfg.gowaUrl;
+  return !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance);
 }
 
 // ── Logging helpers ───────────────────────────────────────────────────────────
@@ -472,9 +535,9 @@ async function sendWelcomeTemplate(userId, phone, username) {
 
   try {
     let ok, json;
-    // Evolution cloud_api templates don't exist on whapi — whapi always sends
+    // Evolution cloud_api templates don't exist on whapi/gowa — they always send
     // the plain-text welcome, same as the Baileys path.
-    if (cfg.provider !== 'whapi' && cfg.method === 'cloud_api') {
+    if (!['whapi', 'gowa'].includes(cfg.provider) && cfg.method === 'cloud_api') {
       let templateName = '', templateLanguage = '';
       try {
         const sqlite = getSQLite();
@@ -531,6 +594,23 @@ async function probeProvider(cfg, result) {
       const status = json.status?.text || json.status || null;
       result.state = typeof status === 'string' ? status : null;
       result.instanceConnected = res.ok && result.apiKeyValid;
+    } catch {
+      // network error / timeout — urlReachable stays false
+    }
+    return;
+  }
+
+  if (cfg.provider === 'gowa') {
+    if (!cfg.gowaUrl) return;
+    try {
+      // /health is public (mounted before basic-auth) and always at root.
+      const res = await fetchWithTimeout(`${gowaBase(cfg)}/health`, { method: 'GET' });
+      result.urlReachable = true;
+      // GOWA /health needs no auth, so a 200 means reachable; deeper "logged-in"
+      // status would require the authenticated /app/devices endpoint.
+      result.apiKeyValid = res.status !== 401 && res.status !== 403;
+      result.instanceConnected = res.ok;
+      result.state = res.ok ? 'reachable' : null;
     } catch {
       // network error / timeout — urlReachable stays false
     }

@@ -13,7 +13,7 @@ function getWhatsAppEnabled(sqlite) {
 
 // GET /api/whatsapp/status
 router.get('/status', auth, requirePermission('system', 'notifications'), (req, res) => {
-  const { provider, evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, groupId, channelId } = getConfig();
+  const { provider, evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, gowaUrl, gowaBasicAuth, groupId, channelId } = getConfig();
   const sqlite = getSQLite();
   res.json({
     configured:            isConfigured(),
@@ -23,6 +23,8 @@ router.get('/status', auth, requirePermission('system', 'notifications'), (req, 
     evolutionInstanceSet:  !!evolutionInstance,
     evolutionApiKeyPreview: evolutionApiKey ? evolutionApiKey.slice(0, 8) + '…' + evolutionApiKey.slice(-4) : null,
     whapiTokenSet:         !!whapiToken,
+    gowaUrlSet:            !!gowaUrl,
+    gowaBasicAuthSet:      !!gowaBasicAuth,
     groupIdSet:            !!groupId,
     channelIdSet:          !!channelId,
     groupId:               groupId   || null,
@@ -33,7 +35,7 @@ router.get('/status', auth, requirePermission('system', 'notifications'), (req, 
 
 // GET /api/whatsapp/config
 router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
-  const { provider, evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, groupId, channelId, method } = getConfig();
+  const { provider, evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, gowaUrl, gowaBasicAuth, gowaDeviceId, groupId, channelId, method } = getConfig();
   const sqlite = getSQLite();
   res.json({
     provider,
@@ -42,6 +44,10 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
     evolutionInstance: evolutionInstance || '',
     whapiToken:        whapiToken        ? whapiToken.slice(0, 8) + '…' + whapiToken.slice(-4) : '',
     whapiTokenSet:     !!whapiToken,
+    gowaUrl:           gowaUrl           || '',
+    gowaBasicAuth:     gowaBasicAuth     ? gowaBasicAuth.slice(0, 4) + '…' : '',
+    gowaBasicAuthSet:  !!gowaBasicAuth,
+    gowaDeviceId:      gowaDeviceId      || '',
     groupId:           groupId           || '',
     channelId:         channelId         || '',
     evolutionMethod:   method            || 'baileys',
@@ -51,11 +57,14 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
 
 // POST /api/whatsapp/config
 router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, provider, groupId, channelId, enabled, evolutionMethod } = req.body;
+  const { evolutionUrl, evolutionApiKey, evolutionInstance, whapiToken, gowaUrl, gowaBasicAuth, gowaDeviceId, provider, groupId, channelId, enabled, evolutionMethod } = req.body;
   const hasUrl      = evolutionUrl      != null && String(evolutionUrl).trim()      !== '';
   const hasApiKey   = evolutionApiKey   != null && String(evolutionApiKey).trim()   !== '';
   const hasInstance = evolutionInstance != null && String(evolutionInstance).trim() !== '';
   const hasWhapiToken = whapiToken      != null && String(whapiToken).trim()        !== '';
+  const hasGowaUrl    = gowaUrl         != null && String(gowaUrl).trim()           !== '';
+  const hasGowaAuth   = gowaBasicAuth   != null && String(gowaBasicAuth).trim()     !== '';
+  const hasGowaDevice = gowaDeviceId    != null; // allow clearing
 
   if (hasApiKey && !/^[\x00-\x7F]+$/.test(String(evolutionApiKey))) {
     return res.status(400).json({ ok: false, error: 'API key contains invalid characters — enter the full key, not the masked preview.' });
@@ -63,11 +72,14 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
   if (hasWhapiToken && !/^[\x00-\x7F]+$/.test(String(whapiToken))) {
     return res.status(400).json({ ok: false, error: 'Whapi token contains invalid characters — enter the full token, not the masked preview.' });
   }
+  if (hasGowaAuth && !/^[\x00-\x7F]+$/.test(String(gowaBasicAuth))) {
+    return res.status(400).json({ ok: false, error: 'GOWA basic auth contains invalid characters — enter it as user:pass, not the masked preview.' });
+  }
   if (evolutionMethod != null && !['baileys', 'cloud_api'].includes(evolutionMethod)) {
     return res.status(400).json({ ok: false, error: 'evolutionMethod must be baileys or cloud_api' });
   }
-  if (provider != null && !['evolution', 'whapi'].includes(provider)) {
-    return res.status(400).json({ ok: false, error: 'provider must be evolution or whapi' });
+  if (provider != null && !['evolution', 'whapi', 'gowa'].includes(provider)) {
+    return res.status(400).json({ ok: false, error: 'provider must be evolution, whapi, or gowa' });
   }
   const hasGroupId  = groupId           != null && String(groupId).trim()           !== '';
   const hasChannel  = channelId         != null && String(channelId).trim()         !== '';
@@ -75,7 +87,7 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
   const hasMethod   = evolutionMethod   != null;
   const hasProvider = provider          != null;
 
-  if (!hasUrl && !hasApiKey && !hasInstance && !hasWhapiToken && !hasGroupId && !hasChannel && !hasEnabled && !hasMethod && !hasProvider) {
+  if (!hasUrl && !hasApiKey && !hasInstance && !hasWhapiToken && !hasGowaUrl && !hasGowaAuth && !hasGowaDevice && !hasGroupId && !hasChannel && !hasEnabled && !hasMethod && !hasProvider) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -90,6 +102,9 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     if (hasApiKey)     upsert.run('evolution_api_key',  String(evolutionApiKey).trim());
     if (hasInstance)   upsert.run('evolution_instance', String(evolutionInstance).trim());
     if (hasWhapiToken) upsert.run('whapi_api_token',    String(whapiToken).trim());
+    if (hasGowaUrl)    upsert.run('gowa_api_url',       String(gowaUrl).trim());
+    if (hasGowaAuth)   upsert.run('gowa_basic_auth',    String(gowaBasicAuth).trim());
+    if (hasGowaDevice) upsert.run('gowa_device_id',     String(gowaDeviceId).trim());
     if (hasProvider)   upsert.run('whatsapp_provider',  provider);
     if (hasGroupId)    upsert.run('whatsapp_group_id',  String(groupId).trim());
     if (hasChannel)    upsert.run('whatsapp_channel_id',String(channelId).trim());

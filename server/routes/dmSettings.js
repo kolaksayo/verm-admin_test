@@ -47,6 +47,10 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
       dmEvolutionApiKeySet: !!rawDmKey,
       dmWhapiTokenPreview:  rawDmWhapiToken ? rawDmWhapiToken.slice(0, 8) + '…' + rawDmWhapiToken.slice(-4) : '',
       dmWhapiTokenSet:      !!rawDmWhapiToken,
+      dmGowaUrl:            get('dm_gowa_api_url')           || '',
+      dmGowaBasicAuthPreview: (() => { const v = get('dm_gowa_basic_auth') || ''; return v ? v.slice(0, 4) + '…' : ''; })(),
+      dmGowaBasicAuthSet:   !!(get('dm_gowa_basic_auth') || ''),
+      dmGowaDeviceId:       get('dm_gowa_device_id')         || '',
       dmEvolutionMethod:    get('dm_evolution_method')      || 'baileys',
     });
   } catch (err) {
@@ -64,13 +68,17 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     `).run(k, String(v));
 
     const { enabled, groupLink, channelLink, telegramLink, countryCode, welcomeText, welcomeTemplateName, welcomeTemplateLanguage,
-            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken } = req.body;
+            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken,
+            dmGowaUrl, dmGowaBasicAuth, dmGowaDeviceId } = req.body;
 
     if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
       return res.status(400).json({ ok: false, error: 'dmEvolutionMethod must be baileys or cloud_api' });
     }
-    if (dmProvider != null && !['evolution', 'whapi'].includes(dmProvider)) {
-      return res.status(400).json({ ok: false, error: 'dmProvider must be evolution or whapi' });
+    if (dmProvider != null && !['evolution', 'whapi', 'gowa'].includes(dmProvider)) {
+      return res.status(400).json({ ok: false, error: 'dmProvider must be evolution, whapi, or gowa' });
+    }
+    if (dmGowaBasicAuth != null && String(dmGowaBasicAuth).trim() !== '' && !/^[\x00-\x7F]+$/.test(String(dmGowaBasicAuth))) {
+      return res.status(400).json({ ok: false, error: 'GOWA basic auth contains invalid characters — enter it as user:pass.' });
     }
 
     if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '') {
@@ -100,6 +108,10 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     if (dmProvider != null)            set('dm_whatsapp_provider',      dmProvider);
     if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '')
                                        set('dm_whapi_api_token',        String(dmWhapiToken).trim());
+    if (dmGowaUrl != null)             set('dm_gowa_api_url',           String(dmGowaUrl).trim());
+    if (dmGowaBasicAuth != null && String(dmGowaBasicAuth).trim() !== '')
+                                       set('dm_gowa_basic_auth',        String(dmGowaBasicAuth).trim());
+    if (dmGowaDeviceId != null)        set('dm_gowa_device_id',         String(dmGowaDeviceId).trim());
 
     res.json({ ok: true });
   } catch (err) {

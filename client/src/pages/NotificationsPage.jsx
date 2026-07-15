@@ -925,6 +925,9 @@ export default function NotificationsPage() {
   const [waEvolutionInstance, setWaEvolutionInstance] = useState('');
   const [waEvolutionMethod, setWaEvolutionMethod]   = useState('baileys');
   const [waWhapiToken, setWaWhapiToken]             = useState('');
+  const [waGowaUrl, setWaGowaUrl]                   = useState('');
+  const [waGowaBasicAuth, setWaGowaBasicAuth]       = useState('');
+  const [waGowaDeviceId, setWaGowaDeviceId]         = useState('');
   const [waGroupId, setWaGroupId]                   = useState('');
   const [waChannelId, setWaChannelId]           = useState('');
   const [waSaving, setWaSaving]                 = useState(false);
@@ -993,6 +996,10 @@ export default function NotificationsPage() {
   const [dmProvider, setDmProvider]                         = useState('evolution');
   const [dmWhapiToken, setDmWhapiToken]                     = useState('');
   const [dmWhapiTokenPreview, setDmWhapiTokenPreview]       = useState('');
+  const [dmGowaUrl, setDmGowaUrl]                           = useState('');
+  const [dmGowaBasicAuth, setDmGowaBasicAuth]               = useState('');
+  const [dmGowaBasicAuthPreview, setDmGowaBasicAuthPreview] = useState('');
+  const [dmGowaDeviceId, setDmGowaDeviceId]                 = useState('');
   const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
   const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
@@ -1068,7 +1075,7 @@ export default function NotificationsPage() {
       // Baileys or whapi: use the editable custom text; Cloud API: show approved preview
       const method   = r.data.dmEvolutionMethod || 'baileys';
       const provider = r.data.dmProvider || 'evolution';
-      if (provider === 'whapi' || method === 'baileys') {
+      if (provider === 'whapi' || provider === 'gowa' || method === 'baileys') {
         setDmTemplate(r.data.welcomeText || r.data.welcomePreview || '');
       } else {
         setDmTemplate(r.data.welcomePreview || '');
@@ -1079,6 +1086,9 @@ export default function NotificationsPage() {
       setDmEvolutionMethod(r.data.dmEvolutionMethod || 'baileys');
       setDmProvider(provider);
       setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
+      setDmGowaUrl(r.data.dmGowaUrl || '');
+      setDmGowaBasicAuthPreview(r.data.dmGowaBasicAuthPreview || '');
+      setDmGowaDeviceId(r.data.dmGowaDeviceId || '');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
@@ -1139,6 +1149,8 @@ export default function NotificationsPage() {
       if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
       if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
       if (r.data.evolutionMethod)   setWaEvolutionMethod(r.data.evolutionMethod);
+      if (r.data.gowaUrl)           setWaGowaUrl(r.data.gowaUrl);
+      if (r.data.gowaDeviceId)      setWaGowaDeviceId(r.data.gowaDeviceId);
       if (r.data.provider)          setWaProvider(r.data.provider);
     }).catch(() => {});
     recheckHealth();
@@ -1355,6 +1367,9 @@ export default function NotificationsPage() {
         dmEvolutionMethod,
         dmProvider,
         dmWhapiToken:        dmWhapiToken        || undefined,
+        dmGowaUrl:           dmGowaUrl,
+        dmGowaBasicAuth:     dmGowaBasicAuth     || undefined,
+        dmGowaDeviceId:      dmGowaDeviceId,
       });
       setDmEvolutionSaveMsg('Saved!');
       setDmEvolutionApiKey('');
@@ -1776,7 +1791,7 @@ export default function NotificationsPage() {
                         <div>
                           <p className="text-xs text-vs-text-3 mb-1.5">Provider</p>
                           <div className="flex gap-2">
-                            {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud']].map(([val, label]) => (
+                            {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud'], ['gowa', 'GOWA']].map(([val, label]) => (
                               <button key={val} type="button"
                                 onClick={async () => { setWaProvider(val); const msg = await saveWaField({ provider: val }); setWaSaveMsg(msg); }}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
@@ -1786,12 +1801,27 @@ export default function NotificationsPage() {
                           </div>
                           <p className="text-xs text-vs-text-3 mt-1">Applies to both group and channel broadcasts. Direct messages have their own provider setting.</p>
                         </div>
-                        {waProvider === 'whapi' ? (
+                        {waProvider === 'whapi' && (
                           <SecretConfigRow label="Whapi API Token" savedPreview={waStatus?.whapiTokenSet ? 'Token saved' : null}
                             inputValue={waWhapiToken} onChange={setWaWhapiToken}
                             onSave={async () => { const msg = await saveWaField({ whapiToken: waWhapiToken }); setWaSaveMsg(msg); setWaWhapiToken(''); }}
                             saving={waSaving} saveMsg={waSaveMsg} />
-                        ) : (
+                        )}
+                        {waProvider === 'gowa' && (
+                          <>
+                            <TextConfigRow label="GOWA API URL" fieldValue={waGowaUrl} placeholder="http://127.0.0.1:4500" mono
+                              onSave={async (val) => { const msg = await saveWaField({ gowaUrl: val }); setWaSaveMsg(msg); setWaGowaUrl(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <SecretConfigRow label="Basic Auth (user:pass)" savedPreview={waStatus?.gowaBasicAuthSet ? 'Saved' : null}
+                              inputValue={waGowaBasicAuth} onChange={setWaGowaBasicAuth}
+                              onSave={async () => { const msg = await saveWaField({ gowaBasicAuth: waGowaBasicAuth }); setWaSaveMsg(msg); setWaGowaBasicAuth(''); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <TextConfigRow label="Device ID (optional)" fieldValue={waGowaDeviceId} placeholder="leave blank for single-device" mono
+                              onSave={async (val) => { const msg = await saveWaField({ gowaDeviceId: val }); setWaSaveMsg(msg); setWaGowaDeviceId(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                          </>
+                        )}
+                        {waProvider === 'evolution' && (
                           <>
                             <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
                               onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
@@ -2173,7 +2203,7 @@ export default function NotificationsPage() {
                               <span className={`flex items-center gap-1.5 text-xs ${dmEvolutionHealth.instanceConnected ? 'text-vs-success' : dmEvolutionHealth.configured ? 'text-yellow-400' : 'text-vs-danger'}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${dmEvolutionHealth.instanceConnected ? 'bg-vs-success' : dmEvolutionHealth.configured ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
                                 {dmEvolutionHealth.instanceConnected ? `Connected${dmEvolutionHealth.state ? ` (${dmEvolutionHealth.state})` : ''}` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
-                                {dmEvolutionHealth.provider ? ` · ${dmEvolutionHealth.provider === 'whapi' ? 'Whapi.Cloud' : 'Evolution'}` : ''}
+                                {dmEvolutionHealth.provider ? ` · ${dmEvolutionHealth.provider === 'whapi' ? 'Whapi.Cloud' : dmEvolutionHealth.provider === 'gowa' ? 'GOWA' : 'Evolution'}` : ''}
                               </span>
                             )}
                             <button type="button" onClick={recheckDmHealth} className="text-xs text-vs-text-3 hover:text-vs-text underline">Check</button>
@@ -2183,7 +2213,7 @@ export default function NotificationsPage() {
                           <div>
                             <label className="text-xs text-vs-text-3 block mb-1.5">Provider</label>
                             <div className="flex gap-2">
-                              {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud']].map(([val, label]) => (
+                              {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud'], ['gowa', 'GOWA']].map(([val, label]) => (
                                 <button key={val} type="button" onClick={() => setDmProvider(val)}
                                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
                                   {label}
@@ -2191,7 +2221,7 @@ export default function NotificationsPage() {
                               ))}
                             </div>
                           </div>
-                          {dmProvider === 'whapi' ? (
+                          {dmProvider === 'whapi' && (
                             <div>
                               <label className="text-xs text-vs-text-3 block mb-1.5">Whapi API Token</label>
                               <input type="password" value={dmWhapiToken} onChange={(e) => setDmWhapiToken(e.target.value)}
@@ -2199,7 +2229,31 @@ export default function NotificationsPage() {
                                 className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
                               {dmWhapiTokenPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current token.</p>}
                             </div>
-                          ) : (
+                          )}
+                          {dmProvider === 'gowa' && (
+                            <>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">GOWA API URL</label>
+                                <input type="text" value={dmGowaUrl} onChange={(e) => setDmGowaUrl(e.target.value)}
+                                  placeholder="http://127.0.0.1:4500"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Basic Auth (user:pass)</label>
+                                <input type="password" value={dmGowaBasicAuth} onChange={(e) => setDmGowaBasicAuth(e.target.value)}
+                                  placeholder={dmGowaBasicAuthPreview || 'user:pass (optional)'}
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                                {dmGowaBasicAuthPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current credentials.</p>}
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Device ID (optional)</label>
+                                <input type="text" value={dmGowaDeviceId} onChange={(e) => setDmGowaDeviceId(e.target.value)}
+                                  placeholder="leave blank for single-device"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                            </>
+                          )}
+                          {dmProvider === 'evolution' && (
                             <>
                               <div>
                                 <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
@@ -2277,13 +2331,13 @@ export default function NotificationsPage() {
                   <div className="bg-vs-card border border-vs-border rounded-xl p-5">
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm font-semibold text-vs-text">C. Welcome Message</p>
-                      {(dmProvider === 'whapi' || dmEvolutionMethod === 'baileys')
+                      {(dmProvider === 'whapi' || dmProvider === 'gowa' || dmEvolutionMethod === 'baileys')
                         ? <span className="px-2 py-0.5 text-xs rounded-full bg-vs-elevated text-vs-text-2 border border-vs-border font-semibold">Editable</span>
                         : <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
                       }
                     </div>
 
-                    {(dmProvider === 'whapi' || dmEvolutionMethod === 'baileys') ? (
+                    {(dmProvider === 'whapi' || dmProvider === 'gowa' || dmEvolutionMethod === 'baileys') ? (
                       /* ── Editable welcome text (Baileys or whapi — plain text) ── */
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
