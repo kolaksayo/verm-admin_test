@@ -109,7 +109,10 @@ function DetailRow({ label, value }) {
   );
 }
 
-export default function WagerDetailsModal({ contest, mode = 'maximum', onClose }) {
+// `capture` renders the card for off-screen screenshotting (see
+// server/wagerCard.js): panel only — no backdrop, no height cap and no inner
+// scrolling — so the full card is captured at its natural height.
+export default function WagerDetailsModal({ contest, mode = 'maximum', onClose, capture = false }) {
   if (!contest) return null;
 
   // Pot basis chosen on the list page (no toggle inside the pop-up):
@@ -139,16 +142,17 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose }
     </span>
   );
 
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+  const panel = (
       <div
+        id="wager-panel"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 375, maxWidth: '100%', maxHeight: '92vh',
+          width: 375, maxWidth: '100%',
+          ...(capture ? {} : { maxHeight: '92vh' }),
           background: C.globe, borderRadius: 30, overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
           fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: capture ? 'none' : '0 24px 60px rgba(0,0,0,0.6)',
         }}
       >
         {/* ── Top app bar (island): status bar + nav row ── */}
@@ -180,7 +184,7 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose }
         </div>
 
         {/* ── Scrollable content ── */}
-        <div style={{ overflowY: 'auto', flex: 1 }}>
+        <div style={{ overflowY: capture ? 'visible' : 'auto', flex: 1 }}>
           {/* Chips */}
           <div style={{ display: 'flex', gap: 12, padding: '12px 16px' }}>
             {chip('Leader Board', false)}
@@ -253,6 +257,13 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose }
           </div>
         </div>
       </div>
+  );
+
+  if (capture) return panel;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      {panel}
     </div>
   );
 }

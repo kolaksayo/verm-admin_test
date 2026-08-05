@@ -20,6 +20,7 @@ import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 import AuditPage from './pages/AuditPage';
 import InfluencerPortal from './pages/InfluencerPortal';
+import WagerCardFrame from './pages/WagerCardFrame';
 import InfluencerDashboard from './pages/InfluencerDashboard';
 import RequestLogs from './pages/RequestLogs';
 
@@ -102,6 +103,9 @@ function AppRoutes() {
       </Route>
       <Route path="/influencer" element={<InfluencerPortal />} />
       <Route path="/influencer/:code" element={<InfluencerPortal />} />
+      {/* Off-screen render target for notification card screenshots (no auth,
+          data supplied entirely via the ?d= query param). */}
+      <Route path="/wager-card" element={<WagerCardFrame />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -1,8 +1,10 @@
 const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
-const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
+const { sendMessage, sendPhoto, isConfigured } = require('./telegram');
+const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
+const { buildContestForBet } = require('./contestShape');
+const { renderWagerCard } = require('./wagerCard');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -483,6 +485,49 @@ async function notifyAll(text, trigger) {
   return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
 }
 
+// Telegram rejects photo captions longer than 1024 characters, so the caption
+// is capped for both channels to keep the two messages identical.
+const CAPTION_MAX = 1024;
+function toCaption(text) {
+  const t = String(text || '');
+  return t.length <= CAPTION_MAX ? t : t.slice(0, CAPTION_MAX - 1) + '…';
+}
+
+// Same channel/enablement rules as notifyAll, but sends an image with the
+// notification text as its caption.
+async function notifyAllMedia({ buffer, mimetype, filename }, text, trigger) {
+  const caption = toCaption(text);
+  const sends = [];
+  if (isConfigured() && isChannelEnabled('telegram')) {
+    sends.push(sendPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isWAConfigured() && isChannelEnabled('whatsapp')) {
+    sends.push(sendWhatsAppMedia({
+      base64: buffer.toString('base64'), mimetype, filename, caption,
+    }, trigger));
+  }
+  if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
+  const [primary] = await Promise.allSettled(sends);
+  return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
+}
+
+// Multiplayer bet creation is announced with a screenshot of the Prize Projector
+// card (Maximum pot base) captioned with the usual notification text. Rendering
+// is best-effort: any failure falls back to the plain-text notification so an
+// image problem can never cost us the alert.
+async function notifyNewMultiBet(db, bet, message, trigger) {
+  try {
+    const contest = await buildContestForBet(db, bet);
+    if (contest && contest.capacity >= 5) {
+      const card = await renderWagerCard(contest, 'maximum');
+      if (card) return await notifyAllMedia(card, message, trigger);
+    }
+  } catch (err) {
+    console.error('[GameBetWatcher] wager card render failed:', err.message);
+  }
+  return notifyAll(message, trigger);
+}
+
 // ── SQLite dedup helpers ───────────────────────────────────────────────────────
 
 function hasNotified(betId, key) {
@@ -809,7 +854,9 @@ async function pollNewBets(db, since) {
         };
       }
       const message = renderTemplate(template, vars);
-      const result  = await notifyAll(message, triggerKey);
+      const result  = multi
+        ? await notifyNewMultiBet(db, bet, message, triggerKey)
+        : await notifyAll(message, triggerKey);
       if (result.ok) {
         console.log(`[GameBetWatcher] Notified (${triggerKey}): ${vars.code}`);
       } else {
@@ -1650,4 +1697,7 @@ module.exports = {
   isMultiplayer,
   getCurrentPlayers,
   notifyAll,
+  notifyAllMedia,
+  notifyNewMultiBet,
+  toCaption,
 };
