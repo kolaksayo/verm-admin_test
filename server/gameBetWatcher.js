@@ -518,7 +518,10 @@ async function notifyAllMedia({ buffer, mimetype, filename }, text, trigger) {
 async function notifyNewMultiBet(db, bet, message, trigger) {
   try {
     const contest = await buildContestForBet(db, bet);
-    if (contest && contest.capacity >= 5) {
+    // Any bet isMultiplayer() accepts gets a card — that's capacity 3+ (or a
+    // non-SINGLE betMode). Tiers below 5 fall into the 5-slot split, which
+    // still sums exactly to the pot. Guard only against data that can't render.
+    if (contest && contest.capacity >= 3 && contest.amount > 0) {
       const card = await renderWagerCard(contest, 'maximum');
       if (card) return await notifyAllMedia(card, message, trigger);
     }

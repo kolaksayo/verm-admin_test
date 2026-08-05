@@ -5,3 +5,6 @@ client/dist/
 *.log
 admin.db
 .claude/
+wager-card-diagnostic.png
+admin.db-shm
+admin.db-wal
