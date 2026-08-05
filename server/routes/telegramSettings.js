@@ -185,25 +185,31 @@ router.get('/config', auth, requirePermission('system', 'notifications'), (req, 
   const topN = sqlite
     .prepare("SELECT value FROM admin_settings WHERE key = 'rankings_top_n'")
     .get();
+  const betCard = sqlite
+    .prepare("SELECT value FROM admin_settings WHERE key = 'bet_card_image_enabled'")
+    .get();
   res.json({
     botToken:           token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
     chatId:             chatId || '',
     largeStakeThreshold: threshold ? Number(threshold.value) : 7,
     rankingsTopN:        topN ? Number(topN.value) : 10,
+    // Absent key means enabled — matches wagerCard.js's default.
+    betCardImageEnabled: betCard ? betCard.value !== '0' : true,
   });
 });
 
 // POST /api/telegram/config — save bot token, chat ID, and/or threshold
 router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
-  const { botToken, chatId, largeStakeThreshold, rankingsTopN, enabled } = req.body;
+  const { botToken, chatId, largeStakeThreshold, rankingsTopN, enabled, betCardImageEnabled } = req.body;
 
   const hasToken     = botToken != null && String(botToken).trim() !== '';
   const hasChatId    = chatId   != null && String(chatId).trim()   !== '';
   const hasThreshold = largeStakeThreshold != null && Number(largeStakeThreshold) > 0;
   const hasTopN      = rankingsTopN != null && Number.isInteger(Number(rankingsTopN)) && Number(rankingsTopN) >= 1;
   const hasEnabled   = enabled != null;
+  const hasBetCard   = betCardImageEnabled != null;
 
-  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN && !hasEnabled) {
+  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN && !hasEnabled && !hasBetCard) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -220,6 +226,7 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
     if (hasThreshold) upsert.run('large_stake_threshold', String(Number(largeStakeThreshold)));
     if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))));
     if (hasEnabled)   upsert.run('telegram_enabled', enabled ? '1' : '0');
+    if (hasBetCard)   upsert.run('bet_card_image_enabled', betCardImageEnabled ? '1' : '0');
 
     res.json({ ok: true });
   } catch (err) {

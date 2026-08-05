@@ -1009,6 +1009,9 @@ export default function NotificationsPage() {
   const [threshold, setThreshold]               = useState('7');
   const [savingThreshold, setSavingThreshold]   = useState(false);
   const [thresholdMsg, setThresholdMsg]         = useState('');
+  const [betCardImage, setBetCardImage]         = useState(true);
+  const [savingBetCard, setSavingBetCard]       = useState(false);
+  const [betCardMsg, setBetCardMsg]             = useState('');
   const [rankingsTopN, setRankingsTopN]         = useState('10');
   const [savingTopN, setSavingTopN]             = useState(false);
   const [topNMsg, setTopNMsg]                   = useState('');
@@ -1170,6 +1173,7 @@ export default function NotificationsPage() {
     api.get('/telegram/config').then((r) => {
       if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
       if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
+      if (r.data.betCardImageEnabled != null) setBetCardImage(!!r.data.betCardImageEnabled);
     }).catch(() => {});
     const fetchWatcher = () =>
       api.get('/telegram/watcher-status').then((r) => setWatcherStatus(r.data)).catch(() => {});
@@ -1492,6 +1496,22 @@ export default function NotificationsPage() {
   };
 
   // ── Settings handlers ─────────────────────────────────────────────────────
+
+  // Saves immediately on toggle — no separate Save button for a boolean.
+  const handleToggleBetCard = async () => {
+    const next = !betCardImage;
+    setBetCardImage(next);            // optimistic
+    setSavingBetCard(true); setBetCardMsg('');
+    try {
+      await api.post('/telegram/config', { betCardImageEnabled: next });
+      setBetCardMsg('Saved');
+    } catch (err) {
+      setBetCardImage(!next);         // revert on failure
+      setBetCardMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setSavingBetCard(false);
+    }
+  };
 
   const handleSaveThreshold = async (e) => {
     e.preventDefault();
@@ -2790,6 +2810,26 @@ export default function NotificationsPage() {
                 {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
               </div>
             </form>
+
+            <div className="border-t border-vs-border pt-5 mb-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-vs-text">Prize card image on new multiplayer bets</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 max-w-xl">
+                    Attach a screenshot of the Prize Projector card (maximum payout) to new multiplayer
+                    bet alerts, with the message text as the caption. Applies to both Telegram and
+                    WhatsApp. If the image can't be generated, the alert still sends as plain text.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                  {betCardMsg && <span className={`text-xs ${betCardMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{betCardMsg}</span>}
+                  <button type="button" onClick={handleToggleBetCard} disabled={savingBetCard}
+                    className={`relative w-10 h-5 rounded-full transition-colors disabled:opacity-50 ${betCardImage ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${betCardImage ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </label>
+              </div>
+            </div>
 
             <div className="border-t border-vs-border pt-5">
               <form onSubmit={handleSaveTopN} className="flex items-end gap-4">
