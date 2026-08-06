@@ -4,7 +4,7 @@ const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const { normalizePhone } = require('../whatsapp');
 const {
-  getConfig, isConfigured, pushContact, testConnection, recordSync, syncStats,
+  getConfig, isConfigured, pushContact, testConnection, recordSync, syncStats, contactName,
 } = require('../chatwoot');
 const auth = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -142,7 +142,7 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
   (async () => {
     try {
       const cursor = db.collection('users')
-        .find(cursorFilter, { projection: { username: 1, displayName: 1, name: 1, email: 1, mobile: 1, phone: 1 } });
+        .find(cursorFilter, { projection: { username: 1, displayName: 1, name: 1, fullName: 1, email: 1, mobile: 1, phone: 1 } });
 
       for await (const user of cursor) {
         if (job.cancel) break;
@@ -153,7 +153,7 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
           contactId: result.contactId,
           phone: phoneDigits || null,
           email: user.email || null,
-          name: user.username || user.displayName || user.name || null,
+          name: contactName(user),
           ok: result.ok,
           error: result.error,
         });

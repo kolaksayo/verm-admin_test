@@ -6,7 +6,7 @@ const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfig
 const { buildContestForBet } = require('./contestShape');
 const {
   getConfig: chatwootConfig, isConfigured: chatwootConfigured,
-  pushContact: pushChatwootContact, recordSync: recordChatwootSync,
+  pushContact: pushChatwootContact, recordSync: recordChatwootSync, contactName,
 } = require('./chatwoot');
 const { renderWagerCard } = require('./wagerCard');
 
@@ -728,7 +728,7 @@ async function pollChatwootContacts(db) {
   };
 
   const users = await db.collection('users')
-    .find(filter, { projection: { username: 1, displayName: 1, name: 1, email: 1, mobile: 1, phone: 1 } })
+    .find(filter, { projection: { username: 1, displayName: 1, name: 1, fullName: 1, email: 1, mobile: 1, phone: 1 } })
     .sort({ createdAt: -1 })
     .limit(CHATWOOT_POLL_LIMIT)
     .toArray();
@@ -740,7 +740,7 @@ async function pollChatwootContacts(db) {
       contactId: result.contactId,
       phone: phoneDigits || null,
       email: user.email || null,
-      name: user.username || user.displayName || user.name || null,
+      name: contactName(user),
       ok: result.ok,
       error: result.error,
     });

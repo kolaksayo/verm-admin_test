@@ -50,13 +50,25 @@ function toE164(digits) {
   return d ? `+${d}` : null;
 }
 
+// Chatwoot shows one name per contact, so prefer the user's real name.
+// `name` holds first + last; `username` is a chosen handle ("Mallam Apollo")
+// and only stands in when there is no real name on the account.
+function contactName(user) {
+  const candidates = [user.name, user.fullName, user.displayName, user.username, user.email];
+  const hit = candidates.find((c) => typeof c === 'string' && c.trim());
+  return hit ? hit.trim() : 'Unknown';
+}
+
 // Build the Chatwoot contact payload from a Mongo user document.
 function toContactPayload(user, phoneDigits) {
-  const name = user.username || user.displayName || user.name || user.email || 'Unknown';
   const payload = {
     identifier: String(user._id),
-    name,
-    custom_attributes: { source: 'vermo-admin' },
+    name: contactName(user),
+    // Keep the handle visible in Chatwoot even though it isn't the contact name.
+    custom_attributes: {
+      source: 'vermo-admin',
+      ...(user.username ? { username: String(user.username).trim() } : {}),
+    },
   };
   const phone = toE164(phoneDigits);
   if (phone) payload.phone_number = phone;
@@ -200,5 +212,5 @@ async function testConnection(cfg = getConfig()) {
 
 module.exports = {
   getConfig, isConfigured, pushContact, testConnection,
-  recordSync, syncedUserIds, syncStats, toE164, toContactPayload,
+  recordSync, syncedUserIds, syncStats, toE164, toContactPayload, contactName,
 };
