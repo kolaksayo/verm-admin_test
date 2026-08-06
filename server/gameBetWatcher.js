@@ -1,7 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
-const { sendMessage, sendPhoto, isConfigured } = require('./telegram');
+const { sendMessage, sendPhoto, sendToChannel: sendTgChannel, sendPhotoToChannel: sendTgChannelPhoto, isConfigured, isChannelConfigured: isTgChannelConfigured } = require('./telegram');
 const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
 const { buildContestForBet } = require('./contestShape');
 const { renderWagerCard } = require('./wagerCard');
@@ -479,6 +479,9 @@ function isChannelEnabled(channel) {
 async function notifyAll(text, trigger) {
   const sends = [];
   if (isConfigured()   && isChannelEnabled('telegram'))  sends.push(sendMessage(text, trigger));
+  // Mirrored to the Telegram channel when one is configured; independently
+  // switchable via telegram_channel_enabled.
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) sends.push(sendTgChannel(text, trigger));
   if (isWAConfigured() && isChannelEnabled('whatsapp'))  sends.push(sendWhatsApp(text, trigger));
   if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
   const [primary] = await Promise.allSettled(sends);
@@ -500,6 +503,9 @@ async function notifyAllMedia({ buffer, mimetype, filename }, text, trigger) {
   const sends = [];
   if (isConfigured() && isChannelEnabled('telegram')) {
     sends.push(sendPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) {
+    sends.push(sendTgChannelPhoto(buffer, mimetype, filename, caption, trigger));
   }
   if (isWAConfigured() && isChannelEnabled('whatsapp')) {
     sends.push(sendWhatsAppMedia({

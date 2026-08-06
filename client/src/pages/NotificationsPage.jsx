@@ -912,6 +912,9 @@ export default function NotificationsPage() {
   const [sendResult, setSendResult]     = useState(null);
   const [botToken, setBotToken]         = useState('');
   const [chatId, setChatId]             = useState('');
+  const [tgChannelId, setTgChannelId]   = useState('');
+  const [testingTgChannel, setTestingTgChannel]         = useState(false);
+  const [tgChannelTestResult, setTgChannelTestResult]   = useState(null);
   const [saving, setSaving]             = useState(false);
   const [saveMsg, setSaveMsg]           = useState('');
 
@@ -1221,6 +1224,18 @@ export default function NotificationsPage() {
       setTestResult({ ok: false, msg: e.response?.data?.error || 'Request failed' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTestTgChannel = async () => {
+    setTestingTgChannel(true); setTgChannelTestResult(null);
+    try {
+      const r = await api.post('/telegram/test-channel');
+      setTgChannelTestResult({ ok: !!r.data.ok, error: r.data.error || r.data.description });
+    } catch (e) {
+      setTgChannelTestResult({ ok: false, error: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setTestingTgChannel(false);
     }
   };
 
@@ -1803,6 +1818,34 @@ export default function NotificationsPage() {
                           saving={saving}
                           saveMsg={saveMsg}
                         />
+                        <div className="pt-3 border-t border-vs-border/50">
+                          <TextConfigRow
+                            label="Channel ID (optional)"
+                            fieldValue={status?.channelId || tgChannelId}
+                            placeholder="@mychannel or -1001234567890"
+                            mono
+                            onSave={async (val) => { const msg = await saveTgField('channelId', val); setSaveMsg(msg); setTgChannelId(val); }}
+                            saving={saving}
+                            saveMsg={saveMsg}
+                          />
+                          <p className="text-xs text-vs-text-3 mt-1">
+                            Set this to mirror every automated notification to a Telegram channel as well as the group.
+                            The bot must be an <strong>administrator</strong> of the channel. Leave blank to disable mirroring.
+                          </p>
+                          {status?.channelIdSet && (
+                            <div className="flex items-center gap-3 mt-2">
+                              <button type="button" onClick={handleTestTgChannel} disabled={testingTgChannel}
+                                className="px-3 py-1.5 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+                                {testingTgChannel ? 'Sending…' : 'Send test to channel'}
+                              </button>
+                              {tgChannelTestResult && (
+                                <p className={`text-xs ${tgChannelTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                                  {tgChannelTestResult.ok ? 'Sent!' : (tgChannelTestResult.error || 'Failed')}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
 
@@ -2692,7 +2735,8 @@ export default function NotificationsPage() {
                 className="px-2 py-1 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple"
               >
                 <option value="all">All channels</option>
-                <option value="telegram">Telegram</option>
+                <option value="telegram">Telegram Group</option>
+                <option value="telegram_channel">Telegram Channel</option>
                 <option value="whatsapp">WhatsApp</option>
               </select>
               <select
