@@ -187,7 +187,9 @@ async function testConnection(cfg = getConfig()) {
   try {
     const res = await fetchWithTimeout(apiUrl(cfg, '/contacts?page=1'), { method: 'GET', headers: headers(cfg) });
     if (res.ok) return { ok: true, error: null };
-    if (res.status === 401 || res.status === 403) return { ok: false, error: 'Unauthorized — check the API access token.' };
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: 'Unauthorized — use the Access Token from Chatwoot Profile Settings on an administrator account.' };
+    }
     if (res.status === 404) return { ok: false, error: 'Not found — check the Base URL and Account ID.' };
     const json = await res.json().catch(() => ({}));
     return { ok: false, error: `HTTP ${res.status}: ${extractError(json)}` };

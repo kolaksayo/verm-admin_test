@@ -141,10 +141,13 @@ export default function ChatwootSettings() {
               placeholder="1" className={input} />
           </div>
           <div>
-            <label className="text-xs text-vs-text-3 block mb-1">API Access Token</label>
+            <label className="text-xs text-vs-text-3 block mb-1">Access Token</label>
             <input type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)}
-              placeholder={cfg?.apiTokenSet ? `${cfg.apiToken} (saved)` : 'Profile → Access Token'} className={input} />
-            {cfg?.apiTokenSet && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep the current token.</p>}
+              placeholder={cfg?.apiTokenSet ? `${cfg.apiToken} (saved)` : 'from Chatwoot Profile Settings'} className={input} />
+            <p className="text-xs text-vs-text-3 mt-1">
+              Chatwoot → Profile Settings → Access Token, from an administrator account.
+              {cfg?.apiTokenSet && ' Leave blank to keep the current token.'}
+            </p>
           </div>
           <div>
             <label className="text-xs text-vs-text-3 block mb-1">Inbox ID (optional)</label>
