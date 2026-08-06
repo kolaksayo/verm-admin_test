@@ -1391,7 +1391,8 @@ async function buildRankingsVars(db, period, topN, options = {}) {
 
   if (options.weekStart) {
     // weekStart is any ISO date — we compute the Monday of that week
-    const d    = new Date(options.weekStart);
+    const d = new Date(options.weekStart);
+    if (isNaN(d.getTime())) throw new Error(`Invalid weekStart: "${options.weekStart}" — expected YYYY-MM-DD`);
     const day  = d.getDay();
     const diff = day === 0 ? 6 : day - 1;
     d.setHours(0, 0, 0, 0);
@@ -1400,8 +1401,12 @@ async function buildRankingsVars(db, period, topN, options = {}) {
     periodLabel = `Week of ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   } else if (options.monthOf) {
     // monthOf is 'YYYY-MM'
+    if (!/^\d{4}-\d{2}$/.test(String(options.monthOf).trim())) {
+      throw new Error(`Invalid monthOf: "${options.monthOf}" — expected YYYY-MM (e.g. 2025-04)`);
+    }
     const [yr, mo] = options.monthOf.split('-').map(Number);
     periodStart = new Date(yr, mo - 1, 1);
+    if (isNaN(periodStart.getTime())) throw new Error(`Invalid monthOf: "${options.monthOf}"`);
     periodLabel = periodStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   } else if (period === 'weekly') {
     const day  = now.getDay();
