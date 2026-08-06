@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
+import ChatwootSettings from '../components/ChatwootSettings';
 
 const TABS = ['Channels', 'Direct Messages', 'Messages', 'Logs', 'Settings'];
 
@@ -2834,6 +2835,8 @@ export default function NotificationsPage() {
       {/* ── Settings tab ── */}
       {tab === 'Settings' && (
         <>
+          <ChatwootSettings />
+
           {/* Alert Settings */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>

@@ -80,6 +80,19 @@ function getDb() {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_wud_user_trigger
         ON whatsapp_user_dms(user_id, trigger);
 
+      -- One row per user pushed to Chatwoot. Makes the sync resumable and
+      -- idempotent: a user already recorded here is skipped unless changed.
+      CREATE TABLE IF NOT EXISTS chatwoot_contacts (
+        user_id    TEXT PRIMARY KEY,
+        contact_id INTEGER,
+        phone      TEXT,
+        email      TEXT,
+        name       TEXT,
+        ok         INTEGER NOT NULL DEFAULT 0,
+        error      TEXT,
+        synced_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS admin_edit_sessions (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL,

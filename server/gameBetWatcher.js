@@ -2,8 +2,12 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
 const { sendMessage, sendPhoto, sendToChannel: sendTgChannel, sendPhotoToChannel: sendTgChannelPhoto, isConfigured, isChannelConfigured: isTgChannelConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
+const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate, normalizePhone } = require('./whatsapp');
 const { buildContestForBet } = require('./contestShape');
+const {
+  getConfig: chatwootConfig, isConfigured: chatwootConfigured,
+  pushContact: pushChatwootContact, recordSync: recordChatwootSync,
+} = require('./chatwoot');
 const { renderWagerCard } = require('./wagerCard');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
@@ -695,6 +699,54 @@ function getWelcomeConfig() {
   } catch {
     return { groupLink: '', channelLink: '' };
   }
+}
+
+// Pushes users that aren't in chatwoot_contacts yet. Bounded per run so a big
+// backlog trickles through rather than hammering Chatwoot — use the dashboard's
+// "Sync all contacts" for the initial backfill.
+const CHATWOOT_POLL_LIMIT = 50;
+
+async function pollChatwootContacts(db) {
+  const cfg = chatwootConfig();
+  if (!chatwootConfigured(cfg) || !cfg.autoSync) return;
+
+  const sqlite = getSQLite();
+  const known = sqlite.prepare('SELECT user_id FROM chatwoot_contacts').all()
+    .map((r) => r.user_id)
+    .filter((id) => /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => { try { return new ObjectId(id); } catch { return null; } })
+    .filter(Boolean);
+
+  const filter = {
+    $and: [
+      { $or: [
+        { mobile: { $exists: true, $nin: [null, ''] } },
+        { email:  { $exists: true, $nin: [null, ''] } },
+      ] },
+      ...(known.length ? [{ _id: { $nin: known } }] : []),
+    ],
+  };
+
+  const users = await db.collection('users')
+    .find(filter, { projection: { username: 1, displayName: 1, name: 1, email: 1, mobile: 1, phone: 1 } })
+    .sort({ createdAt: -1 })
+    .limit(CHATWOOT_POLL_LIMIT)
+    .toArray();
+
+  for (const user of users) {
+    const phoneDigits = normalizePhone(user.mobile || user.phone || '');
+    const result = await pushChatwootContact(user, phoneDigits, cfg);
+    recordChatwootSync(user._id, {
+      contactId: result.contactId,
+      phone: phoneDigits || null,
+      email: user.email || null,
+      name: user.username || user.displayName || user.name || null,
+      ok: result.ok,
+      error: result.error,
+    });
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (users.length) console.log(`[Chatwoot] auto-synced ${users.length} new contact(s)`);
 }
 
 async function pollNewUsers(db) {
@@ -1658,6 +1710,18 @@ function startWatcher() {
   };
   setTimeout(runUserDmPoll, 5000); // run shortly after startup
   setInterval(runUserDmPoll, USER_DM_INTERVAL_MS);
+
+  // Chatwoot contact sync for new signups — deliberately separate from the
+  // welcome-DM poll so it keeps working when WhatsApp DMs are switched off.
+  const runChatwootPoll = async () => {
+    try {
+      await pollChatwootContacts(getDb());
+    } catch (err) {
+      console.error('[Chatwoot] new-contact poll error:', err.message);
+    }
+  };
+  setTimeout(runChatwootPoll, 20000);
+  setInterval(runChatwootPoll, USER_DM_INTERVAL_MS);
 
   // Daily cleanup + rankings check
   const runDaily = async () => {
