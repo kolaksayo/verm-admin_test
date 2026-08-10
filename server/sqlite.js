@@ -199,6 +199,8 @@ function getDb() {
     try { db.exec(`ALTER TABLE admin_credits ADD COLUMN tx_type TEXT NOT NULL DEFAULT 'CREDIT'`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_users ADD COLUMN email TEXT UNIQUE`); } catch { /* already exists */ }
     try { db.exec(`ALTER TABLE admin_users ADD COLUMN two_factor_exempt INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+    // Set when the user vanished from Mongo and we flagged the Chatwoot contact.
+    try { db.exec(`ALTER TABLE chatwoot_contacts ADD COLUMN deleted_at TEXT`); } catch { /* already exists */ }
 
     // One-time seed: DM WhatsApp config used to silently fall back to the group's
     // Evolution credentials when the dm_* keys were blank. That fallback is gone

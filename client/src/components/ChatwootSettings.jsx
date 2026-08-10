@@ -37,6 +37,8 @@ export default function ChatwootSettings() {
   const [showFailed, setShowFailed]     = useState(false);
   const [failedRows, setFailedRows]     = useState([]);
   const [loadingFailed, setLoadingFailed] = useState(false);
+  const [checkingDeleted, setCheckingDeleted] = useState(false);
+  const [preview, setPreview]   = useState(null);
   const pollRef = useRef(null);
 
   const loadConfig = useCallback(async () => {
@@ -131,6 +133,34 @@ export default function ChatwootSettings() {
       setLoadingFailed(false);
     }
   }, []);
+
+  // Deletion check runs as preview -> confirm, since marking is hard to undo.
+  const handleCheckDeleted = async () => {
+    setCheckingDeleted(true); setError(''); setPreview(null);
+    try {
+      const r = await api.get('/chatwoot/reconcile/preview');
+      setPreview(r.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to check for deleted users');
+    } finally {
+      setCheckingDeleted(false);
+    }
+  };
+
+  const handleMarkDeleted = async (confirm) => {
+    setStarting(true); setError('');
+    try {
+      const r = await api.post('/chatwoot/reconcile', { confirm });
+      setPreview(null);
+      if (r.data.started) { await loadStatus(); startPolling(); }
+    } catch (err) {
+      const d = err.response?.data;
+      if (d?.needsConfirmation) setPreview({ ...d, needsConfirmation: true });
+      else setError(d?.error || 'Failed to mark deleted contacts');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const toggleFailed = () => {
     const next = !showFailed;
@@ -331,6 +361,63 @@ export default function ChatwootSettings() {
             {!cfg?.configured && <p className="text-xs text-vs-text-3">Save your Chatwoot credentials to enable syncing.</p>}
           </div>
         )}
+        <div className="border-t border-vs-border mt-4 pt-4">
+          <p className="text-sm font-medium text-vs-text">Deleted users</p>
+          <p className="text-xs text-vs-text-3 mt-0.5 mb-3">
+            Finds synced contacts whose user no longer exists in the app and labels them
+            <span className="font-mono text-vs-text"> deleted-from-app</span> in Chatwoot.
+            Contacts are never removed, so conversation history is kept.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={handleCheckDeleted}
+              disabled={checkingDeleted || starting || !cfg?.configured || (job && job.running)}
+              className="px-3 py-2 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+              {checkingDeleted ? 'Checking…' : 'Check for deleted users'}
+            </button>
+            {preview && preview.vanished === 0 && (
+              <p className="text-xs text-vs-success">No deleted users found — everything is up to date.</p>
+            )}
+          </div>
+
+          {preview && preview.vanished > 0 && (
+            <div className={`mt-3 border rounded-lg p-3 ${preview.needsConfirmation ? 'border-vs-danger' : 'border-vs-border'}`}>
+              <p className="text-xs text-vs-text">
+                <span className="font-semibold">{preview.vanished.toLocaleString()}</span> contact(s)
+                {preview.checked ? ` of ${preview.checked.toLocaleString()} synced` : ''} no longer exist in the app.
+              </p>
+              {preview.needsConfirmation && (
+                <p className="text-xs text-vs-danger mt-1">
+                  That is an unusually large share. If the app database was unreachable or only partly
+                  loaded, this could wrongly flag live customers — check before confirming.
+                </p>
+              )}
+              {preview.sample?.length > 0 && (
+                <div className="max-h-32 overflow-y-auto mt-2 space-y-0.5">
+                  {preview.sample.map((r) => (
+                    <p key={r.user_id} className="text-xs text-vs-text-3">
+                      {r.name || '(no name)'} <span className="font-mono">· {r.user_id}</span>
+                    </p>
+                  ))}
+                  {preview.vanished > preview.sample.length && (
+                    <p className="text-xs text-vs-text-3">…and {(preview.vanished - preview.sample.length).toLocaleString()} more</p>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-2 mt-3">
+                <button type="button" onClick={() => handleMarkDeleted(preview.needsConfirmation)} disabled={starting}
+                  className={`px-3 py-2 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 ${preview.needsConfirmation ? 'bg-vs-danger hover:bg-vs-danger/90' : 'bg-vs-purple hover:bg-vs-purple/90'}`}>
+                  {preview.needsConfirmation ? `Yes, mark all ${preview.vanished.toLocaleString()}` : `Mark ${preview.vanished.toLocaleString()} as deleted`}
+                </button>
+                <button type="button" onClick={() => setPreview(null)}
+                  className="px-3 py-2 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs rounded-lg transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <p className="text-xs text-vs-text-3 mt-3">
           "Sync all contacts" pushes everyone not yet synced. "Re-sync everyone" re-pushes all contacts,
           refreshing names and numbers in Chatwoot.

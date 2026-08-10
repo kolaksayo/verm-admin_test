@@ -65,8 +65,11 @@ function toContactPayload(user, phoneDigits) {
     identifier: String(user._id),
     name: contactName(user),
     // Keep the handle visible in Chatwoot even though it isn't the contact name.
+    // app_status rides on every push, so re-syncing a returning user
+    // overwrites a previous 'deleted' mark rather than stranding it.
     custom_attributes: {
       source: 'vermo-admin',
+      app_status: 'active',
       ...(user.username ? { username: String(user.username).trim() } : {}),
     },
   };
@@ -148,6 +151,67 @@ async function pushContact(user, phoneDigits, cfg = getConfig()) {
   }
 }
 
+// Label agents see in the Chatwoot sidebar. Chatwoot slugifies labels, so keep
+// it lowercase and hyphenated to avoid it being renamed on us.
+const DELETED_LABEL = 'deleted-from-app';
+
+/**
+ * Flags a contact whose user no longer exists in the app. Deliberately does NOT
+ * delete the contact — that would discard the conversation history agents rely
+ * on. Sets a custom attribute plus a label, and leaves other labels intact.
+ */
+async function markContactDeleted(contactId, cfg = getConfig(), when = new Date().toISOString()) {
+  if (!isConfigured(cfg)) return { ok: false, error: 'not_configured' };
+  if (!contactId) return { ok: false, error: 'no_contact_id' };
+
+  try {
+    // Merge rather than replace — a bare PUT would wipe attributes set elsewhere.
+    const existing = await fetchWithTimeout(apiUrl(cfg, `/contacts/${contactId}`), {
+      method: 'GET', headers: headers(cfg),
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const priorAttrs = existing?.payload?.custom_attributes || {};
+
+    const upd = await updateContact(cfg, contactId, {
+      custom_attributes: { ...priorAttrs, app_status: 'deleted', app_deleted_at: when },
+    });
+    if (!upd.ok) return { ok: false, error: extractError(upd.json) };
+
+    // Labels are set as a whole list, so read the current ones and append.
+    const cur = await fetchWithTimeout(apiUrl(cfg, `/contacts/${contactId}/labels`), {
+      method: 'GET', headers: headers(cfg),
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const labels = new Set(cur?.payload || []);
+    if (!labels.has(DELETED_LABEL)) {
+      labels.add(DELETED_LABEL);
+      await fetchWithTimeout(apiUrl(cfg, `/contacts/${contactId}/labels`), {
+        method: 'POST', headers: headers(cfg), body: JSON.stringify({ labels: [...labels] }),
+      }).catch(() => null);   // attribute already landed; a label failure isn't fatal
+    }
+
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: err.name === 'AbortError' ? 'timeout' : err.message };
+  }
+}
+
+// Removes the deleted label after a user reappears. The attribute is already
+// reset by the push itself; only the label needs clearing.
+async function unmarkContactDeleted(contactId, cfg = getConfig()) {
+  if (!isConfigured(cfg) || !contactId) return { ok: false };
+  try {
+    const cur = await fetchWithTimeout(apiUrl(cfg, `/contacts/${contactId}/labels`), {
+      method: 'GET', headers: headers(cfg),
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const labels = (cur?.payload || []).filter((l) => l !== DELETED_LABEL);
+    await fetchWithTimeout(apiUrl(cfg, `/contacts/${contactId}/labels`), {
+      method: 'POST', headers: headers(cfg), body: JSON.stringify({ labels }),
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function extractError(json) {
   if (!json || typeof json !== 'object') return 'api_error';
   const cands = [
@@ -162,6 +226,23 @@ function extractError(json) {
 
 // ── Local sync state ─────────────────────────────────────────────────────────
 
+function markDeletedLocally(userId, when) {
+  try {
+    getSQLite().prepare('UPDATE chatwoot_contacts SET deleted_at = ? WHERE user_id = ?').run(when, String(userId));
+  } catch { /* non-fatal */ }
+}
+
+// Contacts we pushed successfully and have not already flagged as deleted.
+function liveSyncedRows() {
+  try {
+    return getSQLite()
+      .prepare('SELECT user_id, contact_id, name FROM chatwoot_contacts WHERE ok = 1 AND deleted_at IS NULL')
+      .all();
+  } catch {
+    return [];
+  }
+}
+
 function recordSync(userId, { contactId, phone, email, name, ok, error }) {
   try {
     getSQLite().prepare(`
@@ -169,7 +250,8 @@ function recordSync(userId, { contactId, phone, email, name, ok, error }) {
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(user_id) DO UPDATE SET
         contact_id = excluded.contact_id, phone = excluded.phone, email = excluded.email,
-        name = excluded.name, ok = excluded.ok, error = excluded.error, synced_at = excluded.synced_at
+        name = excluded.name, ok = excluded.ok, error = excluded.error, synced_at = excluded.synced_at,
+        deleted_at = CASE WHEN excluded.ok = 1 THEN NULL ELSE chatwoot_contacts.deleted_at END
     `).run(String(userId), contactId ?? null, phone ?? null, email ?? null, name ?? null, ok ? 1 : 0, error ?? null);
   } catch { /* non-fatal */ }
 }
@@ -213,4 +295,5 @@ async function testConnection(cfg = getConfig()) {
 module.exports = {
   getConfig, isConfigured, pushContact, testConnection,
   recordSync, syncedUserIds, syncStats, toE164, toContactPayload, contactName,
+  markContactDeleted, unmarkContactDeleted, markDeletedLocally, liveSyncedRows, DELETED_LABEL,
 };

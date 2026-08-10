@@ -5,6 +5,7 @@ const { getDb: getSQLite } = require('../sqlite');
 const { normalizePhone } = require('../whatsapp');
 const {
   getConfig, isConfigured, pushContact, testConnection, recordSync, syncStats, contactName,
+  markContactDeleted, unmarkContactDeleted, markDeletedLocally, liveSyncedRows,
 } = require('../chatwoot');
 const auth = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -110,9 +111,9 @@ router.post('/sync/cancel', auth, requirePermission('system', 'notifications'), 
   res.json({ ok: true });
 });
 
-// Reads user_ids out of chatwoot_contacts as ObjectIds.
-function recordedIds(whereOk) {
-  return getSQLite().prepare(`SELECT user_id FROM chatwoot_contacts WHERE ok = ${whereOk}`).all()
+// Reads user_ids out of chatwoot_contacts as ObjectIds. `extra` narrows further.
+function recordedIds(whereOk, extra = '') {
+  return getSQLite().prepare(`SELECT user_id FROM chatwoot_contacts WHERE ok = ${whereOk} ${extra}`).all()
     .map((r) => r.user_id)
     .filter((id) => /^[0-9a-f]{24}$/i.test(id))
     .map((id) => new ObjectId(id));
@@ -136,13 +137,18 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
   let cursorFilter = CONTACT_FILTER;
   if (mode === 'new') {
     // Skip users already synced successfully.
-    const done = recordedIds(1);
+    const done = recordedIds(1, 'AND deleted_at IS NULL');
     if (done.length) cursorFilter = { $and: [CONTACT_FILTER, { _id: { $nin: done } }] };
   } else if (mode === 'failed') {
     const failed = recordedIds(0);
     if (!failed.length) return res.status(400).json({ ok: false, error: 'No failed contacts to retry' });
     cursorFilter = { _id: { $in: failed } };
   }
+
+  const flagged = new Set(
+    getSQLite().prepare('SELECT user_id FROM chatwoot_contacts WHERE deleted_at IS NOT NULL').all()
+      .map((r) => r.user_id),
+  );
 
   const db = getDb();
   const total = await db.collection('users').countDocuments(cursorFilter);
@@ -173,6 +179,11 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
           error: result.error,
         });
 
+        // The user exists again, so lift the deleted label we put on them.
+        if (result.ok && flagged.has(String(user._id))) {
+          await unmarkContactDeleted(result.contactId, cfg);
+        }
+
         job.processed += 1;
         if (result.ok && result.action === 'created')      job.created += 1;
         else if (result.ok && result.action === 'updated') job.updated += 1;
@@ -190,6 +201,106 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
       console.log(`[Chatwoot] sync finished — created ${job.created}, updated ${job.updated}, failed ${job.failed}, skipped ${job.skipped}`);
     }
   })();
+});
+
+// Marking every contact deleted because of a bad query would be very hard to
+// undo, so a batch this large needs explicit confirmation.
+const RECONCILE_ALARM_RATIO = 0.25;
+const RECONCILE_ALARM_MIN   = 10;
+
+// Which synced contacts no longer have a user in Mongo.
+async function findVanished() {
+  const rows = liveSyncedRows().filter((r) => /^[0-9a-f]{24}$/i.test(r.user_id));
+  if (!rows.length) return { rows: [], vanished: [] };
+
+  const alive = new Set();
+  const ids = rows.map((r) => new ObjectId(r.user_id));
+  for (let i = 0; i < ids.length; i += 1000) {
+    const batch = ids.slice(i, i + 1000);
+    const found = await getDb().collection('users')
+      .find({ _id: { $in: batch } }, { projection: { _id: 1 } }).toArray();
+    found.forEach((u) => alive.add(String(u._id)));
+  }
+  return { rows, vanished: rows.filter((r) => !alive.has(r.user_id)) };
+}
+
+// GET /api/chatwoot/reconcile/preview — who would be marked, changing nothing
+router.get('/reconcile/preview', auth, requirePermission('system', 'notifications'), async (req, res) => {
+  try {
+    const { rows, vanished } = await findVanished();
+    const ratio = rows.length ? vanished.length / rows.length : 0;
+    res.json({
+      checked: rows.length,
+      vanished: vanished.length,
+      needsConfirmation: vanished.length >= RECONCILE_ALARM_MIN && ratio > RECONCILE_ALARM_RATIO,
+      sample: vanished.slice(0, 50).map((r) => ({ user_id: r.user_id, name: r.name })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/chatwoot/reconcile — mark vanished users' contacts as deleted
+// body: { confirm?: boolean } — required when the batch trips the alarm above.
+router.post('/reconcile', auth, requirePermission('system', 'notifications'), async (req, res) => {
+  if (job && job.running) return res.status(409).json({ ok: false, error: 'A sync is already running' });
+  const cfg = getConfig();
+  if (!isConfigured(cfg)) return res.status(400).json({ ok: false, error: 'Chatwoot not configured' });
+
+  let rows, vanished;
+  try {
+    ({ rows, vanished } = await findVanished());
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: `Could not read users: ${err.message}` });
+  }
+
+  if (!vanished.length) return res.json({ ok: true, started: false, vanished: 0 });
+
+  const ratio = rows.length ? vanished.length / rows.length : 0;
+  if (vanished.length >= RECONCILE_ALARM_MIN && ratio > RECONCILE_ALARM_RATIO && !req.body?.confirm) {
+    return res.status(409).json({
+      ok: false, needsConfirmation: true, vanished: vanished.length, checked: rows.length,
+      error: `${vanished.length} of ${rows.length} synced contacts appear deleted. Confirm to proceed.`,
+    });
+  }
+
+  const when = new Date().toISOString();
+  job = {
+    running: true, total: vanished.length, processed: 0, created: 0, updated: 0, failed: 0, skipped: 0,
+    startedAt: when, finishedAt: null, error: null, cancel: false, mode: 'reconcile',
+  };
+  res.json({ ok: true, started: true, total: vanished.length, mode: 'reconcile' });
+
+  (async () => {
+    try {
+      for (const row of vanished) {
+        if (job.cancel) break;
+        const result = await markContactDeleted(row.contact_id, cfg, when);
+        if (result.ok) { markDeletedLocally(row.user_id, when); job.updated += 1; }
+        else job.failed += 1;
+        job.processed += 1;
+        await delay(SYNC_THROTTLE_MS);
+      }
+    } catch (err) {
+      job.error = err.message;
+    } finally {
+      job.running = false;
+      job.finishedAt = new Date().toISOString();
+      console.log(`[Chatwoot] reconcile finished — marked ${job.updated}, failed ${job.failed}`);
+    }
+  })();
+});
+
+// GET /api/chatwoot/deleted — contacts already flagged as deleted
+router.get('/deleted', auth, requirePermission('system', 'notifications'), (req, res) => {
+  try {
+    const rows = getSQLite().prepare(
+      'SELECT user_id, contact_id, name, phone, email, deleted_at FROM chatwoot_contacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500',
+    ).all();
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/chatwoot/logs — recent per-contact sync results
