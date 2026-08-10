@@ -18,6 +18,25 @@ function getConfig() {
   }
 }
 
+/**
+ * Canonicalises a channel identifier.
+ *
+ * Public channels are '@name'. Private ones are always the -100-prefixed form,
+ * but the id shown in web.telegram.org URLs (…/c/1234567890/…) and in most
+ * bot helpers omits that prefix, and sending to the bare number returns
+ * 'Bad Request: chat not found'. Add the prefix when it is missing so a
+ * pasted id works as-is.
+ */
+function normalizeChatId(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  if (v.startsWith('@')) return v;                 // public @name
+  if (/^-100\d+$/.test(v)) return v;               // already canonical
+  if (/^\d+$/.test(v)) return `-100${v}`;          // bare id from a URL
+  if (/^-\d+$/.test(v)) return `-100${v.slice(1)}`; // negative, missing 100
+  return v;                                        // leave anything else alone
+}
+
 // `channel` distinguishes group sends ('telegram') from channel sends
 // ('telegram_channel') in the Broadcast Send Log.
 function logSend(trigger, text, ok, error = null, channel = 'telegram') {
@@ -217,5 +236,5 @@ module.exports = {
   sendMessage, sendPhoto,
   sendToChannel, sendPhotoToChannel,
   isConfigured, isChannelConfigured,
-  getConfig, checkHealth,
+  getConfig, checkHealth, normalizeChatId,
 };

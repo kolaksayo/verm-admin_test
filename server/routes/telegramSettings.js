@@ -1,6 +1,6 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
-const { sendMessage, sendToChannel, isConfigured, isChannelConfigured, getConfig, checkHealth } = require('../telegram');
+const { sendMessage, sendToChannel, isConfigured, isChannelConfigured, getConfig, checkHealth, normalizeChatId } = require('../telegram');
 const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('../whatsapp');
 const {
   DEFAULT_TEMPLATES,
@@ -236,7 +236,7 @@ router.post('/config', auth, requirePermission('system', 'notifications'), (req,
 
     if (hasToken)     upsert.run('telegram_bot_token', String(botToken).trim());
     if (hasChatId)    upsert.run('telegram_chat_id',   String(chatId).trim());
-    if (hasChannelId) upsert.run('telegram_channel_id', String(channelId).trim());
+    if (hasChannelId) upsert.run('telegram_channel_id', normalizeChatId(channelId));
     if (hasChannelEn) upsert.run('telegram_channel_enabled', channelEnabled ? '1' : '0');
     if (hasThreshold) upsert.run('large_stake_threshold', String(Number(largeStakeThreshold)));
     if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))));
@@ -262,6 +262,18 @@ router.post('/test', auth, requirePermission('system', 'notifications'), async (
   res.json(result);
 });
 
+// Telegram's errors are terse; add the fix for the ones that actually come up.
+function explainTelegramError(reason) {
+  const r = String(reason || '');
+  if (/chat not found/i.test(r)) {
+    return `${r} — for a private channel use the -100… numeric ID (not the invite link), and add the bot to the channel as an administrator. A public channel can use @name.`;
+  }
+  if (/not enough rights|CHAT_ADMIN_REQUIRED|not a member/i.test(r)) {
+    return `${r} — make the bot an administrator of the channel with "Post Messages" permission.`;
+  }
+  return r;
+}
+
 // POST /api/telegram/test-channel — send a test message to the Telegram channel
 router.post('/test-channel', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isChannelConfigured()) {
@@ -274,7 +286,8 @@ router.post('/test-channel', auth, requirePermission('system', 'notifications'),
   const result = await sendToChannel('✅ <b>VermoSports Admin</b>\n\nTelegram channel notifications are configured and working!', 'test');
   if (result?.ok === false || result?.ok === undefined && result?.description) {
     // Surface Telegram's own reason — most often the bot isn't a channel admin.
-    return res.json({ ok: false, error: result.description || result.reason || 'Send failed' });
+    const reason = result.description || result.reason || 'Send failed';
+    return res.json({ ok: false, error: explainTelegramError(reason) });
   }
   res.json(result);
 });
