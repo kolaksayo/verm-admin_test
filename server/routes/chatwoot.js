@@ -110,23 +110,38 @@ router.post('/sync/cancel', auth, requirePermission('system', 'notifications'), 
   res.json({ ok: true });
 });
 
+// Reads user_ids out of chatwoot_contacts as ObjectIds.
+function recordedIds(whereOk) {
+  return getSQLite().prepare(`SELECT user_id FROM chatwoot_contacts WHERE ok = ${whereOk}`).all()
+    .map((r) => r.user_id)
+    .filter((id) => /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => new ObjectId(id));
+}
+
 // POST /api/chatwoot/sync — start a background bulk sync
-// body: { resync?: boolean }  resync=true re-pushes contacts already synced.
+// body: { mode?: 'new' | 'all' | 'failed' }   ({ resync: true } is the old spelling of 'all')
+//   new    — everything not yet synced successfully
+//   all    — re-push every contact, refreshing names/numbers already in Chatwoot
+//   failed — retry only the contacts whose last push failed
 router.post('/sync', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (job && job.running) return res.status(409).json({ ok: false, error: 'A sync is already running' });
   const cfg = getConfig();
   if (!isConfigured(cfg)) return res.status(400).json({ ok: false, error: 'Chatwoot not configured' });
 
-  const resync = !!req.body?.resync;
+  const mode = req.body?.mode || (req.body?.resync ? 'all' : 'new');
+  if (!['new', 'all', 'failed'].includes(mode)) {
+    return res.status(400).json({ ok: false, error: `Unknown sync mode "${mode}"` });
+  }
 
   let cursorFilter = CONTACT_FILTER;
-  if (!resync) {
+  if (mode === 'new') {
     // Skip users already synced successfully.
-    const done = getSQLite().prepare('SELECT user_id FROM chatwoot_contacts WHERE ok = 1').all()
-      .map((r) => r.user_id)
-      .filter((id) => /^[0-9a-f]{24}$/i.test(id))
-      .map((id) => new ObjectId(id));
+    const done = recordedIds(1);
     if (done.length) cursorFilter = { $and: [CONTACT_FILTER, { _id: { $nin: done } }] };
+  } else if (mode === 'failed') {
+    const failed = recordedIds(0);
+    if (!failed.length) return res.status(400).json({ ok: false, error: 'No failed contacts to retry' });
+    cursorFilter = { _id: { $in: failed } };
   }
 
   const db = getDb();
@@ -134,9 +149,9 @@ router.post('/sync', auth, requirePermission('system', 'notifications'), async (
 
   job = {
     running: true, total, processed: 0, created: 0, updated: 0, failed: 0, skipped: 0,
-    startedAt: new Date().toISOString(), finishedAt: null, error: null, cancel: false, resync,
+    startedAt: new Date().toISOString(), finishedAt: null, error: null, cancel: false, mode,
   };
-  res.json({ ok: true, started: true, total });
+  res.json({ ok: true, started: true, total, mode });
 
   // Run detached — the client polls /sync/status.
   (async () => {

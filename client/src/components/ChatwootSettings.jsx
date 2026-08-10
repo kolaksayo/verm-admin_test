@@ -1,6 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
 
+// Turns the stored failure codes into something an operator can act on.
+// Anything unrecognised is shown verbatim.
+const ERROR_HINTS = {
+  no_phone_or_email: 'No phone number or email on the account — nothing to sync.',
+  not_configured:    'Chatwoot credentials were missing when this ran.',
+  timeout:           'Chatwoot did not respond in time — retrying usually clears this.',
+  duplicate:         'Chatwoot reports a conflicting contact that could not be matched back — check for an existing contact with this phone or email.',
+};
+
+function explainError(err) {
+  if (!err) return 'Unknown error';
+  if (ERROR_HINTS[err]) return ERROR_HINTS[err];
+  if (/^HTTP 4\d\d/.test(err)) return `Chatwoot rejected the contact — ${err}`;
+  if (/^HTTP 5\d\d/.test(err)) return `Chatwoot server error — ${err}. Retrying usually clears this.`;
+  return err;
+}
+
 // Chatwoot contact sync — credentials, connection test, and the bulk push.
 // Rendered in Notification Center -> Settings.
 export default function ChatwootSettings() {
@@ -17,6 +34,9 @@ export default function ChatwootSettings() {
   const [job, setJob]           = useState(null);
   const [starting, setStarting] = useState(false);
   const [error, setError]       = useState('');
+  const [showFailed, setShowFailed]     = useState(false);
+  const [failedRows, setFailedRows]     = useState([]);
+  const [loadingFailed, setLoadingFailed] = useState(false);
   const pollRef = useRef(null);
 
   const loadConfig = useCallback(async () => {
@@ -86,10 +106,11 @@ export default function ChatwootSettings() {
     }
   };
 
-  const handleSync = async (resync) => {
+  const handleSync = async (mode) => {
     setStarting(true); setError('');
     try {
-      await api.post('/chatwoot/sync', { resync });
+      await api.post('/chatwoot/sync', { mode });
+      setShowFailed(false);
       await loadStatus();
       startPolling();
     } catch (err) {
@@ -97,6 +118,37 @@ export default function ChatwootSettings() {
     } finally {
       setStarting(false);
     }
+  };
+
+  const loadFailed = useCallback(async () => {
+    setLoadingFailed(true);
+    try {
+      const r = await api.get('/chatwoot/logs', { params: { failed: 1, limit: 500 } });
+      setFailedRows(r.data.rows || []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load sync errors');
+    } finally {
+      setLoadingFailed(false);
+    }
+  }, []);
+
+  const toggleFailed = () => {
+    const next = !showFailed;
+    setShowFailed(next);
+    if (next) loadFailed();
+  };
+
+  // Failures are worth triaging outside the browser when there are many.
+  const downloadFailedCsv = () => {
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = [
+      'user_id,name,phone,email,error,attempted_at',
+      ...failedRows.map((r) => [r.user_id, r.name, r.phone, r.email, r.error, r.synced_at].map(esc).join(',')),
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'chatwoot-sync-failures.csv'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCancel = async () => {
@@ -190,8 +242,52 @@ export default function ChatwootSettings() {
         <div className="flex flex-wrap items-center gap-4 text-xs text-vs-text-3 mb-3">
           {eligible != null && <span>Eligible contacts: <span className="text-vs-text font-semibold">{eligible.toLocaleString()}</span></span>}
           <span>Synced: <span className="text-vs-success font-semibold">{stats.synced.toLocaleString()}</span></span>
-          {stats.failed > 0 && <span>Failed: <span className="text-vs-danger font-semibold">{stats.failed.toLocaleString()}</span></span>}
+          {stats.failed > 0 && (
+            <button type="button" onClick={toggleFailed} className="underline hover:text-vs-text transition-colors">
+              Failed: <span className="text-vs-danger font-semibold">{stats.failed.toLocaleString()}</span>
+              <span className="ml-1 text-vs-text-3">{showFailed ? '▲ hide' : '▼ show details'}</span>
+            </button>
+          )}
         </div>
+
+        {showFailed && (
+          <div className="mb-4 border border-vs-border rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-3 py-2 bg-vs-elevated">
+              <p className="text-xs text-vs-text-3">
+                {loadingFailed ? 'Loading…' : `${failedRows.length.toLocaleString()} contact(s) failed their last sync`}
+              </p>
+              <div className="flex items-center gap-2">
+                {failedRows.length > 0 && (
+                  <button type="button" onClick={downloadFailedCsv}
+                    className="px-2.5 py-1 border border-vs-border text-vs-text text-xs rounded-lg hover:bg-vs-border transition-colors">
+                    Download CSV
+                  </button>
+                )}
+                <button type="button" onClick={loadFailed} disabled={loadingFailed}
+                  className="px-2.5 py-1 border border-vs-border text-vs-text text-xs rounded-lg hover:bg-vs-border transition-colors disabled:opacity-50">
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              {!loadingFailed && failedRows.length === 0 && (
+                <p className="text-xs text-vs-text-3 px-3 py-4 text-center">No failures recorded.</p>
+              )}
+              {failedRows.map((r) => (
+                <div key={r.user_id} className="px-3 py-2 border-t border-vs-border">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <p className="text-xs font-medium text-vs-text">{r.name || '(no name)'}</p>
+                    <p className="text-xs text-vs-text-3 font-mono">{r.phone || r.email || '—'}</p>
+                  </div>
+                  <p className="text-xs text-vs-danger mt-0.5">{explainError(r.error)}</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 font-mono break-all">
+                    {r.user_id}{r.error && explainError(r.error) !== r.error ? ` · ${r.error}` : ''}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {job && job.running ? (
           <div className="space-y-2">
@@ -211,11 +307,17 @@ export default function ChatwootSettings() {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => handleSync(false)} disabled={starting || !cfg?.configured}
+            <button type="button" onClick={() => handleSync('new')} disabled={starting || !cfg?.configured}
               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
               {starting ? 'Starting…' : 'Sync all contacts'}
             </button>
-            <button type="button" onClick={() => handleSync(true)} disabled={starting || !cfg?.configured}
+            {stats.failed > 0 && (
+              <button type="button" onClick={() => handleSync('failed')} disabled={starting || !cfg?.configured}
+                className="px-3 py-2 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+                Retry {stats.failed.toLocaleString()} failed
+              </button>
+            )}
+            <button type="button" onClick={() => handleSync('all')} disabled={starting || !cfg?.configured}
               className="px-3 py-2 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
               Re-sync everyone
             </button>
