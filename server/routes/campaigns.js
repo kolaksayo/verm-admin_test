@@ -64,6 +64,11 @@ function normalizeChannels(raw) {
 // GET /api/campaigns/channels — which broadcast targets are usable right now.
 // Lives here rather than reusing /telegram/status so it is reachable with the
 // campaigns permission alone.
+//
+// `configured` is what decides whether a campaign can be sent. The *_enabled
+// flags only govern automatic mirroring of notifications — the send helpers
+// never consult them — so they are reported for context but do not block a
+// manual broadcast.
 router.get('/channels', auth, requirePermission('system', 'campaigns'), (req, res) => {
   const flag = (key) => {
     try {

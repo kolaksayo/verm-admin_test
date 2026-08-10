@@ -150,7 +150,7 @@ function BroadcastTab() {
     api.get('/campaigns/channels')
       .then((r) => {
         setAvail(r.data);
-        const usable = (k) => r.data[k]?.configured && r.data[k]?.enabled;
+        const usable = (k) => r.data[k]?.configured;
         // Turn off anything selected by default that isn't usable.
         if (!usable('telegram'))         setChTelegram(false);
         if (!usable('whatsapp_group'))   setChWaGroup(false);
@@ -161,7 +161,17 @@ function BroadcastTab() {
       .catch(() => setAvail(null));   // fall back to leaving every box selectable
   }, []);
 
-  const usable = (k) => !avail || (avail[k]?.configured && avail[k]?.enabled);
+  // Only configuration blocks a manual campaign; the enabled flags are about
+  // automated mirroring and are surfaced as a note instead.
+  const usable = (k) => !avail || !!avail[k]?.configured;
+  const channelHint = (k) => {
+    if (!avail || avail[k]?.configured) {
+      return avail && avail[k] && !avail[k].enabled
+        ? 'Automatic mirroring is off, but campaigns will still send here.'
+        : undefined;
+    }
+    return 'Not set up yet — add it in Notification Center → Settings.';
+  };
   const anyTelegram = chTelegram || chTgChannel;
   const captionTooLongForTelegram = !!img.image && anyTelegram && content.length > TELEGRAM_CAPTION_LIMIT;
   const canSend = !sending && content.trim().length > 0
@@ -197,7 +207,7 @@ function BroadcastTab() {
             const ok = usable(key);
             return (
               <label key={key}
-                title={ok ? undefined : 'Not configured or disabled — set it up in Notification Center → Settings'}
+                title={channelHint(key)}
                 className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border transition-colors select-none ${
                   !ok
                     ? 'border-vs-border text-vs-text-3 opacity-40 cursor-not-allowed'
