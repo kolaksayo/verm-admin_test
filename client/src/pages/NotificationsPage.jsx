@@ -369,7 +369,7 @@ function WaIcon({ size = 20, className = '' }) {
 }
 
 function ChanIcon({ channelKey, size = 20, className = '' }) {
-  if (channelKey === 'telegram') return <TgIcon size={size} className={className} />;
+  if (channelKey === 'telegram' || channelKey === 'tg_channel') return <TgIcon size={size} className={className} />;
   return <WaIcon size={size} className={className} />;
 }
 
@@ -905,6 +905,8 @@ export default function NotificationsPage() {
   // ── Telegram state ────────────────────────────────────────────────────────
   const [status, setStatus]             = useState(null);
   const [tgEnabled, setTgEnabled]       = useState(true);
+  const [tgChannelEnabled, setTgChannelEnabled] = useState(true);
+  const [togglingTgChannel, setTogglingTgChannel] = useState(false);
   const [togglingTg, setTogglingTg]     = useState(false);
   const [testing, setTesting]           = useState(false);
   const [testResult, setTestResult]     = useState(null);
@@ -1052,6 +1054,7 @@ export default function NotificationsPage() {
     api.get('/telegram/status').then((r) => {
       setStatus(r.data);
       if (r.data.enabled != null) setTgEnabled(!!r.data.enabled);
+      if (r.data.channelEnabled != null) setTgChannelEnabled(!!r.data.channelEnabled);
     }).catch(() => {});
 
   const loadTemplates = useCallback(() => {
@@ -1213,6 +1216,20 @@ export default function NotificationsPage() {
       setTgEnabled(next);
     } catch { /* ignore */ } finally {
       setTogglingTg(false);
+    }
+  };
+
+  // The channel is switched independently of the group, so a migration can
+  // move traffic across without both being on at once.
+  const handleToggleTgChannel = async () => {
+    setTogglingTgChannel(true);
+    const next = !tgChannelEnabled;
+    try {
+      await api.post('/telegram/config', { channelEnabled: next });
+      setTgChannelEnabled(next);
+      await loadStatus();
+    } catch { /* ignore */ } finally {
+      setTogglingTgChannel(false);
     }
   };
 
@@ -1613,6 +1630,10 @@ export default function NotificationsPage() {
           : (tgHealth && (tgHealth.apiReachable === false || tgHealth.botTokenValid === false || tgHealth.chatIdValid === false)) ? 'Error'
           : 'Active';
 
+        const tgChannelStatus = !status?.channelConfigured ? 'Needs Setup'
+          : !tgChannelEnabled ? 'Disabled'
+          : 'Active';
+
         const waGroupConfigured = !!(waStatus?.configured && waStatus?.groupIdSet);
         const waGroupStatus = !waGroupConfigured ? 'Needs Setup'
           : !waEnabled ? 'Disabled'
@@ -1653,6 +1674,7 @@ export default function NotificationsPage() {
 
         const channels = [
           { key: 'telegram',   name: 'Telegram Group',  status: tgStatus,        logs: tgLogs,  missingLabel: 'Bot Token + Chat ID' },
+          { key: 'tg_channel', name: 'Telegram Channel',status: tgChannelStatus, logs: tgLogs,  missingLabel: 'Channel ID' },
           { key: 'wa_group',   name: 'WhatsApp Group',  status: waGroupStatus,   logs: waLogs,  missingLabel: 'Evolution credentials' },
           { key: 'wa_channel', name: 'WhatsApp Channel',status: waChannelStatus, logs: waLogs,  missingLabel: 'Channel ID' },
         ];
@@ -1730,7 +1752,7 @@ export default function NotificationsPage() {
                 {/* Panel header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-vs-border">
                   <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' || selectedChannel === 'tg_channel' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
                       <ChanIcon channelKey={selectedChannel} size={18} className="text-white" />
                     </div>
                     <h2 className="text-base font-bold text-vs-text">{sel.name}</h2>
@@ -1738,13 +1760,13 @@ export default function NotificationsPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-vs-text-3">Notifications Enabled</span>
                     <button
-                      onClick={selectedChannel === 'telegram' ? handleToggleTg : handleToggleWa}
-                      disabled={selectedChannel === 'telegram' ? togglingTg : togglingWa}
+                      onClick={selectedChannel === 'telegram' ? handleToggleTg : selectedChannel === 'tg_channel' ? handleToggleTgChannel : handleToggleWa}
+                      disabled={selectedChannel === 'telegram' ? togglingTg : selectedChannel === 'tg_channel' ? togglingTgChannel : togglingWa}
                       className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
-                        (selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
+                        (selectedChannel === 'telegram' ? tgEnabled : selectedChannel === 'tg_channel' ? tgChannelEnabled : waEnabled) ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
                       }`}
                     >
-                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${(selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'left-6' : 'left-1'}`} />
+                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${(selectedChannel === 'telegram' ? tgEnabled : selectedChannel === 'tg_channel' ? tgChannelEnabled : waEnabled) ? 'left-6' : 'left-1'}`} />
                     </button>
                   </div>
                 </div>
@@ -1755,7 +1777,13 @@ export default function NotificationsPage() {
                   {/* A. Status Summary */}
                   <div className="p-5">
                     <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">A. Status Summary</p>
-                    {selectedChannel === 'telegram'
+                    {selectedChannel === 'tg_channel'
+                      ? [
+                          { label: 'Bot Token', value: status?.botTokenSet ? 'Set' : 'Missing', state: hs(!!status?.botTokenSet) },
+                          { label: 'Channel ID', value: status?.channelId || 'Missing', state: hs(!!status?.channelIdSet) },
+                          { label: 'Mirroring', value: tgChannelEnabled ? 'On' : 'Off', state: hs(tgChannelEnabled) },
+                        ].map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
+                      : selectedChannel === 'telegram'
                       ? tgHealthItems.map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
                       : waHealthItems(
                           selectedChannel === 'wa_group' ? 'Group ID' : 'Channel ID',
@@ -1850,6 +1878,27 @@ export default function NotificationsPage() {
                       </>
                     )}
 
+                    {selectedChannel === 'tg_channel' && (
+                      <>
+                        <TextConfigRow
+                          label="Channel ID"
+                          fieldValue={status?.channelId || tgChannelId}
+                          placeholder="@mychannel or -1001234567890"
+                          mono
+                          onSave={async (val) => { const msg = await saveTgField('channelId', val); setSaveMsg(msg); setTgChannelId(val); }}
+                          saving={saving}
+                          saveMsg={saveMsg}
+                        />
+                        <p className="text-xs text-vs-text-3 mt-1">
+                          Public channels use <span className="font-mono">@name</span>; private ones use the
+                          <span className="font-mono"> -100…</span> numeric ID. The bot must be an
+                          <strong> administrator</strong> of the channel. This channel is switched
+                          independently of the group, so you can move notifications across without
+                          sending to both.
+                        </p>
+                      </>
+                    )}
+
                     {selectedChannel === 'wa_group' && (
                       <>
                         <div>
@@ -1936,13 +1985,13 @@ export default function NotificationsPage() {
                     <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">C. Actions</p>
                     <div className="space-y-2 mb-5">
                       <button
-                        onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
-                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup' || tgStatus === 'Disabled') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup' || waGroupStatus === 'Disabled') : (waChannelStatus === 'Needs Setup' || waChannelStatus === 'Disabled')}
+                        onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'tg_channel' ? handleTestTgChannel : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
+                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup' || tgStatus === 'Disabled') : selectedChannel === 'tg_channel' ? (testingTgChannel || tgChannelStatus === 'Needs Setup') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup' || waGroupStatus === 'Disabled') : (waChannelStatus === 'Needs Setup' || waChannelStatus === 'Disabled')}
                         className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
                       >
-                        {(selectedChannel === 'telegram' ? testing : waTesting) ? 'Sending…' : 'Send Test Message'}
+                        {(selectedChannel === 'telegram' ? testing : selectedChannel === 'tg_channel' ? testingTgChannel : waTesting) ? 'Sending…' : 'Send Test Message'}
                       </button>
-                      {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult) && (
+                      {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'tg_channel' ? tgChannelTestResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult) && (
                         <p className={`text-xs text-center ${(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
                           {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.msg}
                         </p>

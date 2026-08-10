@@ -262,6 +262,30 @@ router.post('/test', auth, requirePermission('system', 'notifications'), async (
   res.json(result);
 });
 
+// Group and channel are independent destinations: each sends only when it is
+// configured AND its own enable flag is on. Used by every Telegram send path
+// so switching the group off never silently drops a notification that the
+// channel should still receive.
+function telegramSends(text, trigger) {
+  const sends = [];
+  if (isConfigured() && isFlagOn('telegram_enabled')) {
+    sends.push(sendMessage(text, trigger));
+  }
+  if (isChannelConfigured() && isFlagOn('telegram_channel_enabled')) {
+    sends.push(sendToChannel(text, trigger));
+  }
+  return sends;
+}
+
+function isFlagOn(key) {
+  try {
+    const row = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+    return row ? row.value !== '0' : true;   // absent means on
+  } catch {
+    return true;
+  }
+}
+
 // Telegram's errors are terse; add the fix for the ones that actually come up.
 function explainTelegramError(reason) {
   const r = String(reason || '');
@@ -465,8 +489,7 @@ router.post('/templates/:trigger/test', auth, requirePermission('system', 'notif
     const testMsg  = '[TEST] ' + renderTemplate(template, sampleVars);
 
     const triggerKey = req.params.trigger + '_test';
-    const sends = [];
-    if (isConfigured()   && tgEnabled)      sends.push(sendMessage(testMsg, triggerKey));
+    const sends = telegramSends(testMsg, triggerKey);
     if (isWAConfigured() && waEnabledFlag)  sends.push(sendWhatsApp(testMsg, triggerKey));
 
     if (sends.length === 0) {
@@ -538,8 +561,10 @@ router.post('/rankings/send', auth, requirePermission('system', 'notifications')
   const sendToTelegram = !channels || channels.includes('telegram');
   const sendToWhatsApp = !channels || channels.includes('whatsapp');
 
-  if (sendToTelegram && !isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
+  // Either destination is enough — the group may be switched off during a
+  // migration to the channel.
+  if (sendToTelegram && !isConfigured() && !isChannelConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID (or a Channel ID) first.' });
   }
 
   const trigger  = `rankings_${period}`;
@@ -560,8 +585,7 @@ router.post('/rankings/send', auth, requirePermission('system', 'notifications')
     const vars    = await buildRankingsVars(db, period, getRankingsTopN(), options);
     const message = renderTemplate(template, vars);
 
-    const sends = [];
-    if (sendToTelegram && isConfigured())   sends.push(sendMessage(message, trigger));
+    const sends = sendToTelegram ? telegramSends(message, trigger) : [];
     if (sendToWhatsApp && isWAConfigured()) sends.push(sendWhatsApp(message, trigger));
 
     if (!sends.length) return res.status(400).json({ ok: false, error: 'No configured channels selected' });
@@ -645,9 +669,12 @@ router.post('/resend-for-bet', auth, requirePermission('system', 'notifications'
 router.post('/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
-  if (!isConfigured()) return res.status(400).json({ ok: false, error: 'Telegram not configured' });
-  const result = await sendMessage(text.trim());
-  res.json(result);
+  const sends = telegramSends(text.trim(), 'manual');
+  if (!sends.length) {
+    return res.status(400).json({ ok: false, error: 'No Telegram destination is configured and enabled' });
+  }
+  const [primary] = await Promise.allSettled(sends);
+  res.json(primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message });
 });
 
 module.exports = router;
