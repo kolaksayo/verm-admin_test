@@ -266,12 +266,14 @@ router.post('/test', auth, requirePermission('system', 'notifications'), async (
 // configured AND its own enable flag is on. Used by every Telegram send path
 // so switching the group off never silently drops a notification that the
 // channel should still receive.
-function telegramSends(text, trigger) {
+// `destination` narrows to one side for the per-destination compose boxes in
+// the Channels tab; 'both' (the default) is what notifications use.
+function telegramSends(text, trigger, destination = 'both') {
   const sends = [];
-  if (isConfigured() && isFlagOn('telegram_enabled')) {
+  if (destination !== 'channel' && isConfigured() && isFlagOn('telegram_enabled')) {
     sends.push(sendMessage(text, trigger));
   }
-  if (isChannelConfigured() && isFlagOn('telegram_channel_enabled')) {
+  if (destination !== 'group' && isChannelConfigured() && isFlagOn('telegram_channel_enabled')) {
     sends.push(sendToChannel(text, trigger));
   }
   return sends;
@@ -667,11 +669,15 @@ router.post('/resend-for-bet', auth, requirePermission('system', 'notifications'
 
 // POST /api/telegram/send — manual message from admin
 router.post('/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
-  const { text } = req.body;
+  const { text, destination = 'both' } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
-  const sends = telegramSends(text.trim(), 'manual');
+  if (!['group', 'channel', 'both'].includes(destination)) {
+    return res.status(400).json({ ok: false, error: `Unknown destination "${destination}"` });
+  }
+  const sends = telegramSends(text.trim(), 'manual', destination);
   if (!sends.length) {
-    return res.status(400).json({ ok: false, error: 'No Telegram destination is configured and enabled' });
+    const which = destination === 'both' ? 'No Telegram destination is' : `The Telegram ${destination} is not`;
+    return res.status(400).json({ ok: false, error: `${which} configured and enabled` });
   }
   const [primary] = await Promise.allSettled(sends);
   res.json(primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message });

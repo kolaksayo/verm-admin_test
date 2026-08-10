@@ -906,6 +906,9 @@ export default function NotificationsPage() {
   const [status, setStatus]             = useState(null);
   const [tgEnabled, setTgEnabled]       = useState(true);
   const [tgChannelEnabled, setTgChannelEnabled] = useState(true);
+  const [tgChannelMessage, setTgChannelMessage] = useState('');
+  const [tgChannelSending, setTgChannelSending] = useState(false);
+  const [tgChannelSendResult, setTgChannelSendResult] = useState(null);
   const [togglingTgChannel, setTogglingTgChannel] = useState(false);
   const [togglingTg, setTogglingTg]     = useState(false);
   const [testing, setTesting]           = useState(false);
@@ -1233,6 +1236,21 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleSendTgChannel = async (e) => {
+    e.preventDefault();
+    if (!tgChannelMessage.trim()) return;
+    setTgChannelSending(true); setTgChannelSendResult(null);
+    try {
+      const r = await api.post('/telegram/send', { text: tgChannelMessage, destination: 'channel' });
+      setTgChannelSendResult({ ok: !!r.data.ok, msg: r.data.ok ? 'Sent to channel!' : (r.data.error || r.data.description || 'Failed') });
+      if (r.data.ok) setTgChannelMessage('');
+    } catch (err) {
+      setTgChannelSendResult({ ok: false, msg: err.response?.data?.error || 'Request failed' });
+    } finally {
+      setTgChannelSending(false);
+    }
+  };
+
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
@@ -1262,7 +1280,7 @@ export default function NotificationsPage() {
     if (!message.trim()) return;
     setSending(true); setSendResult(null);
     try {
-      const r = await api.post('/telegram/send', { text: message });
+      const r = await api.post('/telegram/send', { text: message, destination: 'group' });
       setSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.description || 'Failed') });
       if (r.data.ok) setMessage('');
     } catch (e) {
@@ -2006,10 +2024,10 @@ export default function NotificationsPage() {
                       {sel.status !== 'Active' && (
                         <p className="text-xs text-vs-warning mb-2">{sel.status === 'Disabled' ? 'Notifications disabled.' : 'Channel not configured.'}</p>
                       )}
-                      <form onSubmit={selectedChannel === 'telegram' ? handleSend : selectedChannel === 'wa_group' ? handleWaSend : handleWaSendChannel}>
+                      <form onSubmit={selectedChannel === 'telegram' ? handleSend : selectedChannel === 'tg_channel' ? handleSendTgChannel : selectedChannel === 'wa_group' ? handleWaSend : handleWaSendChannel}>
                         <textarea
-                          value={selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage}
-                          onChange={(e) => selectedChannel === 'telegram' ? setMessage(e.target.value) : selectedChannel === 'wa_group' ? setWaMessage(e.target.value) : setWaChannelMessage(e.target.value)}
+                          value={selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage}
+                          onChange={(e) => selectedChannel === 'telegram' ? setMessage(e.target.value) : selectedChannel === 'tg_channel' ? setTgChannelMessage(e.target.value) : selectedChannel === 'wa_group' ? setWaMessage(e.target.value) : setWaChannelMessage(e.target.value)}
                           disabled={sel.status !== 'Active'}
                           rows={4}
                           maxLength={1024}
@@ -2018,27 +2036,30 @@ export default function NotificationsPage() {
                         />
                         <div className="flex justify-end mt-1">
                           <span className="text-xs text-vs-text-3">
-                            {(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).length} / 1024
+                            {(selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).length} / 1024
                           </span>
                         </div>
                         <div className="mt-2">
                           <p className="text-xs text-vs-text-3 mb-1.5">Destination</p>
                           <div className="flex items-center gap-2 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg">
-                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' || selectedChannel === 'tg_channel' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
                               <ChanIcon channelKey={selectedChannel} size={12} className="text-white" />
                             </div>
                             <span className="text-sm text-vs-text-2 flex-1">{sel.name}</span>
                             <button type="submit"
-                              disabled={sel.status !== 'Active' || (selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) || !(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).trim()}
+                              disabled={sel.status !== 'Active' || (selectedChannel === 'telegram' ? sending : selectedChannel === 'tg_channel' ? tgChannelSending : selectedChannel === 'wa_group' ? waSending : waChannelSending) || !(selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).trim()}
                               className="px-3 py-1 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-md transition-colors disabled:opacity-50">
-                              {(selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) ? '…' : 'Send'}
+                              {(selectedChannel === 'telegram' ? sending : selectedChannel === 'tg_channel' ? tgChannelSending : selectedChannel === 'wa_group' ? waSending : waChannelSending) ? '…' : 'Send'}
                             </button>
                           </div>
-                          {(selectedChannel === 'telegram' ? sendResult : selectedChannel === 'wa_group' ? waSendResult : null) && (
-                            <p className={`text-xs mt-1 ${(selectedChannel === 'telegram' ? sendResult : waSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                              {(selectedChannel === 'telegram' ? sendResult : waSendResult)?.msg}
-                            </p>
-                          )}
+                          {(() => {
+                            const r = selectedChannel === 'telegram' ? sendResult
+                              : selectedChannel === 'tg_channel' ? tgChannelSendResult
+                              : selectedChannel === 'wa_group' ? waSendResult : null;
+                            return r ? (
+                              <p className={`text-xs mt-1 ${r.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{r.msg}</p>
+                            ) : null;
+                          })()}
                         </div>
                       </form>
                     </div>
