@@ -2,11 +2,19 @@ const express = require('express');
 const multer = require('multer');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
-const { sendMessage: sendTelegram, sendPhoto: sendTelegramPhoto } = require('../telegram');
+const {
+  sendMessage: sendTelegram, sendPhoto: sendTelegramPhoto,
+  sendToChannel: sendTelegramChannel, sendPhotoToChannel: sendTelegramChannelPhoto,
+} = require('../telegram');
 const {
   sendMessage: sendToGroup, sendToChannel, sendMediaMessage, sendMediaToChannel,
   sendDM, sendMediaDM,
 } = require('../whatsapp');
+const {
+  isConfigured: isTelegramConfigured, isChannelConfigured: isTelegramChannelConfigured,
+} = require('../telegram');
+const { getConfig: getWaConfig, isConfigured: isWaConfigured } = require('../whatsapp');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -53,6 +61,31 @@ function normalizeChannels(raw) {
   return [];
 }
 
+// GET /api/campaigns/channels — which broadcast targets are usable right now.
+// Lives here rather than reusing /telegram/status so it is reachable with the
+// campaigns permission alone.
+router.get('/channels', auth, requirePermission('system', 'campaigns'), (req, res) => {
+  const flag = (key) => {
+    try {
+      const row = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+      return row ? row.value !== '0' : true;   // absent means on
+    } catch {
+      return true;
+    }
+  };
+
+  let wa = { groupId: '', channelId: '' };
+  try { wa = getWaConfig(); } catch { /* leave blank */ }
+  const waReady = (() => { try { return isWaConfigured(); } catch { return false; } })();
+
+  res.json({
+    telegram:         { configured: isTelegramConfigured(),        enabled: flag('telegram_enabled') },
+    telegram_channel: { configured: isTelegramChannelConfigured(), enabled: flag('telegram_channel_enabled') },
+    whatsapp_group:   { configured: waReady && !!wa.groupId,       enabled: flag('whatsapp_enabled') },
+    whatsapp_channel: { configured: waReady && !!wa.channelId,     enabled: flag('whatsapp_channel_enabled') },
+  });
+});
+
 // ── Send ───────────────────────────────────────────────────────────────────────
 
 router.post('/send', auth, requireEditMode, requirePermission('system', 'campaigns'), uploadImage, async (req, res) => {
@@ -65,7 +98,8 @@ router.post('/send', auth, requireEditMode, requirePermission('system', 'campaig
     if (!ALLOWED_IMAGE_TYPES.includes(req.file.mimetype)) {
       return res.status(400).json({ error: 'Only JPEG, PNG, or WebP images are allowed' });
     }
-    if (channels.includes('telegram') && content.length > TELEGRAM_CAPTION_LIMIT) {
+    const tgTargets = ['telegram', 'telegram_channel'].filter((c) => channels.includes(c));
+    if (tgTargets.length && content.length > TELEGRAM_CAPTION_LIMIT) {
       return res.status(400).json({
         error: `Telegram photo captions are limited to ${TELEGRAM_CAPTION_LIMIT} characters (message is ${content.length}). Shorten the message or unselect Telegram.`,
       });
@@ -85,6 +119,11 @@ router.post('/send', auth, requireEditMode, requirePermission('system', 'campaig
     results.telegram = media
       ? await sendTelegramPhoto(media.buffer, media.mimetype, media.filename, content, 'campaign').catch((e) => ({ ok: false, reason: e.message }))
       : await sendTelegram(content, 'campaign').catch((e) => ({ ok: false, reason: e.message }));
+  }
+  if (channels.includes('telegram_channel')) {
+    results.telegram_channel = media
+      ? await sendTelegramChannelPhoto(media.buffer, media.mimetype, media.filename, content, 'campaign').catch((e) => ({ ok: false, reason: e.message }))
+      : await sendTelegramChannel(content, 'campaign').catch((e) => ({ ok: false, reason: e.message }));
   }
   if (channels.includes('whatsapp_group')) {
     results.whatsapp_group = media

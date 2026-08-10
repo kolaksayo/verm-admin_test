@@ -107,8 +107,10 @@ function useImageAttachment() {
 function BroadcastTab() {
   const [content, setContent]         = useState('');
   const [chTelegram, setChTelegram]   = useState(true);
+  const [chTgChannel, setChTgChannel] = useState(false);
   const [chWaGroup, setChWaGroup]     = useState(true);
   const [chWaChannel, setChWaChannel] = useState(true);
+  const [avail, setAvail]             = useState(null);
   const [sending, setSending]         = useState(false);
   const [results, setResults]         = useState(null);
   const img = useImageAttachment();
@@ -117,6 +119,7 @@ function BroadcastTab() {
     if (!content.trim()) return;
     const channels = [];
     if (chTelegram)  channels.push('telegram');
+    if (chTgChannel) channels.push('telegram_channel');
     if (chWaGroup)   channels.push('whatsapp_group');
     if (chWaChannel) channels.push('whatsapp_channel');
     if (!channels.length) return;
@@ -141,11 +144,32 @@ function BroadcastTab() {
     }
   };
 
-  const captionTooLongForTelegram = !!img.image && chTelegram && content.length > TELEGRAM_CAPTION_LIMIT;
-  const canSend = !sending && content.trim().length > 0 && (chTelegram || chWaGroup || chWaChannel) && !captionTooLongForTelegram;
+  // The channel picker reflects what is actually set up, so an unconfigured
+  // destination cannot be selected into a send that would silently fail.
+  useEffect(() => {
+    api.get('/campaigns/channels')
+      .then((r) => {
+        setAvail(r.data);
+        const usable = (k) => r.data[k]?.configured && r.data[k]?.enabled;
+        // Turn off anything selected by default that isn't usable.
+        if (!usable('telegram'))         setChTelegram(false);
+        if (!usable('whatsapp_group'))   setChWaGroup(false);
+        if (!usable('whatsapp_channel')) setChWaChannel(false);
+        // The Telegram channel is opt-in, so only offer it pre-ticked when ready.
+        if (usable('telegram_channel'))  setChTgChannel(true);
+      })
+      .catch(() => setAvail(null));   // fall back to leaving every box selectable
+  }, []);
+
+  const usable = (k) => !avail || (avail[k]?.configured && avail[k]?.enabled);
+  const anyTelegram = chTelegram || chTgChannel;
+  const captionTooLongForTelegram = !!img.image && anyTelegram && content.length > TELEGRAM_CAPTION_LIMIT;
+  const canSend = !sending && content.trim().length > 0
+    && (chTelegram || chTgChannel || chWaGroup || chWaChannel) && !captionTooLongForTelegram;
 
   const CHANNEL_LABELS = {
     telegram:        'Telegram',
+    telegram_channel:'Telegram Channel',
     whatsapp_group:  'WhatsApp Group',
     whatsapp_channel:'WhatsApp Channel',
   };
@@ -165,21 +189,29 @@ function BroadcastTab() {
 
         <div className="flex flex-wrap gap-3 mb-5">
           {[
-            { label: 'Telegram',         checked: chTelegram,  set: setChTelegram  },
-            { label: 'WhatsApp Group',   checked: chWaGroup,   set: setChWaGroup   },
-            { label: 'WhatsApp Channel', checked: chWaChannel, set: setChWaChannel },
-          ].map(({ label, checked, set }) => (
-            <label key={label}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border cursor-pointer transition-colors select-none ${
-                checked
-                  ? 'border-vs-purple/50 bg-vs-purple/10 text-vs-text'
-                  : 'border-vs-border text-vs-text-3 hover:bg-vs-elevated'
-              }`}>
-              <input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)}
-                className="w-4 h-4 accent-purple-500" />
-              <span className="text-sm font-medium">{label}</span>
-            </label>
-          ))}
+            { key: 'telegram',         label: 'Telegram',          checked: chTelegram,  set: setChTelegram  },
+            { key: 'telegram_channel', label: 'Telegram Channel',  checked: chTgChannel, set: setChTgChannel },
+            { key: 'whatsapp_group',   label: 'WhatsApp Group',    checked: chWaGroup,   set: setChWaGroup   },
+            { key: 'whatsapp_channel', label: 'WhatsApp Channel',  checked: chWaChannel, set: setChWaChannel },
+          ].map(({ key, label, checked, set }) => {
+            const ok = usable(key);
+            return (
+              <label key={key}
+                title={ok ? undefined : 'Not configured or disabled — set it up in Notification Center → Settings'}
+                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border transition-colors select-none ${
+                  !ok
+                    ? 'border-vs-border text-vs-text-3 opacity-40 cursor-not-allowed'
+                    : checked
+                      ? 'border-vs-purple/50 bg-vs-purple/10 text-vs-text cursor-pointer'
+                      : 'border-vs-border text-vs-text-3 hover:bg-vs-elevated cursor-pointer'
+                }`}>
+                <input type="checkbox" checked={checked && ok} disabled={!ok}
+                  onChange={(e) => set(e.target.checked)}
+                  className="w-4 h-4 accent-purple-500" />
+                <span className="text-sm font-medium">{label}</span>
+              </label>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-4 flex-wrap">
