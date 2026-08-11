@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { computePrizes, minPlayersToStart } from '../config/prizeTiers';
+import { computePrizes, minPlayersToStart, isSingleMode, isValidCapacity } from '../config/prizeTiers';
 import { formatMoney } from '../utils/currency';
 
 // Prize Projector is USD-only per product decision — the contest's own currency
@@ -123,6 +123,12 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose, 
     : contest.amount * contest.participantCount;
   const modeLabel = isMax ? 'Maximum payout' : 'Current payout';
   const prizes = computePrizes(pot, contest.capacity);
+  // No split defined for this capacity: show why rather than an empty table,
+  // since a wrong number here goes out in the broadcast image.
+  const prizeNote = prizes.length ? null
+    : isSingleMode(contest.capacity) ? '1v1 wager — the winner takes the pot; a draw refunds both stakes.'
+    : !isValidCapacity(contest.capacity) ? `Unsupported capacity (${contest.capacity}) — capacity must be 2, 3, or a multiple of 5.`
+    : `No prize split is defined for a ${contest.capacity}-player wager.`;
   const homeTeam = contest.match?.homeTeam;
   const awayTeam = contest.match?.awayTeam;
   const hasTeams = homeTeam && awayTeam;
@@ -227,6 +233,9 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose, 
                 <span style={{ fontSize: 14, fontWeight: 700, color: C.lime, letterSpacing: '-0.01em' }}>{formatMoney(contest.amount, USD)}</span>
               </div>
               <div style={{ paddingTop: 8 }}>
+                {prizeNote && (
+                  <p style={{ fontSize: 13, color: C.text3, letterSpacing: '-0.01em' }}>{prizeNote}</p>
+                )}
                 {prizes.map((row) => (
                   <div key={row.position} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 26 }}>
                     <span style={{ fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>{ordinal(row.position)} Place</span>
@@ -245,7 +254,9 @@ export default function WagerDetailsModal({ contest, mode = 'maximum', onClose, 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
                   `Minimum ${minPlayersToStart(contest.capacity)} players required to start`,
-                  `Top ${prizes.length} player${prizes.length !== 1 ? 's' : ''} win prizes`,
+                  prizes.length
+                    ? `Top ${prizes.length} player${prizes.length !== 1 ? 's' : ''} win prize${prizes.length !== 1 ? 's' : ''}`
+                    : 'Prize split unavailable for this capacity',
                   'No refunds after wager confirmation',
                 ].map((rule) => (
                   <div key={rule} style={{ display: 'flex', gap: 8, fontSize: 14, color: C.text3, letterSpacing: '-0.01em' }}>
