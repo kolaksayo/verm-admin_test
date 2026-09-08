@@ -188,8 +188,14 @@ always current rather than stored and stale:
 | `high_roller` | Lifetime stake at or above the threshold (default 1000) |
 | `contest_creator` | Has created at least one wager |
 
-Thresholds live in `n8n_segment_config` in `admin_settings`. The CRM Sync page
-can push a chosen subset of segments rather than everyone.
+Thresholds live in `n8n_segment_config` in `admin_settings`.
+
+Selecting segments on the CRM Sync page filters **which contacts** are pushed —
+anyone matching at least one of them. Each contact still carries every segment
+it matches, so the CRM holds the full picture. Tick **Send only the selected
+segments** to record just the chosen ones instead; be aware the CRM field is
+overwritten, so a contact already in Twenty loses any segment outside the
+selection.
 
 To add a segment, add an entry to `SEGMENT_DEFS` in `server/segments.js` — the
 API, the settings UI and the push all read from that one list.

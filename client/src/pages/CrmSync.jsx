@@ -39,6 +39,7 @@ export default function CrmSync() {
   const [counts, setCounts]       = useState(null);
   const [totalContacts, setTotalContacts] = useState(null);
   const [picked, setPicked]       = useState([]);      // empty = all contacts
+  const [onlyPicked, setOnlyPicked] = useState(false); // trim what the CRM stores
   const [loadingSegs, setLoadingSegs] = useState(false);
 
   const [job, setJob]             = useState(null);
@@ -132,7 +133,9 @@ export default function CrmSync() {
   const handleSync = async (mode) => {
     setStarting(true); setError('');
     try {
-      const r = await api.post('/n8n/sync', { mode, segments: picked });
+      const r = await api.post('/n8n/sync', {
+        mode, segments: picked, onlySelectedSegments: onlyPicked,
+      });
       if (!r.data.started) setError(r.data.reason || 'Nothing to push.');
       else { await loadStatus(); startPolling(); }
     } catch (err) {
@@ -273,10 +276,22 @@ export default function CrmSync() {
           })}
         </div>
         {picked.length > 0 && (
-          <p className="text-xs text-vs-text-3 mt-3">
-            Pushing contacts in {picked.length} selected segment{picked.length !== 1 ? 's' : ''}.
-            {' '}<button type="button" onClick={() => setPicked([])} className="underline hover:text-vs-text">Clear</button>
-          </p>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-vs-text-3">
+              Pushing contacts in {picked.length} selected segment{picked.length !== 1 ? 's' : ''}.
+              {' '}<button type="button" onClick={() => setPicked([])} className="underline hover:text-vs-text">Clear</button>
+            </p>
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)}
+                className="w-4 h-4 mt-0.5 accent-purple-500" />
+              <span className="text-xs text-vs-text-3">
+                <span className="text-vs-text">Send only the selected segments</span> — by default a
+                contact carries every segment it matches, so the CRM has the full picture. Tick this
+                to record just the ones above. The CRM field is overwritten, so contacts already
+                there lose any segment outside your selection.
+              </span>
+            </label>
+          </div>
         )}
       </div>
 

@@ -213,11 +213,15 @@ router.post('/sync/cancel', auth, requirePermission('system', 'crm_sync'), (req,
 
 /**
  * POST /api/n8n/sync
- * body: { mode?: 'changed'|'all'|'failed', segments?: string[] }
+ * body: { mode?: 'changed'|'all'|'failed', segments?: string[],
+ *         onlySelectedSegments?: boolean }
  *   changed — contacts never pushed, or whose details/segments changed (default)
  *   all     — every contact, regardless of what was pushed before
  *   failed  — retry only contacts whose last push failed
  * `segments` restricts the push to contacts in at least one of those segments.
+ * `onlySelectedSegments` additionally trims each contact's segment list to the
+ * selected ones, so the CRM records only those rather than everything the
+ * contact matches.
  */
 router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, res) => {
   if (job && job.running) return res.status(409).json({ ok: false, error: 'A sync is already running' });
@@ -231,6 +235,7 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
   }
 
   const wanted = Array.isArray(req.body?.segments) ? req.body.segments.filter(Boolean) : [];
+  const onlySelected = !!req.body?.onlySelectedSegments;
   const known = new Set(allSegmentSlugs());
   const unknown = wanted.filter((s) => !known.has(s));
   if (unknown.length) {
@@ -263,7 +268,14 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
     const segments = computeSegments(u, stats.get(String(u._id)), cfg.segmentConfig);
     if (wanted.length && !segments.some((s) => wanted.includes(s))) continue;
 
-    const payload = toContactPayload(u, segments, cfg);
+    // By default the CRM gets the full picture. onlySelectedSegments narrows it
+    // to the chosen ones — note the CRM field is overwritten, so a contact
+    // already there loses any segment not in the selection.
+    const sendSegments = (wanted.length && onlySelected)
+      ? segments.filter((s) => wanted.includes(s))
+      : segments;
+
+    const payload = toContactPayload(u, sendSegments, cfg);
     if (!payload.email && !payload.phone) continue;   // nothing for the CRM to key on
 
     const hash = contactHash(payload);
@@ -276,7 +288,7 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
   }
 
   job = {
-    running: true, mode, segments: wanted, total: queue.length,
+    running: true, mode, segments: wanted, onlySelectedSegments: onlySelected, total: queue.length,
     processed: 0, pushed: 0, failed: 0, batches: 0, batchesFailed: 0, rateLimitHits: 0,
     etaMs: Math.ceil(queue.length / cfg.batchSize) * batchIntervalMs(cfg.batchSize, cfg.rateLimitPerMin),
     startedAt: new Date().toISOString(), finishedAt: null, error: null, cancel: false,
