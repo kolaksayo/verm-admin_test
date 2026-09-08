@@ -38,6 +38,12 @@ exactly, or Twenty answers
 Not ready to deal with segments yet? Clear `segmentField` in the Config node
 and contacts sync without them.
 
+> **If you sync without segments first**, note that turning them on later does
+> not change what the admin sends — only what the workflow writes — so the
+> change-detection hash is identical and "Push new & changed" will skip every
+> contact. Use **Push everyone** once, after setting `segmentField`, to
+> backfill segments onto contacts that are already in Twenty.
+
 ## 2. Import the workflow
 
 In n8n: **Workflows → Import from File →** `vermo-contacts-to-twenty.json`.

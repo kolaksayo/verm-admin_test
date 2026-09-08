@@ -13,6 +13,12 @@ function explainError(err) {
   if (err === 'timeout') return 'n8n did not respond in time — check the workflow is active.';
   if (/^HTTP 404/.test(err)) return `${err} — the webhook path is wrong, or the workflow is not active (test URLs only accept one call after you press "Test step").`;
   if (/^HTTP 401|^HTTP 403/.test(err)) return `${err} — the workflow rejected the signature. Check the shared secret matches.`;
+  if (/doesn't have any .*field/i.test(err)) {
+    return `${err} Create that field on Person in Twenty (Settings → Data model → Person → Add field), or clear segmentField in the workflow's Config node to sync contacts without segments.`;
+  }
+  if (/\b429\b|Limit reached/i.test(err)) {
+    return `${err} — Twenty's rate limit. Each contact costs two calls, so lower the batch size above.`;
+  }
   if (/^HTTP 5/.test(err)) return `${err} — the workflow errored. Open the n8n execution log for the failing node.`;
   return err;
 }
