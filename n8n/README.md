@@ -63,6 +63,10 @@ Select that credential on all three HTTP Request nodes (find / create / update).
 
 A successful test creates "Vermo Test Contact" in Twenty. Delete it afterwards.
 
+If the test reports success but no contact appears, re-import the workflow —
+older copies swallowed Twenty's error responses and reported delivery
+regardless. The current one reports the status code and message.
+
 ## What gets sent
 
 ```json
@@ -171,5 +175,8 @@ that are unchanged since the last successful push, so it is safe to run often.
 | `A 'json' property isn't an object` | An old copy of the workflow. Re-import this file — every Code node now runs in "Run Once for All Items" mode and returns an array |
 | "Node was not executed" on **Twenty: find person** | The batch had nothing to push, so the "Any contacts to sync?" IF sent it down the no-op branch. Check the Verify & expand output: if it shows one item with `__empty`, the request carried no contacts — usually from pressing "Execute workflow" without the admin actually sending one |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
-| Twenty returns 400 | Usually the segments field name or type is wrong — check `segmentField` / `segmentMode` against the field you created |
+| `Twenty rejected 1 contact(s) — HTTP 400: Field 'segments' does not exist on Person` | The Person field has not been created, or `segmentField` does not match its API name. Create it (step 1) or clear `segmentField` to stop sending segments |
+| `Twenty lookup failed (HTTP 401)` | The Header Auth credential is missing, not selected on a node, or the value lacks the `Bearer ` prefix |
+| `Twenty lookup failed (HTTP 404)` | `twentyUrl` in the Config node is wrong — it is still the `https://crm.example.com` placeholder unless you changed it |
+| Test says delivered but nothing in Twenty | An old workflow copy. Re-import: writes are now checked and failures reported |
 | Duplicate people | An existing person has a different email/phone than the dashboard holds, so the lookup misses |

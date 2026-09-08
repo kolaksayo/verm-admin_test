@@ -127,6 +127,34 @@ router.get('/segments', auth, requirePermission('system', 'crm_sync'), async (re
   }
 });
 
+// The workflow answers 200 even when Twenty rejected every contact, so a
+// delivered batch is not the same as a synced one. Read the body it returns.
+function readWorkflowResult(result) {
+  if (!result.ok) return { ok: false, error: result.error };
+  let parsed;
+  try {
+    parsed = JSON.parse(result.response || '{}');
+  } catch {
+    return { ok: true, error: null, detail: null };   // non-JSON body, nothing to check
+  }
+  const failed = Number(parsed.failed) || 0;
+  const upserted = Number(parsed.upserted) || 0;
+  const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+
+  if (parsed.ok === false || failed > 0) {
+    return {
+      ok: false,
+      error: `Twenty rejected ${failed || 'the'} contact(s)` + (errors.length ? ` — ${errors[0]}` : ''),
+      detail: parsed,
+    };
+  }
+  // Delivered, accepted, but nothing written — usually every contact was skipped.
+  if (upserted === 0 && parsed.note) {
+    return { ok: false, error: parsed.note, detail: parsed };
+  }
+  return { ok: true, error: null, detail: parsed };
+}
+
 // ── Test ────────────────────────────────────────────────────────────────────
 
 // POST /api/n8n/test — sends a single clearly-marked sample contact so the
@@ -146,9 +174,10 @@ router.post('/test', auth, requirePermission('system', 'crm_sync'), async (req, 
   };
 
   const result = await postBatch([sample], { index: 0, size: 1, total: 1, test: true }, cfg);
-  res.json(result.ok
-    ? { ok: true, response: result.response }
-    : { ok: false, error: result.error });
+  const verdict = readWorkflowResult(result);
+  res.json(verdict.ok
+    ? { ok: true, response: result.response, detail: verdict.detail }
+    : { ok: false, error: verdict.error, detail: verdict.detail });
 });
 
 // ── Sync ────────────────────────────────────────────────────────────────────
@@ -246,18 +275,22 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
           cfg,
         );
 
+        // A 200 from n8n only means the batch arrived; the body says whether
+        // Twenty actually accepted it.
+        const verdict = readWorkflowResult(result);
+
         for (const { payload, hash } of slice) {
           recordPush(payload.userId, {
             name: payload.name, email: payload.email, phone: payload.phone,
             segments: payload.segments, hash,
-            ok: result.ok, error: result.error,
+            ok: verdict.ok, error: verdict.ok ? null : verdict.error,
           });
         }
 
         job.batches += 1;
         job.processed += slice.length;
-        if (result.ok) job.pushed += slice.length;
-        else { job.failed += slice.length; job.batchesFailed += 1; }
+        if (verdict.ok) job.pushed += slice.length;
+        else { job.failed += slice.length; job.batchesFailed += 1; job.lastError = verdict.error; }
 
         await delay(BATCH_PAUSE_MS);
       }
