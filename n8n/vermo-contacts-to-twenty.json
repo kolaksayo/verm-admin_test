@@ -79,7 +79,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build the Twenty search filter for each contact.\n//\n// Runs over all items (not per-item) so contacts that cannot be matched are\n// dropped here rather than reaching the HTTP node with an empty filter.\n// Email is the key when present; phone is the fallback.\nconst out = [];\n\nfor (const item of $input.all()) {\n  const c = item.json;\n  if (c.__empty) continue;                 // empty batch marker\n\n  const email = (c.email || '').trim();\n  const phone = (c.phoneNumber || '').trim();\n\n  let filter = '';\n  if (email) filter = `emails.primaryEmail[eq]:${email}`;\n  else if (phone) filter = `phones.primaryPhoneNumber[eq]:${phone}`;\n\n  // Nothing for the CRM to key on \u2014 skip instead of creating an orphan record.\n  if (!filter) continue;\n\n  out.push({ json: { ...c, __filter: filter } });\n}\n\nreturn out;"
+        "jsCode": "// Build the Twenty search filter for each contact.\n//\n// Runs over all items so contacts that cannot be matched are dropped here\n// rather than reaching the HTTP node with an empty filter. Email is the key\n// when present; phone is the fallback.\nconst out = [];\nlet skipped = 0;\nlet total = 0;\n\nfor (const item of $input.all()) {\n  const c = item.json;\n  if (c.__empty) continue;                 // empty batch marker\n  total++;\n\n  const email = (c.email || '').trim();\n  const phone = (c.phoneNumber || '').trim();\n\n  let filter = '';\n  if (email) filter = `emails.primaryEmail[eq]:${email}`;\n  else if (phone) filter = `phones.primaryPhoneNumber[eq]:${phone}`;\n\n  // Nothing for the CRM to key on \u2014 skip instead of creating an orphan record.\n  if (!filter) { skipped++; continue; }\n\n  out.push({ json: { ...c, __filter: filter } });\n}\n\n// Never return an empty list: with no items every downstream node is skipped,\n// including Respond to Webhook, and the caller would hang until it times out.\n// This marker item is routed straight to the response by the IF node.\nif (!out.length) {\n  return [{ json: { __nothing: true, received: total, skipped } }];\n}\n\nreturn out;"
       },
       "id": "filter",
       "name": "Build search filter",
@@ -122,7 +122,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
+        880,
         300
       ],
       "notes": "Twenty has no REST upsert, so look up first and branch."
@@ -136,7 +136,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
+        1100,
         300
       ],
       "notes": "Responses are matched to contacts by index."
@@ -168,7 +168,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1100,
+        1320,
         300
       ]
     },
@@ -194,7 +194,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1340,
+        1560,
         200
       ]
     },
@@ -220,20 +220,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1340,
+        1560,
         400
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Collapse the per-contact results into one response for the admin.\nconst items = $input.all();\nconst results = items.map((i) => {\n  const j = i.json || {};\n  const person = j?.data?.createPerson || j?.data?.updatePerson || null;\n  return {\n    personId: person ? person.id : null,\n    ok: !!person,\n  };\n});\n\nconst created = results.filter((r) => r.ok).length;\nreturn [{\n  json: {\n    ok: true,\n    received: results.length,\n    upserted: created,\n    failed: results.length - created,\n  },\n}];"
+        "jsCode": "// Collapse the per-contact results into one response for the admin.\nconst items = $input.all();\n\n// The \"nothing to do\" path routes the marker item here directly.\nconst marker = items.find((i) => i.json && i.json.__nothing);\nif (marker) {\n  return [{\n    json: {\n      ok: true,\n      received: marker.json.received || 0,\n      upserted: 0,\n      failed: 0,\n      skipped: marker.json.skipped || 0,\n      note: 'No contact in this batch had an email or phone to match on.',\n    },\n  }];\n}\n\nconst results = items.map((i) => {\n  const j = i.json || {};\n  const person = (j.data && (j.data.createPerson || j.data.updatePerson)) || null;\n  return { personId: person ? person.id : null, ok: !!person };\n});\n\nconst upserted = results.filter((r) => r.ok).length;\nreturn [{\n  json: {\n    ok: true,\n    received: results.length,\n    upserted,\n    failed: results.length - upserted,\n  },\n}];"
       },
       "id": "summary",
       "name": "Summarise",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1580,
+        1800,
         300
       ]
     },
@@ -248,9 +248,42 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        1800,
+        2020,
         300
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has1",
+              "leftValue": "={{ $json.__filter }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hascontacts",
+      "name": "Any contacts to sync?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ],
+      "notes": "False branch answers the webhook when a batch has nothing to push."
     }
   ],
   "connections": {
@@ -291,7 +324,7 @@
       "main": [
         [
           {
-            "node": "Twenty: find person",
+            "node": "Any contacts to sync?",
             "type": "main",
             "index": 0
           }
@@ -365,6 +398,24 @@
         [
           {
             "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any contacts to sync?": {
+      "main": [
+        [
+          {
+            "node": "Twenty: find person",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Summarise",
             "type": "main",
             "index": 0
           }

@@ -150,7 +150,9 @@ Local numbers (`08135835517`) are converted to E.164 before sending, so the same
 person cannot be created twice under two number formats.
 
 A contact with neither an email nor a phone is never sent — there would be
-nothing for the CRM to key on.
+nothing for the CRM to key on. When a whole batch has nothing usable, the
+"Any contacts to sync?" IF routes straight to the response so the caller still
+gets an answer instead of waiting for a timeout.
 
 ## Re-running
 
@@ -167,6 +169,7 @@ that are unchanged since the last successful push, so it is safe to run often.
 | `Module 'crypto' is disallowed` | An old copy of the workflow. Re-import this file — the current one uses Web Crypto and needs no env var |
 | "Web Crypto is unavailable" | n8n is on Node < 18. Upgrade, or clear `webhookSecret` to run unsigned |
 | `A 'json' property isn't an object` | An old copy of the workflow. Re-import this file — every Code node now runs in "Run Once for All Items" mode and returns an array |
+| "Node was not executed" on **Twenty: find person** | The batch had nothing to push, so the "Any contacts to sync?" IF sent it down the no-op branch. Check the Verify & expand output: if it shows one item with `__empty`, the request carried no contacts — usually from pressing "Execute workflow" without the admin actually sending one |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
 | Twenty returns 400 | Usually the segments field name or type is wrong — check `segmentField` / `segmentMode` against the field you created |
 | Duplicate people | An existing person has a different email/phone than the dashboard holds, so the lookup misses |
