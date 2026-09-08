@@ -16,6 +16,7 @@ import Transactions from './pages/Transactions';
 import FootballData from './pages/FootballData';
 import NotificationsPage from './pages/NotificationsPage';
 import CampaignsPage from './pages/CampaignsPage';
+import CrmSync from './pages/CrmSync';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 import AuditPage from './pages/AuditPage';
@@ -86,6 +87,7 @@ function AppRoutes() {
         <Route path="dollar-naira-rate" element={<PermissionRoute category="system" subcategory="dollar_naira_rate"><DollarNairaRate /></PermissionRoute>} />
         <Route path="notifications" element={<PermissionRoute category="system" subcategory="notifications"><NotificationsPage /></PermissionRoute>} />
         <Route path="campaigns" element={<PermissionRoute category="system" subcategory="campaigns"><CampaignsPage /></PermissionRoute>} />
+        <Route path="crm-sync" element={<PermissionRoute category="system" subcategory="crm_sync"><CrmSync /></PermissionRoute>} />
         <Route path="telegram" element={<Navigate to="/notifications" replace />} />
         <Route path="social-data" element={<PermissionRoute category="social" subcategory="social_data"><SocialData /></PermissionRoute>} />
         <Route path="system-logs" element={<PermissionRoute category="system" subcategory="logs"><SystemLogs /></PermissionRoute>} />

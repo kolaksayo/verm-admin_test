@@ -131,6 +131,20 @@ function getDb() {
         updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
+      -- One row per contact pushed to n8n. Makes a large sync resumable and
+      -- lets a re-sync skip contacts whose payload has not changed.
+      CREATE TABLE IF NOT EXISTS n8n_contacts (
+        user_id   TEXT PRIMARY KEY,
+        name      TEXT,
+        email     TEXT,
+        phone     TEXT,
+        segments  TEXT,
+        hash      TEXT,
+        ok        INTEGER NOT NULL DEFAULT 0,
+        error     TEXT,
+        pushed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS admin_credits (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_user     TEXT    NOT NULL,

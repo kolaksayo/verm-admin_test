@@ -1,0 +1,378 @@
+{
+  "name": "Vermo Admin -> Twenty CRM (contacts + segments)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vermo-contacts",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        300
+      ],
+      "webhookId": "vermo-contacts",
+      "notes": "Raw Body is ON so the HMAC can be checked against the exact bytes sent."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "twentyUrl",
+              "value": "https://crm.example.com",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "webhookSecret",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "segmentField",
+              "value": "segments",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "segmentMode",
+              "value": "text",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        300
+      ],
+      "notes": "Set your Twenty base URL and the shared secret from the admin. segmentMode: text | multiselect"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify the HMAC signature from the admin, then expand the batch into one\n// item per contact.\n//\n// The signature covers the exact bytes the admin sent, so the raw body is used\n// here \u2014 re-serializing the parsed JSON would produce different bytes and never\n// match. The Webhook node must have \"Raw Body\" enabled for this to work.\nconst crypto = require('crypto');\n\nconst cfg = $('Config').first().json;\nconst secret = cfg.webhookSecret || '';\n\nconst item = $input.first();\nconst raw = item.binary && item.binary.data\n  ? Buffer.from(item.binary.data.data, 'base64').toString('utf8')\n  : JSON.stringify(item.json.body ?? item.json);\n\nif (secret) {\n  const header = (item.json.headers || {})['x-vermo-signature'] || '';\n  const sent = String(header).replace(/^sha256=/, '');\n  const expected = crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('hex');\n  // Constant-time compare; length mismatch would make timingSafeEqual throw.\n  const a = Buffer.from(sent, 'utf8');\n  const b = Buffer.from(expected, 'utf8');\n  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {\n    throw new Error('Invalid signature \u2014 the payload did not come from the admin dashboard.');\n  }\n}\n\nlet payload;\ntry {\n  payload = JSON.parse(raw);\n} catch (e) {\n  throw new Error('Body is not valid JSON: ' + e.message);\n}\n\nconst contacts = Array.isArray(payload.contacts) ? payload.contacts : [];\nif (!contacts.length) {\n  return [{ json: { __empty: true, batch: payload.batch || null } }];\n}\n\n// One output item per contact, carrying the batch info along for the summary.\nreturn contacts.map((c) => ({\n  json: {\n    ...c,\n    __batch: payload.batch || null,\n    __test: !!(payload.batch && payload.batch.test),\n  },\n}));"
+      },
+      "id": "verify",
+      "name": "Verify & expand",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the Twenty search filter for this contact.\n// Email is the primary key when present; otherwise fall back to phone. A\n// contact with neither cannot be matched or created, so it is skipped.\nconst c = $json;\nif (c.__empty) return [];\n\nconst email = (c.email || '').trim();\nconst phone = (c.phoneNumber || '').trim();\n\nlet filter = '';\nif (email) filter = `emails.primaryEmail[eq]:${email}`;\nelse if (phone) filter = `phones.primaryPhoneNumber[eq]:${phone}`;\n\nif (!filter) {\n  return [{ json: { ...c, __skip: true, __reason: 'no email or phone' } }];\n}\nreturn [{ json: { ...c, __filter: filter } }];",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "filter",
+      "name": "Build search filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.twentyUrl }}/rest/people",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filter",
+              "value": "={{ $json.__filter }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "find",
+      "name": "Twenty: find person",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Twenty has no REST upsert, so look up first and branch."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge the Twenty lookup result with the original contact and build the\n// request body. Emits __action so the IF node can route create vs update.\nconst contact = $('Build search filter').item.json;\nconst found = $json?.data?.people?.[0] || null;\n\nconst cfg = $('Config').first().json;\nconst segmentField = (cfg.segmentField || '').trim();\nconst segmentMode = (cfg.segmentMode || 'text').toLowerCase();\n\nconst body = {\n  name: { firstName: contact.firstName || '', lastName: contact.lastName || '' },\n};\n\nif (contact.email) {\n  body.emails = { primaryEmail: contact.email };\n}\nif (contact.phoneNumber) {\n  body.phones = {\n    primaryPhoneNumber: contact.phoneNumber,\n    primaryPhoneCallingCode: contact.phoneCallingCode || '',\n  };\n}\n\n// Segments go into a custom field on Person. A Text field takes a joined\n// string; a Multi-Select field takes the array of slugs.\nconst segments = Array.isArray(contact.segments) ? contact.segments : [];\nif (segmentField) {\n  body[segmentField] = segmentMode === 'multiselect' ? segments : segments.join(', ');\n}\n\nreturn [{\n  json: {\n    __action: found ? 'update' : 'create',\n    __personId: found ? found.id : null,\n    __userId: contact.userId,\n    __segments: segments,\n    body,\n  },\n}];",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "build",
+      "name": "Build person body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.__action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route",
+      "name": "Existing person?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Config').first().json.twentyUrl }}/rest/people/{{ $json.__personId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "update",
+      "name": "Twenty: update person",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.twentyUrl }}/rest/people",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "create",
+      "name": "Twenty: create person",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collapse the per-contact results into one response for the admin.\nconst items = $input.all();\nconst results = items.map((i) => {\n  const j = i.json || {};\n  const person = j?.data?.createPerson || j?.data?.updatePerson || null;\n  return {\n    personId: person ? person.id : null,\n    ok: !!person,\n  };\n});\n\nconst created = results.filter((r) => r.ok).length;\nreturn [{\n  json: {\n    ok: true,\n    received: results.length,\n    upserted: created,\n    failed: results.length - created,\n  },\n}];"
+      },
+      "id": "summary",
+      "name": "Summarise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Verify & expand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify & expand": {
+      "main": [
+        [
+          {
+            "node": "Build search filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build search filter": {
+      "main": [
+        [
+          {
+            "node": "Twenty: find person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twenty: find person": {
+      "main": [
+        [
+          {
+            "node": "Build person body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build person body": {
+      "main": [
+        [
+          {
+            "node": "Existing person?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Existing person?": {
+      "main": [
+        [
+          {
+            "node": "Twenty: update person",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Twenty: create person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twenty: update person": {
+      "main": [
+        [
+          {
+            "node": "Summarise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twenty: create person": {
+      "main": [
+        [
+          {
+            "node": "Summarise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarise": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

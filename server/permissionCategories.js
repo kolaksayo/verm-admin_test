@@ -64,6 +64,7 @@ const CATEGORIES = [
       { slug: 'dollar_naira_rate', label: 'Dollar/Naira Rate' },
       { slug: 'notifications', label: 'Notifications' },
       { slug: 'campaigns', label: 'Campaigns' },
+      { slug: 'crm_sync', label: 'CRM Sync' },
       { slug: 'logs', label: 'Logs' },
       { slug: 'audit', label: 'Audit' },
       { slug: 'request_logs', label: 'Request Logs' },

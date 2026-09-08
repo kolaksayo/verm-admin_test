@@ -63,6 +63,7 @@ export const CATEGORIES = [
       { slug: 'dollar_naira_rate', label: 'Dollar/Naira Rate' },
       { slug: 'notifications', label: 'Notifications' },
       { slug: 'campaigns', label: 'Campaigns' },
+      { slug: 'crm_sync', label: 'CRM Sync' },
       { slug: 'logs', label: 'Logs' },
       { slug: 'audit', label: 'Audit' },
       { slug: 'request_logs', label: 'Request Logs' },
@@ -112,6 +113,7 @@ export const NAV_ITEM_PERMISSIONS = {
   '/dollar-naira-rate':    { category: 'system', subcategory: 'dollar_naira_rate' },
   '/notifications':        { category: 'system', subcategory: 'notifications' },
   '/campaigns':            { category: 'system', subcategory: 'campaigns' },
+  '/crm-sync':            { category: 'system', subcategory: 'crm_sync' },
 };
 
 // Same mapping, keyed by collection name only — used by App.jsx's

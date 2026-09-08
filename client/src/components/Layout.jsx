@@ -62,6 +62,7 @@ const NAV_GROUPS = [
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
       { label: 'Notifications', path: '/notifications' },
       { label: 'Campaigns', path: '/campaigns' },
+      { label: 'CRM Sync', path: '/crm-sync' },
     ],
   },
 ];
