@@ -23,6 +23,7 @@ export default function CrmSync() {
   const [secret, setSecret]       = useState('');
   const [batchSize, setBatchSize] = useState(50);
   const [callingCode, setCallingCode] = useState('234');
+  const [rateLimit, setRateLimit] = useState(100);
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState('');
   const [testing, setTesting]     = useState(false);
@@ -46,7 +47,8 @@ export default function CrmSync() {
       const r = await api.get('/n8n/config');
       setCfg(r.data);
       setWebhookUrl(r.data.webhookUrl || '');
-      setBatchSize(r.data.batchSize ?? 50);
+      setBatchSize(r.data.batchSize ?? 20);
+      setRateLimit(r.data.rateLimitPerMin ?? 100);
       setCallingCode(r.data.callingCode || '234');
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load CRM sync settings');
@@ -96,6 +98,7 @@ export default function CrmSync() {
     try {
       await api.post('/n8n/config', {
         webhookUrl, batchSize: Number(batchSize), callingCode,
+        rateLimitPerMin: Number(rateLimit),
         secret: secret || undefined,        // blank keeps the stored secret
       });
       setSecret('');
@@ -176,7 +179,7 @@ export default function CrmSync() {
             accepts one call after you press "Test step" in n8n.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-vs-text-3 block mb-1">Shared secret</label>
             <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)}
@@ -188,11 +191,22 @@ export default function CrmSync() {
               onChange={(e) => setBatchSize(e.target.value)} className={input} />
           </div>
           <div>
+            <label className="text-xs text-vs-text-3 block mb-1">Twenty rate limit /min</label>
+            <input type="number" min={10} max={10000} value={rateLimit}
+              onChange={(e) => setRateLimit(e.target.value)} className={input} />
+          </div>
+          <div>
             <label className="text-xs text-vs-text-3 block mb-1">Default calling code</label>
             <input type="text" value={callingCode} onChange={(e) => setCallingCode(e.target.value)}
               placeholder="234" className={input} />
           </div>
         </div>
+        <p className="text-xs text-vs-text-3">
+          Each contact costs <strong>two</strong> Twenty calls (a lookup, then a create or update),
+          so a batch of {batchSize || 0} uses {(Number(batchSize) || 0) * 2} of your {rateLimit || 0}/minute
+          budget. Batches are spaced to stay inside it; raise the limit only if you have raised
+          Twenty's own.
+        </p>
         <p className="text-xs text-vs-text-3">
           The secret signs each batch (<span className="font-mono">x-vermo-signature</span>). Paste the
           same value into the workflow's Config node so it can verify the request.
@@ -300,6 +314,8 @@ export default function CrmSync() {
               <p className="text-xs text-vs-text-3">
                 Pushing {job.processed.toLocaleString()} / {job.total.toLocaleString()} ({pct}%) —
                 {' '}{job.batches} batch{job.batches !== 1 ? 'es' : ''}, {job.failed} failed
+                {job.etaMs ? `, about ${Math.max(1, Math.round(job.etaMs / 60000))} min total` : ''}
+                {job.rateLimitHits ? ` · paused ${job.rateLimitHits}× for rate limits` : ''}
               </p>
               <button type="button" onClick={handleCancel}
                 className="px-2.5 py-1 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs rounded-lg transition-colors">
@@ -326,6 +342,7 @@ export default function CrmSync() {
             {job && !job.running && job.finishedAt && (
               <p className="text-xs text-vs-text-3">
                 Last run: pushed {job.pushed}, failed {job.failed} across {job.batches} batches
+                {job.rateLimitHits ? `, ${job.rateLimitHits} rate-limit pause(s)` : ''}
                 {job.error ? ` — ${job.error}` : ''}
               </p>
             )}
@@ -334,7 +351,8 @@ export default function CrmSync() {
         )}
         <p className="text-xs text-vs-text-3 mt-3">
           "Push new &amp; changed" skips contacts whose details and segments are unchanged since the
-          last successful push, so it is safe to run often.
+          last successful push, so it is safe to run often. A large first sync is deliberately slow —
+          it is paced to Twenty's rate limit and keeps running if you leave the page.
         </p>
       </div>
     </div>

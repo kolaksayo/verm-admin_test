@@ -197,6 +197,20 @@ nothing for the CRM to key on. When a whole batch has nothing usable, the
 "Any contacts to sync?" IF routes straight to the response so the caller still
 gets an answer instead of waiting for a timeout.
 
+## Rate limiting
+
+Twenty allows 100 requests per 60 seconds by default, and every contact costs
+**two** — a lookup, then a create or update. The admin paces batches against
+that budget (using 80% of it) rather than sending them back to back, so a
+batch of 20 goes out roughly every 30 seconds: about 40 contacts a minute.
+
+A first sync of a few thousand contacts therefore takes a while. It runs in the
+background and survives leaving the page. If a 429 slips through at a window
+boundary, the batch waits 60 seconds and retries once.
+
+If you have raised Twenty's limit, set **Twenty rate limit /min** on the CRM
+Sync page to match and the pacing widens automatically.
+
 ## Re-running
 
 "Push new & changed" hashes each contact's details and segments and skips any
@@ -213,6 +227,7 @@ that are unchanged since the last successful push, so it is safe to run often.
 | "Web Crypto is unavailable" | n8n is on Node < 18. Upgrade, or clear `webhookSecret` to run unsigned |
 | `A 'json' property isn't an object` | An old copy of the workflow. Re-import this file — every Code node now runs in "Run Once for All Items" mode and returns an array |
 | "Node was not executed" on **Twenty: find person** | The batch had nothing to push, so the "Any contacts to sync?" IF sent it down the no-op branch. Check the Verify & expand output: if it shows one item with `__empty`, the request carried no contacts — usually from pressing "Execute workflow" without the admin actually sending one |
+| `HTTP 429: Limit reached (100 tokens per 60000 ms)` | Twenty's rate limit. Each contact costs **two** calls (lookup + write), so a 50-contact batch is 100 calls. Lower **Batch size** on the CRM Sync page; the admin already paces batches and retries once after 60s |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
 | `HTTP 400: Object person doesn't have any "segments" field` | The Person field does not exist yet, or `segmentField` does not match its API name. Create it (step 1), or clear `segmentField` to sync without segments |
 | `HTTP 400` naming a segment value | A Multi-Select field is missing that slug as an option — add it, or switch the field to Text |

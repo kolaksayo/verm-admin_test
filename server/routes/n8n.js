@@ -4,7 +4,7 @@ const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const {
   getConfig, isConfigured, toContactPayload, postBatch,
-  contactHash, recordPush, pushedHashes, pushStats,
+  contactHash, recordPush, pushedHashes, pushStats, batchIntervalMs,
 } = require('../n8n');
 const {
   computeSegments, buildBetStats, allSegmentSlugs, describeSegments, mergeConfig,
@@ -28,7 +28,9 @@ const USER_PROJECTION = {
   gender: 1, nairaAccount: 1, coinAddress: 1,
 };
 
-const BATCH_PAUSE_MS = 200;   // gap between batches so n8n is not flooded
+// Twenty answers 429 once its per-minute budget is spent, so batches are paced
+// against that budget rather than fired back to back.
+const RATE_LIMIT_BACKOFF_MS = 60000;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One sync at a time; the UI polls for progress.
@@ -56,6 +58,7 @@ router.get('/config', auth, requirePermission('system', 'crm_sync'), (req, res) 
     webhookUrl:   cfg.webhookUrl,
     secretSet:    !!cfg.secret,
     batchSize:    cfg.batchSize,
+    rateLimitPerMin: cfg.rateLimitPerMin,
     autoPush:     cfg.autoPush,
     callingCode:  cfg.callingCode,
     segmentConfig: mergeConfig(cfg.segmentConfig),
@@ -65,12 +68,12 @@ router.get('/config', auth, requirePermission('system', 'crm_sync'), (req, res) 
 });
 
 router.post('/config', auth, requirePermission('system', 'crm_sync'), (req, res) => {
-  const { webhookUrl, secret, batchSize, autoPush, callingCode, segmentConfig } = req.body || {};
+  const { webhookUrl, secret, batchSize, autoPush, callingCode, segmentConfig, rateLimitPerMin } = req.body || {};
 
   const has = (v) => v != null;
   const hasSecret = has(secret) && String(secret).trim() !== '';   // blank keeps the stored one
   if (!has(webhookUrl) && !hasSecret && !has(batchSize) && !has(autoPush)
-      && !has(callingCode) && !has(segmentConfig)) {
+      && !has(callingCode) && !has(segmentConfig) && !has(rateLimitPerMin)) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -94,6 +97,13 @@ router.post('/config', auth, requirePermission('system', 'crm_sync'), (req, res)
     if (has(autoPush))     upsertSetting('n8n_auto_push', autoPush ? '1' : '0');
     if (has(callingCode))  upsertSetting('n8n_calling_code', String(callingCode).replace(/\D/g, '') || '234');
     if (has(segmentConfig)) upsertSetting('n8n_segment_config', JSON.stringify(mergeConfig(segmentConfig)));
+    if (has(rateLimitPerMin)) {
+      const n = Number(rateLimitPerMin);
+      if (!Number.isInteger(n) || n < 10 || n > 10000) {
+        return res.status(400).json({ ok: false, error: 'Rate limit must be between 10 and 10000 requests per minute' });
+      }
+      upsertSetting('n8n_rate_limit_per_min', String(n));
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -130,7 +140,13 @@ router.get('/segments', auth, requirePermission('system', 'crm_sync'), async (re
 // The workflow answers 200 even when Twenty rejected every contact, so a
 // delivered batch is not the same as a synced one. Read the body it returns.
 function readWorkflowResult(result) {
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) {
+    return {
+      ok: false,
+      rateLimited: /\b429\b|rate limit|Limit reached/i.test(result.error || ''),
+      error: result.error,
+    };
+  }
   let parsed;
   try {
     parsed = JSON.parse(result.response || '{}');
@@ -142,9 +158,11 @@ function readWorkflowResult(result) {
   const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
 
   if (parsed.ok === false || failed > 0) {
+    const first = errors[0] || '';
     return {
       ok: false,
-      error: `Twenty rejected ${failed || 'the'} contact(s)` + (errors.length ? ` — ${errors[0]}` : ''),
+      rateLimited: /\b429\b|rate limit|Limit reached/i.test(first),
+      error: `Twenty rejected ${failed || 'the'} contact(s)` + (first ? ` — ${first}` : ''),
       detail: parsed,
     };
   }
@@ -259,7 +277,8 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
 
   job = {
     running: true, mode, segments: wanted, total: queue.length,
-    processed: 0, pushed: 0, failed: 0, batches: 0, batchesFailed: 0,
+    processed: 0, pushed: 0, failed: 0, batches: 0, batchesFailed: 0, rateLimitHits: 0,
+    etaMs: Math.ceil(queue.length / cfg.batchSize) * batchIntervalMs(cfg.batchSize, cfg.rateLimitPerMin),
     startedAt: new Date().toISOString(), finishedAt: null, error: null, cancel: false,
   };
   res.json({ ok: true, started: true, total: queue.length, mode });
@@ -272,7 +291,9 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
       for (let i = 0; i < queue.length; i += size) {
         if (job.cancel) break;
         const slice = queue.slice(i, i + size);
-        const result = await postBatch(
+        const startedAt = Date.now();
+
+        const send = () => postBatch(
           slice.map((s) => s.payload),
           { index: job.batches, size: slice.length, total: totalBatches },
           cfg,
@@ -280,7 +301,20 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
 
         // A 200 from n8n only means the batch arrived; the body says whether
         // Twenty actually accepted it.
-        const verdict = readWorkflowResult(result);
+        let result = await send();
+        let verdict = readWorkflowResult(result);
+
+        // Twenty's window is a minute, so waiting it out clears the block.
+        // One retry only — a second 429 means the batch size is simply too big.
+        if (verdict.rateLimited && !job.cancel) {
+          job.rateLimitHits = (job.rateLimitHits || 0) + 1;
+          job.lastError = 'Twenty rate limit hit — waiting 60s before retrying this batch.';
+          await delay(RATE_LIMIT_BACKOFF_MS);
+          if (!job.cancel) {
+            result = await send();
+            verdict = readWorkflowResult(result);
+          }
+        }
 
         for (const { payload, hash } of slice) {
           recordPush(payload.userId, {
@@ -295,7 +329,10 @@ router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, 
         if (verdict.ok) job.pushed += slice.length;
         else { job.failed += slice.length; job.batchesFailed += 1; job.lastError = verdict.error; }
 
-        await delay(BATCH_PAUSE_MS);
+        // Hold the batch open for as long as Twenty's budget requires, minus
+        // the time the batch already took.
+        const minMs = batchIntervalMs(slice.length, cfg.rateLimitPerMin);
+        await delay(Math.max(0, minMs - (Date.now() - startedAt)));
       }
     } catch (err) {
       job.error = err.message;
