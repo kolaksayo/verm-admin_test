@@ -17,10 +17,12 @@ somewhere to land:
 
 **Settings → Data model → Person → Add field**
 
-- **Text** (recommended) — named `Segments`. The workflow writes
-  `new_signup, high_roller`. Any value is accepted, so nothing else to set up.
-- **Multi-Select** — named `Segments`, filterable in Twenty, but every slug has
-  to exist as an option or Twenty rejects the write. Add all eleven:
+- **Text** — named `Segments`. The workflow writes one string,
+  `new_signup, high_roller`. Any value is accepted, so nothing else to set up,
+  but Twenty shows it as a single line of text rather than separate tags.
+- **Multi-Select** (recommended) — named `Segments`. Each slug shows as its own
+  tag and can be filtered on. Every slug must exist as an option or Twenty
+  rejects the write. Add all eleven:
 
   ```
   new_signup, registration_incomplete, email_verified, email_unverified,
@@ -29,6 +31,11 @@ somewhere to land:
   ```
 
   Add any new slug here too whenever you add one to `SEGMENT_DEFS`.
+
+  Then set `segmentMode` to `multiselect` in the Config node. If Twenty
+  upper-cased the option *values* when you created them (check one option's
+  value, not its label), also set `segmentValueCase` to `upper` — otherwise the
+  write fails on an unknown option.
 
 Note the field's **API name** (shown under the field name in Twenty — usually
 `segments`) and put it in the Config node's `segmentField`. They must match
@@ -95,6 +102,7 @@ after every re-import — which is why the shipped default uses the Config node.
 | `webhookSecret` | Shared secret — must match **Shared secret** in the admin (System → CRM Sync). Leave *both* blank to accept unsigned requests (not recommended) |
 | `segmentField` | API name of the Person field that holds segments (default `segments`) |
 | `segmentMode` | `text` for a Text field, `multiselect` for a Multi-Select field |
+| `segmentValueCase` | Blank to send slugs as-is; `upper` if Twenty's Multi-Select option values are upper-cased |
 
 ## 4. Activate and connect
 
@@ -216,6 +224,15 @@ boundary, the batch waits 60 seconds and retries once.
 
 If you have raised Twenty's limit, set **Twenty rate limit /min** on the CRM
 Sync page to match and the pacing widens automatically.
+
+## Switching a Text field to Multi-Select
+
+Twenty may not allow changing an existing field's type. If not, delete the Text
+`Segments` field and create a Multi-Select one with the same name and the
+eleven options, set `segmentMode` to `multiselect`, then run **Push everyone**.
+Only the workflow's behaviour changed, not what the admin sends, so the
+change-detection hash is identical and "Push new & changed" would skip
+everyone.
 
 ## Re-running
 
