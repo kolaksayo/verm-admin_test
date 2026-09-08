@@ -169,7 +169,10 @@ router.post('/test', auth, requirePermission('system', 'crm_sync'), async (req, 
     email: 'test-contact@vermo.invalid',    // .invalid never resolves
     phone: '+2348000000000', phoneNumber: '8000000000', phoneCallingCode: '+234',
     username: 'vermo_test', createdAt: new Date().toISOString(),
-    segments: ['test'],
+    // A real slug, not a made-up one: a Multi-Select field in Twenty rejects
+    // values outside its option list, so 'test' would fail on a correctly
+    // configured field.
+    segments: ['new_signup'],
     attributes: { role: 'USER', registrationStage: 'COMPLETED', referralCode: null, gender: null },
   };
 

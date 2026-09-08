@@ -17,13 +17,26 @@ somewhere to land:
 
 **Settings → Data model → Person → Add field**
 
-- **Text** field named `Segments` — the workflow writes `new_signup, high_roller`
-  (this is the default), or
-- **Multi-Select** field named `Segments` with one option per slug — the workflow
-  writes a real array, which is filterable in Twenty.
+- **Text** (recommended) — named `Segments`. The workflow writes
+  `new_signup, high_roller`. Any value is accepted, so nothing else to set up.
+- **Multi-Select** — named `Segments`, filterable in Twenty, but every slug has
+  to exist as an option or Twenty rejects the write. Add all eleven:
 
-Note the field's **API name** (usually `segments`); you will need it in step 3.
-Leave the workflow's `segmentField` blank to skip writing segments entirely.
+  ```
+  new_signup, registration_incomplete, email_verified, email_unverified,
+  has_naira_account, has_crypto_wallet, never_played, active_player,
+  dormant_player, high_roller, contest_creator
+  ```
+
+  Add any new slug here too whenever you add one to `SEGMENT_DEFS`.
+
+Note the field's **API name** (shown under the field name in Twenty — usually
+`segments`) and put it in the Config node's `segmentField`. They must match
+exactly, or Twenty answers
+`400 Object person doesn't have any "segments" field`.
+
+Not ready to deal with segments yet? Clear `segmentField` in the Config node
+and contacts sync without them.
 
 ## 2. Import the workflow
 
@@ -201,7 +214,8 @@ that are unchanged since the last successful push, so it is safe to run often.
 | `A 'json' property isn't an object` | An old copy of the workflow. Re-import this file — every Code node now runs in "Run Once for All Items" mode and returns an array |
 | "Node was not executed" on **Twenty: find person** | The batch had nothing to push, so the "Any contacts to sync?" IF sent it down the no-op branch. Check the Verify & expand output: if it shows one item with `__empty`, the request carried no contacts — usually from pressing "Execute workflow" without the admin actually sending one |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
-| `Twenty rejected 1 contact(s) — HTTP 400: Field 'segments' does not exist on Person` | The Person field has not been created, or `segmentField` does not match its API name. Create it (step 1) or clear `segmentField` to stop sending segments |
+| `HTTP 400: Object person doesn't have any "segments" field` | The Person field does not exist yet, or `segmentField` does not match its API name. Create it (step 1), or clear `segmentField` to sync without segments |
+| `HTTP 400` naming a segment value | A Multi-Select field is missing that slug as an option — add it, or switch the field to Text |
 | `Twenty lookup failed (HTTP 403): Missing authentication token` | `twentyApiKey` is empty in the Config node — or, on an older import, the Header Auth credential was never selected on the node |
 | `Twenty lookup failed (HTTP 401): Invalid token` | `twentyApiKey` is set but wrong or expired — create a fresh key in Twenty |
 | `Twenty lookup failed (HTTP 404)` | `twentyUrl` in the Config node is wrong — it is still the `https://crm.example.com` placeholder unless you changed it |
