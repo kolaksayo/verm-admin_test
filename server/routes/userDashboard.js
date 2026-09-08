@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const { getBettingSet } = require('../utils/bettingSet');
 
 const router = express.Router();
@@ -36,7 +37,7 @@ async function resolveUsernames(db, ids) {
 // ── GET /api/user-dashboard/snapshot ─────────────────────────────────────────
 // All-time platform state — no date filter.
 
-router.get('/snapshot', auth, async (req, res) => {
+router.get('/snapshot', auth, requirePermission('overview', 'user_snapshot'), async (req, res) => {
   try {
     const db = getDb();
 
@@ -138,7 +139,7 @@ router.get('/snapshot', auth, async (req, res) => {
 // ── GET /api/user-dashboard/activity ─────────────────────────────────────────
 // Date-filtered activity — signups, deposits, bets, withdrawals in period.
 
-router.get('/activity', auth, async (req, res) => {
+router.get('/activity', auth, requirePermission('overview', 'user_activity'), async (req, res) => {
   try {
     const db = getDb();
 

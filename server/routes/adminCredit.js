@@ -7,8 +7,18 @@ const { requireEditMode, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Shared helper — applies a wallet balance adjustment and logs it to SQLite
-async function applyAdjustment(req, { walletId, userId, amount, notes, txType, description, action }) {
+// Shared helper — applies a wallet balance adjustment and logs it to SQLite.
+// Callable from an authenticated route (pass adminUser/sessionId from req.user/req.editSessionId)
+// or from a background job (pass a synthetic adminUser and sessionId: null). This function
+// does NOT itself check auth/role/edit-session — it bypasses the auth/requireEditMode HTTP
+// middleware entirely, so every caller is responsible for its own authorization before
+// invoking it.
+async function applyAdjustment({ walletId, userId, amount, notes, txType, description, action, adminUser, sessionId }) {
+  if (!adminUser) throw Object.assign(new Error('adminUser is required'), { status: 400 });
+  if (typeof amount !== 'number' || !isFinite(amount) || amount === 0) {
+    throw Object.assign(new Error('amount must be a non-zero finite number'), { status: 400 });
+  }
+
   const rDb = getDb();
   const wDb = getWriteDb();
 
@@ -85,13 +95,13 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
 
   const sqlite = getSQLite();
 
-  sqlite.prepare(`
+  const creditInsert = sqlite.prepare(`
     INSERT INTO admin_credits
       (admin_user, session_id, user_id, wallet_id, currency_name, amount, balance_before, balance_after, description, notes, tx_type)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    req.user.username,
-    req.editSessionId || null,
+    adminUser,
+    sessionId || null,
     String(userId),
     String(walletId),
     currencyName,
@@ -108,8 +118,8 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
       (admin_user, session_id, action, collection, document_id, before_json, after_json)
     VALUES (?, ?, ?, 'walletusers', ?, ?, ?)
   `).run(
-    req.user.username,
-    req.editSessionId || null,
+    adminUser,
+    sessionId || null,
     action,
     String(walletId),
     JSON.stringify({ ...walletContext, [balanceField]: balanceBefore }),
@@ -121,12 +131,12 @@ async function applyAdjustment(req, { walletId, userId, amount, notes, txType, d
         amount:      Math.abs(amount),
         description,
         notes:       notes || null,
-        adminUser:   req.user.username,
+        adminUser,
       },
     }),
   );
 
-  return { balanceBefore, balanceAfter, amount: Math.abs(amount) };
+  return { balanceBefore, balanceAfter, amount: Math.abs(amount), creditId: creditInsert.lastInsertRowid };
 }
 
 // POST /api/admin-credit — manually credit a user's wallet
@@ -137,9 +147,10 @@ router.post('/', auth, requireEditMode, async (req, res) => {
   if (!parsed || parsed <= 0) return res.status(400).json({ error: 'amount must be a positive number' });
 
   try {
-    const result = await applyAdjustment(req, {
+    const result = await applyAdjustment({
       walletId, userId, amount: parsed, notes,
       txType: 'CREDIT', description: 'Admin TOP UP', action: 'credit',
+      adminUser: req.user.username, sessionId: req.editSessionId,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -156,9 +167,10 @@ router.post('/debit', auth, requireEditMode, async (req, res) => {
   if (!parsed || parsed <= 0) return res.status(400).json({ error: 'amount must be a positive number' });
 
   try {
-    const result = await applyAdjustment(req, {
+    const result = await applyAdjustment({
       walletId, userId, amount: -parsed, notes,
       txType: 'DEBIT', description: 'Admin Debit', action: 'debit',
+      adminUser: req.user.username, sessionId: req.editSessionId,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -194,3 +206,4 @@ router.get('/history/:userId', auth, requireRole('superadmin', 'admin'), (req, r
 });
 
 module.exports = router;
+module.exports.applyAdjustment = applyAdjustment;

@@ -22,6 +22,7 @@ const dollarNairaRateRoutes = require('./routes/dollarNairaRate');
 const telegramSettingsRoutes  = require('./routes/telegramSettings');
 const whatsappSettingsRoutes  = require('./routes/whatsappSettings');
 const dmSettingsRoutes        = require('./routes/dmSettings');
+const chatwootRoutes          = require('./routes/chatwoot');
 const campaignRoutes          = require('./routes/campaigns');
 const auditRoutes             = require('./routes/audit');
 const adminCreditRoutes       = require('./routes/adminCredit');
@@ -29,9 +30,11 @@ const navBadgesRoutes = require('./routes/navBadges');
 const influencerDashboardRoutes = require('./routes/influencerDashboard');
 const influencerPublicRoutes    = require('./routes/influencerPublic');
 const requestLogsRoutes         = require('./routes/requestLogs');
+const signupBonusRoutes         = require('./routes/signupBonus');
 
 const { startWatcher } = require('./gameBetWatcher');
 const { startSnapshotScheduler } = require('./rateSnapshotJob');
+const { startSignupBonusWatcher } = require('./signupBonusWatcher');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -83,6 +86,7 @@ app.use('/api/dollar-naira-rate', dollarNairaRateRoutes);
 app.use('/api/telegram',         telegramSettingsRoutes);
 app.use('/api/whatsapp',         whatsappSettingsRoutes);
 app.use('/api/notifications/dm', dmSettingsRoutes);
+app.use('/api/chatwoot',         chatwootRoutes);
 app.use('/api/campaigns',        campaignRoutes);
 app.use('/api/audit',            heavyLimiter, auditRoutes);
 app.use('/api/admin-credit',     heavyLimiter, adminCreditRoutes);
@@ -90,6 +94,7 @@ app.use('/api/nav-badges', heavyLimiter, navBadgesRoutes);
 app.use('/api/influencer-dashboard', influencerDashboardRoutes);
 app.use('/api/influencer-public',   searchLimiter, influencerPublicRoutes);
 app.use('/api/request-logs',        heavyLimiter,  requestLogsRoutes);
+app.use('/api/signup-bonus',        signupBonusRoutes);
 
 const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
@@ -107,6 +112,7 @@ connect()
     });
     startWatcher();
     startSnapshotScheduler();
+    startSignupBonusWatcher();
   })
   .catch((err) => {
     console.error('Failed to connect to MongoDB:', err);

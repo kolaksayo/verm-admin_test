@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
+import Button from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
 
 export default function Login() {
   const { login, verify2fa, completeMfaSetup } = useAuth();
@@ -125,7 +127,7 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="bg-vs-card rounded-2xl border border-vs-border shadow-2xl p-8">
+        <Card className="rounded-2xl shadow-2xl p-8">
           {error && (
             <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-5">
               {error}
@@ -157,13 +159,9 @@ export default function Login() {
                   className={inputCls}
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-vs-purple hover:bg-vs-purple-on disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-              >
+              <Button type="submit" disabled={loading} size="lg" className="w-full">
                 {loading ? 'Signing in…' : 'Sign in'}
-              </button>
+              </Button>
             </form>
           )}
 
@@ -192,20 +190,17 @@ export default function Login() {
                   className={`${inputCls} text-center text-2xl font-mono tracking-[0.5em]`}
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading || code.length !== 6}
-                className="w-full bg-vs-purple hover:bg-vs-purple-on disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-              >
+              <Button type="submit" disabled={loading || code.length !== 6} size="lg" className="w-full">
                 {loading ? 'Verifying…' : 'Verify'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => { setStep('credentials'); setCode(''); setError(''); }}
-                className="w-full text-sm text-vs-text-3 hover:text-vs-text-2 transition-colors"
+                className="w-full"
               >
                 ← Back to login
-              </button>
+              </Button>
             </form>
           )}
 
@@ -221,14 +216,9 @@ export default function Login() {
               </div>
 
               {!mfaSetupStarted ? (
-                <button
-                  type="button"
-                  onClick={handleStartMfaSetup}
-                  disabled={loading}
-                  className="w-full bg-vs-purple hover:bg-vs-purple-on disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-                >
+                <Button type="button" onClick={handleStartMfaSetup} disabled={loading} size="lg" className="w-full">
                   {loading ? 'Loading…' : 'Set up MFA'}
-                </button>
+                </Button>
               ) : (
                 <form onSubmit={handleCompleteMfaSetup} className="space-y-4">
                   {mfaQrCode && (
@@ -256,26 +246,18 @@ export default function Login() {
                       className={`${inputCls} text-center text-2xl font-mono tracking-[0.5em]`}
                     />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={loading || mfaCode.length !== 6}
-                    className="w-full bg-vs-purple hover:bg-vs-purple-on disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-                  >
+                  <Button type="submit" disabled={loading || mfaCode.length !== 6} size="lg" className="w-full">
                     {loading ? 'Verifying…' : 'Complete Setup'}
-                  </button>
+                  </Button>
                 </form>
               )}
 
-              <button
-                type="button"
-                onClick={cancelMfaSetup}
-                className="w-full text-sm text-vs-text-3 hover:text-vs-text-2 transition-colors"
-              >
+              <Button type="button" variant="ghost" onClick={cancelMfaSetup} className="w-full">
                 ← Cancel and go back
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

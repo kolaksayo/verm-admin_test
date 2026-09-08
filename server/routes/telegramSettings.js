@@ -1,6 +1,6 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
-const { sendMessage, isConfigured, getConfig, checkHealth } = require('../telegram');
+const { sendMessage, sendToChannel, isConfigured, isChannelConfigured, getConfig, checkHealth, normalizeChatId } = require('../telegram');
 const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured } = require('../whatsapp');
 const {
   DEFAULT_TEMPLATES,
@@ -29,6 +29,7 @@ const {
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const TRIGGERS = [
   // ── Single bet mode ──────────────────────────────────────────────────────────
@@ -151,10 +152,12 @@ async function resolveTeamNameLocal(db, val) {
 }
 
 // GET /api/telegram/status
-router.get('/status', auth, (req, res) => {
-  const { token, chatId } = getConfig();
-  const row = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
+router.get('/status', auth, requirePermission('system', 'notifications'), (req, res) => {
+  const { token, chatId, channelId } = getConfig();
+  const sqlite = getSQLite();
+  const row = sqlite.prepare("SELECT value FROM admin_settings WHERE key = 'telegram_enabled'").get();
   const enabled = row ? row.value !== '0' : true;
+  const chRow = sqlite.prepare("SELECT value FROM admin_settings WHERE key = 'telegram_channel_enabled'").get();
   res.json({
     configured:      !!(token && chatId),
     botTokenSet:     !!token,
@@ -162,11 +165,15 @@ router.get('/status', auth, (req, res) => {
     botTokenPreview: token ? token.slice(0, 8) + '…' : null,
     chatId:          chatId || null,
     enabled,
+    channelId:            channelId || null,
+    channelIdSet:         !!channelId,
+    channelConfigured:    !!(token && channelId),
+    channelEnabled:       chRow ? chRow.value !== '0' : true,
   });
 });
 
 // GET /api/telegram/health — live probe of bot token + chat (no message sent)
-router.get('/health', auth, async (req, res) => {
+router.get('/health', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     res.json(await checkHealth());
   } catch (err) {
@@ -175,8 +182,8 @@ router.get('/health', auth, async (req, res) => {
 });
 
 // GET /api/telegram/config — returns current saved values (token masked)
-router.get('/config', auth, (req, res) => {
-  const { token, chatId } = getConfig();
+router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
+  const { token, chatId, channelId } = getConfig();
   const sqlite = getSQLite();
   const threshold = sqlite
     .prepare("SELECT value FROM admin_settings WHERE key = 'large_stake_threshold'")
@@ -184,25 +191,38 @@ router.get('/config', auth, (req, res) => {
   const topN = sqlite
     .prepare("SELECT value FROM admin_settings WHERE key = 'rankings_top_n'")
     .get();
+  const betCard = sqlite
+    .prepare("SELECT value FROM admin_settings WHERE key = 'bet_card_image_enabled'")
+    .get();
+  const chEnabled = sqlite
+    .prepare("SELECT value FROM admin_settings WHERE key = 'telegram_channel_enabled'")
+    .get();
   res.json({
     botToken:           token ? token.slice(0, 8) + '…' + token.slice(-4) : '',
     chatId:             chatId || '',
+    channelId:          channelId || '',
+    channelEnabled:     chEnabled ? chEnabled.value !== '0' : true,
     largeStakeThreshold: threshold ? Number(threshold.value) : 7,
     rankingsTopN:        topN ? Number(topN.value) : 10,
+    // Absent key means enabled — matches wagerCard.js's default.
+    betCardImageEnabled: betCard ? betCard.value !== '0' : true,
   });
 });
 
 // POST /api/telegram/config — save bot token, chat ID, and/or threshold
-router.post('/config', auth, (req, res) => {
-  const { botToken, chatId, largeStakeThreshold, rankingsTopN, enabled } = req.body;
+router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
+  const { botToken, chatId, channelId, channelEnabled, largeStakeThreshold, rankingsTopN, enabled, betCardImageEnabled } = req.body;
 
   const hasToken     = botToken != null && String(botToken).trim() !== '';
   const hasChatId    = chatId   != null && String(chatId).trim()   !== '';
+  const hasChannelId = channelId != null;              // '' clears it (stops mirroring)
+  const hasChannelEn = channelEnabled != null;
   const hasThreshold = largeStakeThreshold != null && Number(largeStakeThreshold) > 0;
   const hasTopN      = rankingsTopN != null && Number.isInteger(Number(rankingsTopN)) && Number(rankingsTopN) >= 1;
   const hasEnabled   = enabled != null;
+  const hasBetCard   = betCardImageEnabled != null;
 
-  if (!hasToken && !hasChatId && !hasThreshold && !hasTopN && !hasEnabled) {
+  if (!hasToken && !hasChatId && !hasChannelId && !hasChannelEn && !hasThreshold && !hasTopN && !hasEnabled && !hasBetCard) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -216,9 +236,12 @@ router.post('/config', auth, (req, res) => {
 
     if (hasToken)     upsert.run('telegram_bot_token', String(botToken).trim());
     if (hasChatId)    upsert.run('telegram_chat_id',   String(chatId).trim());
+    if (hasChannelId) upsert.run('telegram_channel_id', normalizeChatId(channelId));
+    if (hasChannelEn) upsert.run('telegram_channel_enabled', channelEnabled ? '1' : '0');
     if (hasThreshold) upsert.run('large_stake_threshold', String(Number(largeStakeThreshold)));
     if (hasTopN)      upsert.run('rankings_top_n', String(Math.min(25, Math.max(1, Number(rankingsTopN)))));
     if (hasEnabled)   upsert.run('telegram_enabled', enabled ? '1' : '0');
+    if (hasBetCard)   upsert.run('bet_card_image_enabled', betCardImageEnabled ? '1' : '0');
 
     res.json({ ok: true });
   } catch (err) {
@@ -227,7 +250,7 @@ router.post('/config', auth, (req, res) => {
 });
 
 // POST /api/telegram/test
-router.post('/test', auth, async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
   }
@@ -239,9 +262,65 @@ router.post('/test', auth, async (req, res) => {
   res.json(result);
 });
 
+// Group and channel are independent destinations: each sends only when it is
+// configured AND its own enable flag is on. Used by every Telegram send path
+// so switching the group off never silently drops a notification that the
+// channel should still receive.
+// `destination` narrows to one side for the per-destination compose boxes in
+// the Channels tab; 'both' (the default) is what notifications use.
+function telegramSends(text, trigger, destination = 'both') {
+  const sends = [];
+  if (destination !== 'channel' && isConfigured() && isFlagOn('telegram_enabled')) {
+    sends.push(sendMessage(text, trigger));
+  }
+  if (destination !== 'group' && isChannelConfigured() && isFlagOn('telegram_channel_enabled')) {
+    sends.push(sendToChannel(text, trigger));
+  }
+  return sends;
+}
+
+function isFlagOn(key) {
+  try {
+    const row = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+    return row ? row.value !== '0' : true;   // absent means on
+  } catch {
+    return true;
+  }
+}
+
+// Telegram's errors are terse; add the fix for the ones that actually come up.
+function explainTelegramError(reason) {
+  const r = String(reason || '');
+  if (/chat not found/i.test(r)) {
+    return `${r} — for a private channel use the -100… numeric ID (not the invite link), and add the bot to the channel as an administrator. A public channel can use @name.`;
+  }
+  if (/not enough rights|CHAT_ADMIN_REQUIRED|not a member/i.test(r)) {
+    return `${r} — make the bot an administrator of the channel with "Post Messages" permission.`;
+  }
+  return r;
+}
+
+// POST /api/telegram/test-channel — send a test message to the Telegram channel
+router.post('/test-channel', auth, requirePermission('system', 'notifications'), async (req, res) => {
+  if (!isChannelConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram channel not configured — save a Channel ID first.' });
+  }
+  const row = getSQLite().prepare("SELECT value FROM admin_settings WHERE key = 'telegram_channel_enabled'").get();
+  if (row && row.value === '0') {
+    return res.status(400).json({ ok: false, error: 'Telegram channel mirroring is disabled. Enable it first.' });
+  }
+  const result = await sendToChannel('✅ <b>VermoSports Admin</b>\n\nTelegram channel notifications are configured and working!', 'test');
+  if (result?.ok === false || result?.ok === undefined && result?.description) {
+    // Surface Telegram's own reason — most often the bot isn't a channel admin.
+    const reason = result.description || result.reason || 'Send failed';
+    return res.json({ ok: false, error: explainTelegramError(reason) });
+  }
+  res.json(result);
+});
+
 // GET /api/telegram/logs — recent send log from SQLite
 // ?channel=telegram|whatsapp|all  (default: telegram)
-router.get('/logs', auth, (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const sqlite  = getSQLite();
     const limit   = Math.min(200, parseInt(req.query.limit) || 100);
@@ -256,7 +335,7 @@ router.get('/logs', auth, (req, res) => {
 });
 
 // GET /api/telegram/templates — list all trigger templates
-router.get('/templates', auth, (req, res) => {
+router.get('/templates', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const sqlite = getSQLite();
     const rows   = sqlite.prepare('SELECT * FROM telegram_templates').all();
@@ -281,7 +360,7 @@ router.get('/templates', auth, (req, res) => {
 });
 
 // POST /api/telegram/templates/:trigger — save template
-router.post('/templates/:trigger', auth, (req, res) => {
+router.post('/templates/:trigger', auth, requirePermission('system', 'notifications'), (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
 
@@ -304,7 +383,7 @@ router.post('/templates/:trigger', auth, (req, res) => {
 });
 
 // POST /api/telegram/templates/:trigger/test — send a test preview to all configured channels
-router.post('/templates/:trigger/test', auth, async (req, res) => {
+router.post('/templates/:trigger/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const valid = TRIGGERS.find((t) => t.trigger === req.params.trigger);
   if (!valid) return res.status(404).json({ ok: false, error: 'Unknown trigger' });
 
@@ -412,8 +491,7 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
     const testMsg  = '[TEST] ' + renderTemplate(template, sampleVars);
 
     const triggerKey = req.params.trigger + '_test';
-    const sends = [];
-    if (isConfigured()   && tgEnabled)      sends.push(sendMessage(testMsg, triggerKey));
+    const sends = telegramSends(testMsg, triggerKey);
     if (isWAConfigured() && waEnabledFlag)  sends.push(sendWhatsApp(testMsg, triggerKey));
 
     if (sends.length === 0) {
@@ -434,12 +512,12 @@ router.post('/templates/:trigger/test', auth, async (req, res) => {
 });
 
 // GET /api/telegram/watcher-status
-router.get('/watcher-status', auth, (req, res) => {
+router.get('/watcher-status', auth, requirePermission('system', 'notifications'), (req, res) => {
   res.json(getWatcherState());
 });
 
 // POST /api/telegram/watcher-settings — toggle individual polls on/off
-router.post('/watcher-settings', auth, (req, res) => {
+router.post('/watcher-settings', auth, requirePermission('system', 'notifications'), (req, res) => {
   const { pollNewBetEnabled, pollProgressEnabled, pollUserDmEnabled } = req.body;
   try {
     const sqlite = getSQLite();
@@ -458,7 +536,7 @@ router.post('/watcher-settings', auth, (req, res) => {
 });
 
 // POST /api/telegram/logs/:id/retry — re-send a failed message
-router.post('/logs/:id/retry', auth, async (req, res) => {
+router.post('/logs/:id/retry', auth, requirePermission('system', 'notifications'), async (req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, error: 'Telegram not configured' });
   }
@@ -476,7 +554,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
 });
 
 // POST /api/telegram/rankings/send — manual send with optional custom period and channel selection
-router.post('/rankings/send', auth, async (req, res) => {
+router.post('/rankings/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { period, weekStart, monthOf, channels } = req.body;
   if (!['weekly', 'monthly'].includes(period)) {
     return res.status(400).json({ ok: false, error: 'period must be "weekly" or "monthly"' });
@@ -485,8 +563,10 @@ router.post('/rankings/send', auth, async (req, res) => {
   const sendToTelegram = !channels || channels.includes('telegram');
   const sendToWhatsApp = !channels || channels.includes('whatsapp');
 
-  if (sendToTelegram && !isConfigured()) {
-    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID first.' });
+  // Either destination is enough — the group may be switched off during a
+  // migration to the channel.
+  if (sendToTelegram && !isConfigured() && !isChannelConfigured()) {
+    return res.status(400).json({ ok: false, error: 'Telegram not configured — save your Bot Token and Chat ID (or a Channel ID) first.' });
   }
 
   const trigger  = `rankings_${period}`;
@@ -507,8 +587,7 @@ router.post('/rankings/send', auth, async (req, res) => {
     const vars    = await buildRankingsVars(db, period, getRankingsTopN(), options);
     const message = renderTemplate(template, vars);
 
-    const sends = [];
-    if (sendToTelegram && isConfigured())   sends.push(sendMessage(message, trigger));
+    const sends = sendToTelegram ? telegramSends(message, trigger) : [];
     if (sendToWhatsApp && isWAConfigured()) sends.push(sendWhatsApp(message, trigger));
 
     if (!sends.length) return res.status(400).json({ ok: false, error: 'No configured channels selected' });
@@ -521,7 +600,7 @@ router.post('/rankings/send', auth, async (req, res) => {
 });
 
 // POST /api/telegram/resend-for-bet — re-send a notification for a bet by booking code
-router.post('/resend-for-bet', auth, async (req, res) => {
+router.post('/resend-for-bet', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { bookingCode, trigger } = req.body;
   if (!bookingCode?.trim()) return res.status(400).json({ ok: false, error: 'bookingCode is required' });
 
@@ -589,12 +668,19 @@ router.post('/resend-for-bet', auth, async (req, res) => {
 });
 
 // POST /api/telegram/send — manual message from admin
-router.post('/send', auth, async (req, res) => {
-  const { text } = req.body;
+router.post('/send', auth, requirePermission('system', 'notifications'), async (req, res) => {
+  const { text, destination = 'both' } = req.body;
   if (!text?.trim()) return res.status(400).json({ ok: false, error: 'text is required' });
-  if (!isConfigured()) return res.status(400).json({ ok: false, error: 'Telegram not configured' });
-  const result = await sendMessage(text.trim());
-  res.json(result);
+  if (!['group', 'channel', 'both'].includes(destination)) {
+    return res.status(400).json({ ok: false, error: `Unknown destination "${destination}"` });
+  }
+  const sends = telegramSends(text.trim(), 'manual', destination);
+  if (!sends.length) {
+    const which = destination === 'both' ? 'No Telegram destination is' : `The Telegram ${destination} is not`;
+    return res.status(400).json({ ok: false, error: `${which} configured and enabled` });
+  }
+  const [primary] = await Promise.allSettled(sends);
+  res.json(primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message });
 });
 
 module.exports = router;

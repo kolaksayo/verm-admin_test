@@ -1,8 +1,14 @@
 const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
-const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate } = require('./whatsapp');
+const { sendMessage, sendPhoto, sendToChannel: sendTgChannel, sendPhotoToChannel: sendTgChannelPhoto, isConfigured, isChannelConfigured: isTgChannelConfigured } = require('./telegram');
+const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate, normalizePhone } = require('./whatsapp');
+const { buildContestForBet } = require('./contestShape');
+const {
+  getConfig: chatwootConfig, isConfigured: chatwootConfigured,
+  pushContact: pushChatwootContact, recordSync: recordChatwootSync, contactName,
+} = require('./chatwoot');
+const { renderWagerCard } = require('./wagerCard');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -477,10 +483,62 @@ function isChannelEnabled(channel) {
 async function notifyAll(text, trigger) {
   const sends = [];
   if (isConfigured()   && isChannelEnabled('telegram'))  sends.push(sendMessage(text, trigger));
+  // Mirrored to the Telegram channel when one is configured; independently
+  // switchable via telegram_channel_enabled.
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) sends.push(sendTgChannel(text, trigger));
   if (isWAConfigured() && isChannelEnabled('whatsapp'))  sends.push(sendWhatsApp(text, trigger));
   if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
   const [primary] = await Promise.allSettled(sends);
   return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
+}
+
+// Telegram rejects photo captions longer than 1024 characters, so the caption
+// is capped for both channels to keep the two messages identical.
+const CAPTION_MAX = 1024;
+function toCaption(text) {
+  const t = String(text || '');
+  return t.length <= CAPTION_MAX ? t : t.slice(0, CAPTION_MAX - 1) + '…';
+}
+
+// Same channel/enablement rules as notifyAll, but sends an image with the
+// notification text as its caption.
+async function notifyAllMedia({ buffer, mimetype, filename }, text, trigger) {
+  const caption = toCaption(text);
+  const sends = [];
+  if (isConfigured() && isChannelEnabled('telegram')) {
+    sends.push(sendPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) {
+    sends.push(sendTgChannelPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isWAConfigured() && isChannelEnabled('whatsapp')) {
+    sends.push(sendWhatsAppMedia({
+      base64: buffer.toString('base64'), mimetype, filename, caption,
+    }, trigger));
+  }
+  if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
+  const [primary] = await Promise.allSettled(sends);
+  return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
+}
+
+// Multiplayer bet creation is announced with a screenshot of the Prize Projector
+// card (Maximum pot base) captioned with the usual notification text. Rendering
+// is best-effort: any failure falls back to the plain-text notification so an
+// image problem can never cost us the alert.
+async function notifyNewMultiBet(db, bet, message, trigger) {
+  try {
+    const contest = await buildContestForBet(db, bet);
+    // Any bet isMultiplayer() accepts gets a card — that's capacity 3+ (or a
+    // non-SINGLE betMode). Tiers below 5 fall into the 5-slot split, which
+    // still sums exactly to the pot. Guard only against data that can't render.
+    if (contest && contest.capacity >= 3 && contest.amount > 0) {
+      const card = await renderWagerCard(contest, 'maximum');
+      if (card) return await notifyAllMedia(card, message, trigger);
+    }
+  } catch (err) {
+    console.error('[GameBetWatcher] wager card render failed:', err.message);
+  }
+  return notifyAll(message, trigger);
 }
 
 // ── SQLite dedup helpers ───────────────────────────────────────────────────────
@@ -641,6 +699,54 @@ function getWelcomeConfig() {
   } catch {
     return { groupLink: '', channelLink: '' };
   }
+}
+
+// Pushes users that aren't in chatwoot_contacts yet. Bounded per run so a big
+// backlog trickles through rather than hammering Chatwoot — use the dashboard's
+// "Sync all contacts" for the initial backfill.
+const CHATWOOT_POLL_LIMIT = 50;
+
+async function pollChatwootContacts(db) {
+  const cfg = chatwootConfig();
+  if (!chatwootConfigured(cfg) || !cfg.autoSync) return;
+
+  const sqlite = getSQLite();
+  const known = sqlite.prepare('SELECT user_id FROM chatwoot_contacts').all()
+    .map((r) => r.user_id)
+    .filter((id) => /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => { try { return new ObjectId(id); } catch { return null; } })
+    .filter(Boolean);
+
+  const filter = {
+    $and: [
+      { $or: [
+        { mobile: { $exists: true, $nin: [null, ''] } },
+        { email:  { $exists: true, $nin: [null, ''] } },
+      ] },
+      ...(known.length ? [{ _id: { $nin: known } }] : []),
+    ],
+  };
+
+  const users = await db.collection('users')
+    .find(filter, { projection: { username: 1, displayName: 1, name: 1, fullName: 1, email: 1, mobile: 1, phone: 1 } })
+    .sort({ createdAt: -1 })
+    .limit(CHATWOOT_POLL_LIMIT)
+    .toArray();
+
+  for (const user of users) {
+    const phoneDigits = normalizePhone(user.mobile || user.phone || '');
+    const result = await pushChatwootContact(user, phoneDigits, cfg);
+    recordChatwootSync(user._id, {
+      contactId: result.contactId,
+      phone: phoneDigits || null,
+      email: user.email || null,
+      name: contactName(user),
+      ok: result.ok,
+      error: result.error,
+    });
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (users.length) console.log(`[Chatwoot] auto-synced ${users.length} new contact(s)`);
 }
 
 async function pollNewUsers(db) {
@@ -809,7 +915,9 @@ async function pollNewBets(db, since) {
         };
       }
       const message = renderTemplate(template, vars);
-      const result  = await notifyAll(message, triggerKey);
+      const result  = multi
+        ? await notifyNewMultiBet(db, bet, message, triggerKey)
+        : await notifyAll(message, triggerKey);
       if (result.ok) {
         console.log(`[GameBetWatcher] Notified (${triggerKey}): ${vars.code}`);
       } else {
@@ -1608,6 +1716,18 @@ function startWatcher() {
   setTimeout(runUserDmPoll, 5000); // run shortly after startup
   setInterval(runUserDmPoll, USER_DM_INTERVAL_MS);
 
+  // Chatwoot contact sync for new signups — deliberately separate from the
+  // welcome-DM poll so it keeps working when WhatsApp DMs are switched off.
+  const runChatwootPoll = async () => {
+    try {
+      await pollChatwootContacts(getDb());
+    } catch (err) {
+      console.error('[Chatwoot] new-contact poll error:', err.message);
+    }
+  };
+  setTimeout(runChatwootPoll, 20000);
+  setInterval(runChatwootPoll, USER_DM_INTERVAL_MS);
+
   // Daily cleanup + rankings check
   const runDaily = async () => {
     cleanupOldNotified();
@@ -1655,4 +1775,7 @@ module.exports = {
   isMultiplayer,
   getCurrentPlayers,
   notifyAll,
+  notifyAllMedia,
+  notifyNewMultiBet,
+  toCaption,
 };

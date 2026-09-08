@@ -1,11 +1,12 @@
 const express = require('express');
 const { getLogDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
 // GET /api/request-logs/providers — distinct apiProviderName values
-router.get('/providers', auth, async (req, res) => {
+router.get('/providers', auth, requirePermission('system', 'request_logs'), async (req, res) => {
   try {
     const providers = await getLogDb()
       .collection('requestresponses')
@@ -17,7 +18,7 @@ router.get('/providers', auth, async (req, res) => {
 });
 
 // GET /api/request-logs?page=&limit=&search=&provider=&status=&dateFrom=&dateTo=
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requirePermission('system', 'request_logs'), async (req, res) => {
   try {
     const db = getLogDb();
     const page     = Math.max(1, parseInt(req.query.page)  || 1);

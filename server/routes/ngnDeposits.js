@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const escapeRegex = require('../utils/escapeRegex');
 
 const router = express.Router();
@@ -12,7 +13,7 @@ const DEPOSIT_FILTER = {
 };
 
 // GET /api/ngn-deposits?page=&limit=&search=&dateFrom=&dateTo=
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requirePermission('users_finance', 'transactions'), async (req, res) => {
   try {
     const db = getDb();
     const page   = Math.max(1, parseInt(req.query.page)  || 1);

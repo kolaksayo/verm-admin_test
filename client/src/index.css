@@ -2,48 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Dark theme (default) ────────────────────────────────────────────────── */
+/* ── Dark theme (default) — brand design system ──────────────────────────── */
 :root {
-  --vs-bg:           28 27 32;
-  --vs-card:         36 35 42;
-  --vs-elevated:     49 48 56;
-  --vs-hover:        59 58 66;
-  --vs-purple:       119 92 223;
-  --vs-purple-on:    98 71 207;
-  --vs-purple-light: 177 156 255;
-  --vs-lime:         181 219 28;
-  --vs-lime-on:      126 158 0;
-  --vs-text:         255 255 255;
-  --vs-text-2:       226 226 226;
-  --vs-text-3:       159 159 159;
-  --vs-border:       48 48 48;
-  --vs-danger:       235 51 51;
-  --vs-success:      28 219 47;
-  --vs-warning:      245 203 62;
+  --vs-bg:           28 27 32;        /* #1C1B20  globe */
+  --vs-card:         36 35 42;        /* #24232A  island */
+  --vs-elevated:     49 48 56;        /* #313038  on_island */
+  --vs-hover:        59 58 66;        /* #3B3A42  on_island_hover */
+  --vs-purple:       119 92 223;      /* #775CDF  button primary */
+  --vs-purple-on:    98 71 207;       /* #6247CF  primary_on_tap */
+  --vs-purple-light: 177 156 255;     /* #B19CFF  accent_primary */
+  --vs-lime:         181 219 28;      /* #B5DB1C  button secondary */
+  --vs-lime-on:      126 158 0;       /* #7E9E00  secondary_on_tap */
+  --vs-text:         255 255 255;     /* #FFFFFF  text primary */
+  --vs-text-2:       226 226 226;     /* #E2E2E2  text secondary */
+  --vs-text-3:       159 159 159;     /* #9F9F9F  text tertiary */
+  --vs-border:       48 48 48;        /* #303030  divider light */
+  --vs-ring:         119 92 223;      /* #775CDF  accent purple */
+  --vs-danger:       235 51 51;       /* #EB3333 */
+  --vs-success:      28 219 47;       /* #1CDB2F */
+  --vs-warning:      245 203 62;      /* #F5CB3E */
+  --vs-disabled:     49 47 55;        /* #312F37  disabled state */
 }
 
-/* ── Light theme ─────────────────────────────────────────────────────────── */
+/* ── Light theme — soft purple-tinted whites ─────────────────────────────── */
 html.light {
-  --vs-bg:           248 248 252;
+  --vs-bg:           245 244 250;     /* soft purple-tinted white */
   --vs-card:         255 255 255;
-  --vs-elevated:     241 241 246;
-  --vs-hover:        232 231 240;
-  --vs-text:         28 27 32;
-  --vs-text-2:       49 48 60;
-  --vs-text-3:       100 99 116;
-  --vs-border:       214 213 224;
-  /* purple-light becomes the full purple so links are readable on white */
-  --vs-purple-light: 119 92 223;
+  --vs-elevated:     240 239 247;
+  --vs-hover:        232 231 242;
+  --vs-text:         28 27 32;        /* #1C1B20  inverted globe */
+  --vs-text-2:       74 72 88;
+  --vs-text-3:       120 118 135;
+  --vs-border:       220 219 228;
+  --vs-ring:         119 92 223;      /* brand purple */
+  --vs-purple-light: 119 92 223;      /* brand purple readable on white */
 }
 
 @layer base {
   body {
     background-color: rgb(var(--vs-bg));
     color: rgb(var(--vs-text));
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.4286;
   }
 }
 
 @layer utilities {
+  /* Elevation via background colour only — subtle purple ring, no drop shadow */
+  .shadow-card {
+    box-shadow: 0 0 0 1px rgba(119, 92, 223, 0.08);
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--vs-hover)) transparent;

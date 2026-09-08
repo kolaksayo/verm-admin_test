@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
+import { ALWAYS_ALLOWED_CATEGORY } from '../config/navCategories';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [role, setRole]       = useState(null);
+  const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [editMode, setEditMode]                     = useState(false);
@@ -40,6 +42,7 @@ export function AuthProvider({ children }) {
         .then(async (res) => {
           setUser(res.data.username);
           setRole(res.data.role);
+          setPermissions(res.data.permissions || []);
           try {
             const r = await api.get('/auth/elevation-status');
             applyElevationData(r.data);
@@ -73,6 +76,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('verm_admin_token', res.data.token);
     setUser(res.data.username);
     setRole(res.data.role);
+    setPermissions(res.data.permissions || []);
     return { requires2fa: false };
   };
 
@@ -81,6 +85,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('verm_admin_token', res.data.token);
     setUser(res.data.username);
     setRole(res.data.role);
+    setPermissions(res.data.permissions || []);
     setMfaSetupToken('');
   };
 
@@ -89,16 +94,28 @@ export function AuthProvider({ children }) {
     localStorage.setItem('verm_admin_token', res.data.token);
     setUser(res.data.username);
     setRole(res.data.role);
+    setPermissions(res.data.permissions || []);
   };
 
   const logout = () => {
     localStorage.removeItem('verm_admin_token');
     setUser(null);
     setRole(null);
+    setPermissions([]);
     setEditMode(false);
     setElevationExpiry(null);
     setElevationSessionId(null);
   };
+
+  // Client-side check is UX only (hides nav/routes) — the real access-control
+  // boundary is the server's requirePermission/requireCollectionPermission
+  // middleware, which enforces the identical rule independently.
+  const hasPermission = useCallback((category, subcategory) => {
+    if (role === 'superadmin') return true;
+    if (category === ALWAYS_ALLOWED_CATEGORY) return true;
+    const list = Array.isArray(permissions) ? permissions : [];
+    return list.some((p) => p.category === category && p.subcategory === subcategory);
+  }, [role, permissions]);
 
   const requestElevation = async (reason = '') => {
     const res = await api.post('/auth/elevate', { reason });
@@ -117,7 +134,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, role, loading,
+      user, role, permissions, hasPermission, loading,
       editMode, elevationExpiry, elevationSessionId,
       mfaSetupToken, setMfaSetupToken,
       login, verify2fa, logout,

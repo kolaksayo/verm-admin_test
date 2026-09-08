@@ -1,33 +1,101 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { Check, X } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import Button from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import Badge from '../components/ui/Badge';
+import { CATEGORIES, ALWAYS_ALLOWED_CATEGORY } from '../config/navCategories';
 
-const ROLE_COLORS = {
-  superadmin: 'bg-purple-100 text-purple-700',
-  admin: 'bg-blue-100 text-blue-700',
-  viewer: 'bg-gray-100 text-gray-600',
+const ROLE_BADGE_VARIANT = {
+  superadmin: 'default',
+  admin:      'secondary',
+  viewer:     'outline',
 };
 
 const ROLES = ['superadmin', 'admin', 'viewer'];
 
+const inputCls = 'w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-ring focus:border-transparent transition-colors';
+const labelCls = 'block text-sm font-medium text-vs-text-2 mb-1';
+
 function RoleBadge({ role }) {
-  return (
-    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[role] || 'bg-gray-100 text-gray-600'}`}>
-      {role}
-    </span>
-  );
+  return <Badge variant={ROLE_BADGE_VARIANT[role] || 'outline'}>{role}</Badge>;
 }
 
 function Modal({ title, onClose, children }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-vs-border">
+          <h2 className="text-sm font-semibold text-vs-text">{title}</h2>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+            <X className="w-4 h-4" />
+          </Button>
         </div>
         <div className="p-5">{children}</div>
-      </div>
+      </Card>
+    </div>
+  );
+}
+
+// Checkbox editor for category/subcategory grants — a full replace-set is
+// sent to PUT /admin-users/:id/permissions, so `grants` here is always the
+// complete desired set, not a diff.
+function PermissionsEditor({ grants, onChange, disabled }) {
+  const isChecked = (category, subcategory) =>
+    grants.some((g) => g.category === category && g.subcategory === subcategory);
+
+  const toggleSubcategory = (category, subcategory) => {
+    if (isChecked(category, subcategory)) {
+      onChange(grants.filter((g) => !(g.category === category && g.subcategory === subcategory)));
+    } else {
+      onChange([...grants, { category, subcategory }]);
+    }
+  };
+
+  const isCategoryFullyChecked = (cat) => cat.subcategories.every((s) => isChecked(cat.slug, s.slug));
+
+  const toggleCategory = (cat) => {
+    if (isCategoryFullyChecked(cat)) {
+      onChange(grants.filter((g) => g.category !== cat.slug));
+    } else {
+      const others = grants.filter((g) => g.category !== cat.slug);
+      onChange([...others, ...cat.subcategories.map((s) => ({ category: cat.slug, subcategory: s.slug }))]);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {CATEGORIES.map((cat) => {
+        const isBetting = cat.slug === ALWAYS_ALLOWED_CATEGORY;
+        return (
+          <div key={cat.slug} className="border border-vs-border rounded-lg p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-vs-text mb-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isBetting || isCategoryFullyChecked(cat)}
+                disabled={disabled || isBetting}
+                onChange={() => toggleCategory(cat)}
+              />
+              {cat.label}
+              {isBetting && <span className="text-xs text-vs-text-3 font-normal">(always included)</span>}
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 pl-6">
+              {cat.subcategories.map((sub) => (
+                <label key={sub.slug} className="flex items-center gap-2 text-xs text-vs-text-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isBetting || isChecked(cat.slug, sub.slug)}
+                    disabled={disabled || isBetting}
+                    onChange={() => toggleSubcategory(cat.slug, sub.slug)}
+                  />
+                  {sub.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -44,11 +112,19 @@ export default function AdminUsers() {
   const [deleteUser, setDeleteUser] = useState(null);
 
   const [form, setForm] = useState({ email: '', username: '', password: '', role: 'viewer' });
+  const [formGrants, setFormGrants] = useState([]);
   const [editRole, setEditRole] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editGrants, setEditGrants] = useState([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantsError, setGrantsError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  // Tracks which user's grants the in-flight GET belongs to, so a slow response for a
+  // previously-opened edit target can't clobber a different user's grants if the admin
+  // switches targets before it resolves.
+  const editUserIdRef = useRef(null);
 
   const load = () => {
     setLoading(true);
@@ -65,13 +141,23 @@ export default function AdminUsers() {
     e.preventDefault();
     setFormError('');
     setSaving(true);
+    let created = null;
     try {
-      await api.post('/admin-users', form);
+      const res = await api.post('/admin-users', form);
+      created = res.data;
+      if (form.role !== 'superadmin' && formGrants.length) {
+        await api.put(`/admin-users/${created.id}/permissions`, { grants: formGrants });
+      }
       setShowCreate(false);
       setForm({ email: '', username: '', password: '', role: 'viewer' });
+      setFormGrants([]);
       load();
     } catch (err) {
-      setFormError(err.response?.data?.error || 'Failed to create user');
+      // The user account itself may already exist even if this specific step failed —
+      // say so explicitly rather than implying nothing happened.
+      const base = err.response?.data?.error || (created ? 'Failed to save access permissions' : 'Failed to create user');
+      setFormError(created ? `User created, but ${base.charAt(0).toLowerCase()}${base.slice(1)} — edit them to set access.` : base);
+      load();
     } finally {
       setSaving(false);
     }
@@ -127,6 +213,7 @@ export default function AdminUsers() {
 
   const handleEdit = async (e) => {
     e.preventDefault();
+    if (grantsLoading || grantsError) return; // don't save an empty/stale grant set over a fetch that never completed
     setFormError('');
     setSaving(true);
     try {
@@ -135,9 +222,13 @@ export default function AdminUsers() {
       if (editPassword) payload.password = editPassword;
       if (editEmail.trim() && editEmail.trim().toLowerCase() !== (editUser.email || '')) payload.email = editEmail.trim();
       if (Object.keys(payload).length) await api.patch(`/admin-users/${editUser.id}`, payload);
+      if (editRole !== 'superadmin') {
+        await api.put(`/admin-users/${editUser.id}/permissions`, { grants: editGrants });
+      }
       setEditUser(null);
       setEditPassword('');
       setEditEmail('');
+      setEditGrants([]);
       load();
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to update user');
@@ -168,27 +259,24 @@ export default function AdminUsers() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Admin Users</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{users.length} user{users.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-vs-text">Admin Users</h1>
+          <p className="text-sm text-vs-text-3 mt-0.5">{users.length} user{users.length !== 1 ? 's' : ''}</p>
         </div>
-        <button
-          onClick={() => { setShowCreate(true); setFormError(''); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
+        <Button onClick={() => { setShowCreate(true); setFormError(''); }}>
           + Add User
-        </button>
+        </Button>
       </div>
 
       {/* MFA Enforcement banner */}
-      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 mb-4 flex items-center justify-between">
+      <Card className="px-5 py-4 mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-800">MFA Enforcement</p>
-          <p className="text-xs text-gray-500 mt-0.5">Require all non-exempt users to set up MFA on next login</p>
+          <p className="text-sm font-semibold text-vs-text">MFA Enforcement</p>
+          <p className="text-xs text-vs-text-3 mt-0.5">Require all non-exempt users to set up MFA on next login</p>
         </div>
         <button
           type="button"
           onClick={() => toggleEnforceMfa(!enforceMfa)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${enforceMfa ? 'bg-blue-600' : 'bg-gray-200'}`}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-vs-ring focus:ring-offset-2 focus:ring-offset-vs-card ${enforceMfa ? 'bg-vs-purple' : 'bg-vs-elevated border border-vs-border'}`}
           role="switch"
           aria-checked={enforceMfa}
         >
@@ -196,60 +284,74 @@ export default function AdminUsers() {
             className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${enforceMfa ? 'translate-x-6' : 'translate-x-1'}`}
           />
         </button>
-      </div>
+      </Card>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
+        <div className="bg-vs-danger/10 border border-vs-danger/30 text-vs-danger text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">2FA</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+            <tr className="bg-vs-elevated border-b border-vs-border">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Email</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Role</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">2FA</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-vs-border">
             {loading && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">Loading…</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">Loading…</td></tr>
             )}
             {!loading && users.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">No admin users found.</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">No admin users found.</td></tr>
             )}
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 font-medium text-gray-800">
+              <tr key={u.id} className="hover:bg-vs-elevated transition-colors">
+                <td className="px-4 py-3 font-medium text-vs-text">
                   {u.email || u.username}
                   {u.username === currentUser && (
-                    <span className="ml-2 text-xs text-gray-400">(you)</span>
+                    <span className="ml-2 text-xs text-vs-text-3">(you)</span>
                   )}
                 </td>
                 <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
                 <td className="px-4 py-3">
                   {u.two_factor_enabled
-                    ? <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">✓ Enabled</span>
-                    : <span className="text-xs text-gray-400">Disabled</span>}
+                    ? <span className="inline-flex items-center gap-1 text-xs text-vs-success font-medium"><Check className="w-3 h-3" /> Enabled</span>
+                    : <span className="text-xs text-vs-text-3">Disabled</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(u.created_at)}</td>
+                <td className="px-4 py-3 text-vs-text-3 text-xs">{formatDate(u.created_at)}</td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => { setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError(''); }}
-                      className="text-xs text-blue-500 hover:text-blue-700 font-medium"
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        editUserIdRef.current = u.id;
+                        setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError('');
+                        setEditGrants([]);
+                        setGrantsError(false);
+                        if (u.role !== 'superadmin') {
+                          setGrantsLoading(true);
+                          api.get(`/admin-users/${u.id}/permissions`)
+                            .then((r) => { if (editUserIdRef.current === u.id) setEditGrants(r.data.grants); })
+                            .catch(() => { if (editUserIdRef.current === u.id) setGrantsError(true); })
+                            .finally(() => { if (editUserIdRef.current === u.id) setGrantsLoading(false); });
+                        }
+                      }}
                     >
                       Edit
-                    </button>
+                    </Button>
                     {u.username !== currentUser && (
-                      <button
+                      <Button
+                        variant="destructive"
+                        size="sm"
                         onClick={() => { setDeleteUser(u); setFormError(''); }}
-                        className="text-xs text-red-400 hover:text-red-600 font-medium"
                       >
                         Delete
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </td>
@@ -257,61 +359,43 @@ export default function AdminUsers() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
 
       {/* Create modal */}
       {showCreate && (
         <Modal title="Add Admin User" onClose={() => setShowCreate(false)}>
           <form onSubmit={handleCreate} className="space-y-4">
-            {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
+            {formError && <div className="text-sm text-vs-danger bg-vs-danger/10 border border-vs-danger/30 rounded-lg px-3 py-2">{formError}</div>}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-              <input
-                type="email"
-                required
-                placeholder="user@example.com"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={labelCls}>Email Address</label>
+              <input type="email" required placeholder="user@example.com" value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input
-                type="text"
-                placeholder="Defaults to email prefix"
-                value={form.username}
-                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={labelCls}>Display Name <span className="text-vs-text-3 font-normal">(optional)</span></label>
+              <input type="text" placeholder="Defaults to email prefix" value={form.username}
+                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Min. 8 characters"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={labelCls}>Password</label>
+              <input type="password" required minLength={8} value={form.password} placeholder="Min. 8 characters"
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select
-                value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <label className={labelCls}>Role</label>
+              <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inputCls}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
+            {form.role !== 'superadmin' && (
+              <div>
+                <label className={labelCls}>Dashboard Access</label>
+                <PermissionsEditor grants={formGrants} onChange={setFormGrants} disabled={saving} />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-60">
-                {saving ? 'Creating…' : 'Create User'}
-              </button>
+              <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create User'}</Button>
             </div>
           </form>
         </Modal>
@@ -321,103 +405,76 @@ export default function AdminUsers() {
       {editUser && (
         <Modal title={`Edit — ${editUser.email || editUser.username}`} onClose={() => setEditUser(null)}>
           <form onSubmit={handleEdit} className="space-y-4">
-            {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
+            {formError && <div className="text-sm text-vs-danger bg-vs-danger/10 border border-vs-danger/30 rounded-lg px-3 py-2">{formError}</div>}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-              <input
-                type="email"
-                value={editEmail}
-                onChange={(e) => setEditEmail(e.target.value)}
-                placeholder="user@example.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={labelCls}>Email Address</label>
+              <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                placeholder="user@example.com" className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select
-                value={editRole}
-                onChange={(e) => setEditRole(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <label className={labelCls}>Role</label>
+              <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className={inputCls}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New Password <span className="text-gray-400 font-normal">(leave blank to keep current)</span></label>
-              <input
-                type="password"
-                minLength={8}
-                value={editPassword}
-                onChange={(e) => setEditPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={labelCls}>New Password <span className="text-vs-text-3 font-normal">(leave blank to keep current)</span></label>
+              <input type="password" minLength={8} value={editPassword} placeholder="Min. 8 characters"
+                onChange={(e) => setEditPassword(e.target.value)} className={inputCls} />
             </div>
+            {editRole !== 'superadmin' && (
+              <div>
+                <label className={labelCls}>Dashboard Access</label>
+                {grantsLoading ? (
+                  <p className="text-xs text-vs-text-3">Loading current access…</p>
+                ) : grantsError ? (
+                  <p className="text-xs text-vs-danger">
+                    Failed to load current access — saving is disabled until this loads to avoid wiping it. Close and reopen to retry.
+                  </p>
+                ) : (
+                  <PermissionsEditor grants={editGrants} onChange={setEditGrants} disabled={saving} />
+                )}
+              </div>
+            )}
             {editUser.two_factor_enabled && (
-              <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+              <div className="rounded-lg border border-vs-warning/40 bg-vs-warning/10 px-3 py-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium text-orange-700">MFA is enabled</p>
-                    <p className="text-xs text-orange-500">Resetting will require the user to set up MFA again</p>
+                    <p className="text-xs font-medium text-vs-warning">MFA is enabled</p>
+                    <p className="text-xs text-vs-warning/70">Resetting will require the user to set up MFA again</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3 shrink-0">
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => handleResetMfa(editUser)}
-                      className="px-3 py-1.5 text-xs font-medium bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-                    >
-                      Reset MFA
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => handleDisableMfa(editUser)}
-                      className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-                    >
-                      Disable MFA
-                    </button>
+                    <Button type="button" variant="secondary" size="sm" disabled={saving}
+                      onClick={() => handleResetMfa(editUser)}>Reset MFA</Button>
+                    <Button type="button" variant="ghost" size="sm" disabled={saving}
+                      onClick={() => handleDisableMfa(editUser)}>Disable MFA</Button>
                   </div>
                 </div>
               </div>
             )}
             {!editUser.two_factor_enabled && !editUser.two_factor_exempt && (
-              <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-vs-border bg-vs-elevated px-3 py-2">
                 <div>
-                  <p className="text-xs font-medium text-gray-700">MFA is disabled</p>
-                  <p className="text-xs text-gray-500">User will be required to set up MFA if enforcement is on</p>
+                  <p className="text-xs font-medium text-vs-text">MFA is disabled</p>
+                  <p className="text-xs text-vs-text-3">User will be required to set up MFA if enforcement is on</p>
                 </div>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => handleDisableMfa(editUser)}
-                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-                >
-                  Disable MFA
-                </button>
+                <Button type="button" variant="ghost" size="sm" disabled={saving} className="ml-3 whitespace-nowrap"
+                  onClick={() => handleDisableMfa(editUser)}>Disable MFA</Button>
               </div>
             )}
             {!editUser.two_factor_enabled && editUser.two_factor_exempt && (
-              <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-vs-purple/40 bg-vs-purple/10 px-3 py-2">
                 <div>
-                  <p className="text-xs font-medium text-blue-700">MFA exempt</p>
-                  <p className="text-xs text-blue-500">User can log in without MFA even if enforcement is on</p>
+                  <p className="text-xs font-medium text-vs-purple-light">MFA exempt</p>
+                  <p className="text-xs text-vs-purple-light/70">User can log in without MFA even if enforcement is on</p>
                 </div>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => handleRemoveExemption(editUser)}
-                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-                >
-                  Remove exemption
-                </button>
+                <Button type="button" variant="ghost" size="sm" disabled={saving} className="ml-3 whitespace-nowrap"
+                  onClick={() => handleRemoveExemption(editUser)}>Remove exemption</Button>
               </div>
             )}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-60">
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
+              <Button type="button" variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
+              <Button type="submit" disabled={saving || grantsLoading || grantsError}>{saving ? 'Saving…' : 'Save Changes'}</Button>
             </div>
           </form>
         </Modal>
@@ -426,15 +483,15 @@ export default function AdminUsers() {
       {/* Delete confirmation */}
       {deleteUser && (
         <Modal title="Delete User" onClose={() => setDeleteUser(null)}>
-          <p className="text-sm text-gray-600 mb-5">
-            Are you sure you want to delete <strong>{deleteUser.email || deleteUser.username}</strong>? This cannot be undone.
+          <p className="text-sm text-vs-text-2 mb-5">
+            Are you sure you want to delete <strong className="text-vs-text">{deleteUser.email || deleteUser.username}</strong>? This cannot be undone.
           </p>
-          {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{formError}</div>}
+          {formError && <div className="text-sm text-vs-danger bg-vs-danger/10 border border-vs-danger/30 rounded-lg px-3 py-2 mb-4">{formError}</div>}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDeleteUser(null)} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button onClick={handleDelete} disabled={saving} className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-60">
+            <Button variant="outline" onClick={() => setDeleteUser(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={saving}>
               {saving ? 'Deleting…' : 'Delete'}
-            </button>
+            </Button>
           </div>
         </Modal>
       )}

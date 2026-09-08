@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api';
+import ChatwootSettings from '../components/ChatwootSettings';
 
 const TABS = ['Channels', 'Direct Messages', 'Messages', 'Logs', 'Settings'];
 
@@ -368,7 +369,7 @@ function WaIcon({ size = 20, className = '' }) {
 }
 
 function ChanIcon({ channelKey, size = 20, className = '' }) {
-  if (channelKey === 'telegram') return <TgIcon size={size} className={className} />;
+  if (channelKey === 'telegram' || channelKey === 'tg_channel') return <TgIcon size={size} className={className} />;
   return <WaIcon size={size} className={className} />;
 }
 
@@ -904,6 +905,11 @@ export default function NotificationsPage() {
   // ── Telegram state ────────────────────────────────────────────────────────
   const [status, setStatus]             = useState(null);
   const [tgEnabled, setTgEnabled]       = useState(true);
+  const [tgChannelEnabled, setTgChannelEnabled] = useState(true);
+  const [tgChannelMessage, setTgChannelMessage] = useState('');
+  const [tgChannelSending, setTgChannelSending] = useState(false);
+  const [tgChannelSendResult, setTgChannelSendResult] = useState(null);
+  const [togglingTgChannel, setTogglingTgChannel] = useState(false);
   const [togglingTg, setTogglingTg]     = useState(false);
   const [testing, setTesting]           = useState(false);
   const [testResult, setTestResult]     = useState(null);
@@ -912,6 +918,9 @@ export default function NotificationsPage() {
   const [sendResult, setSendResult]     = useState(null);
   const [botToken, setBotToken]         = useState('');
   const [chatId, setChatId]             = useState('');
+  const [tgChannelId, setTgChannelId]   = useState('');
+  const [testingTgChannel, setTestingTgChannel]         = useState(false);
+  const [tgChannelTestResult, setTgChannelTestResult]   = useState(null);
   const [saving, setSaving]             = useState(false);
   const [saveMsg, setSaveMsg]           = useState('');
 
@@ -919,10 +928,15 @@ export default function NotificationsPage() {
   const [waStatus, setWaStatus]                 = useState(null);
   const [waEnabled, setWaEnabled]               = useState(true);
   const [togglingWa, setTogglingWa]             = useState(false);
+  const [waProvider, setWaProvider]                 = useState('evolution');
   const [waEvolutionUrl, setWaEvolutionUrl]         = useState('');
   const [waEvolutionApiKey, setWaEvolutionApiKey]   = useState('');
   const [waEvolutionInstance, setWaEvolutionInstance] = useState('');
   const [waEvolutionMethod, setWaEvolutionMethod]   = useState('baileys');
+  const [waWhapiToken, setWaWhapiToken]             = useState('');
+  const [waGowaUrl, setWaGowaUrl]                   = useState('');
+  const [waGowaBasicAuth, setWaGowaBasicAuth]       = useState('');
+  const [waGowaDeviceId, setWaGowaDeviceId]         = useState('');
   const [waGroupId, setWaGroupId]                   = useState('');
   const [waChannelId, setWaChannelId]           = useState('');
   const [waSaving, setWaSaving]                 = useState(false);
@@ -988,6 +1002,13 @@ export default function NotificationsPage() {
   const [dmEvolutionApiKeyPreview, setDmEvolutionApiKeyPreview] = useState('');
   const [dmEvolutionHealth, setDmEvolutionHealth]           = useState(null);
   const [dmEvolutionMethod, setDmEvolutionMethod]           = useState('baileys');
+  const [dmProvider, setDmProvider]                         = useState('evolution');
+  const [dmWhapiToken, setDmWhapiToken]                     = useState('');
+  const [dmWhapiTokenPreview, setDmWhapiTokenPreview]       = useState('');
+  const [dmGowaUrl, setDmGowaUrl]                           = useState('');
+  const [dmGowaBasicAuth, setDmGowaBasicAuth]               = useState('');
+  const [dmGowaBasicAuthPreview, setDmGowaBasicAuthPreview] = useState('');
+  const [dmGowaDeviceId, setDmGowaDeviceId]                 = useState('');
   const [dmEvolutionSaving, setDmEvolutionSaving]           = useState(false);
   const [dmEvolutionSaveMsg, setDmEvolutionSaveMsg]         = useState('');
   const [dmSearch, setDmSearch]               = useState('');
@@ -997,6 +1018,9 @@ export default function NotificationsPage() {
   const [threshold, setThreshold]               = useState('7');
   const [savingThreshold, setSavingThreshold]   = useState(false);
   const [thresholdMsg, setThresholdMsg]         = useState('');
+  const [betCardImage, setBetCardImage]         = useState(true);
+  const [savingBetCard, setSavingBetCard]       = useState(false);
+  const [betCardMsg, setBetCardMsg]             = useState('');
   const [rankingsTopN, setRankingsTopN]         = useState('10');
   const [savingTopN, setSavingTopN]             = useState(false);
   const [topNMsg, setTopNMsg]                   = useState('');
@@ -1033,6 +1057,7 @@ export default function NotificationsPage() {
     api.get('/telegram/status').then((r) => {
       setStatus(r.data);
       if (r.data.enabled != null) setTgEnabled(!!r.data.enabled);
+      if (r.data.channelEnabled != null) setTgChannelEnabled(!!r.data.channelEnabled);
     }).catch(() => {});
 
   const loadTemplates = useCallback(() => {
@@ -1060,9 +1085,10 @@ export default function NotificationsPage() {
       setDmCountryCode(r.data.countryCode || '');
       setDmTemplateName(r.data.welcomeTemplateName || '');
       setDmTemplateLanguage(r.data.welcomeTemplateLanguage || '');
-      // Baileys: use the editable custom text; Cloud API: show approved preview
-      const method = r.data.dmEvolutionMethod || 'baileys';
-      if (method === 'baileys') {
+      // Baileys or whapi: use the editable custom text; Cloud API: show approved preview
+      const method   = r.data.dmEvolutionMethod || 'baileys';
+      const provider = r.data.dmProvider || 'evolution';
+      if (provider === 'whapi' || provider === 'gowa' || method === 'baileys') {
         setDmTemplate(r.data.welcomeText || r.data.welcomePreview || '');
       } else {
         setDmTemplate(r.data.welcomePreview || '');
@@ -1071,6 +1097,11 @@ export default function NotificationsPage() {
       setDmEvolutionInstance(r.data.dmEvolutionInstance || '');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
       setDmEvolutionMethod(r.data.dmEvolutionMethod || 'baileys');
+      setDmProvider(provider);
+      setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
+      setDmGowaUrl(r.data.dmGowaUrl || '');
+      setDmGowaBasicAuthPreview(r.data.dmGowaBasicAuthPreview || '');
+      setDmGowaDeviceId(r.data.dmGowaDeviceId || '');
       // Track saved values for unsaved-changes detection
       setDmGroupLinkSaved(r.data.groupLink || '');
       setDmChannelLinkSaved(r.data.channelLink || '');
@@ -1131,6 +1162,9 @@ export default function NotificationsPage() {
       if (r.data.evolutionUrl)      setWaEvolutionUrl(r.data.evolutionUrl);
       if (r.data.evolutionInstance) setWaEvolutionInstance(r.data.evolutionInstance);
       if (r.data.evolutionMethod)   setWaEvolutionMethod(r.data.evolutionMethod);
+      if (r.data.gowaUrl)           setWaGowaUrl(r.data.gowaUrl);
+      if (r.data.gowaDeviceId)      setWaGowaDeviceId(r.data.gowaDeviceId);
+      if (r.data.provider)          setWaProvider(r.data.provider);
     }).catch(() => {});
     recheckHealth();
     loadChannelLogs();
@@ -1149,6 +1183,7 @@ export default function NotificationsPage() {
     api.get('/telegram/config').then((r) => {
       if (r.data.largeStakeThreshold) setThreshold(String(r.data.largeStakeThreshold));
       if (r.data.rankingsTopN)        setRankingsTopN(String(r.data.rankingsTopN));
+      if (r.data.betCardImageEnabled != null) setBetCardImage(!!r.data.betCardImageEnabled);
     }).catch(() => {});
     const fetchWatcher = () =>
       api.get('/telegram/watcher-status').then((r) => setWatcherStatus(r.data)).catch(() => {});
@@ -1187,6 +1222,35 @@ export default function NotificationsPage() {
     }
   };
 
+  // The channel is switched independently of the group, so a migration can
+  // move traffic across without both being on at once.
+  const handleToggleTgChannel = async () => {
+    setTogglingTgChannel(true);
+    const next = !tgChannelEnabled;
+    try {
+      await api.post('/telegram/config', { channelEnabled: next });
+      setTgChannelEnabled(next);
+      await loadStatus();
+    } catch { /* ignore */ } finally {
+      setTogglingTgChannel(false);
+    }
+  };
+
+  const handleSendTgChannel = async (e) => {
+    e.preventDefault();
+    if (!tgChannelMessage.trim()) return;
+    setTgChannelSending(true); setTgChannelSendResult(null);
+    try {
+      const r = await api.post('/telegram/send', { text: tgChannelMessage, destination: 'channel' });
+      setTgChannelSendResult({ ok: !!r.data.ok, msg: r.data.ok ? 'Sent to channel!' : (r.data.error || r.data.description || 'Failed') });
+      if (r.data.ok) setTgChannelMessage('');
+    } catch (err) {
+      setTgChannelSendResult({ ok: false, msg: err.response?.data?.error || 'Request failed' });
+    } finally {
+      setTgChannelSending(false);
+    }
+  };
+
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
@@ -1199,12 +1263,24 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleTestTgChannel = async () => {
+    setTestingTgChannel(true); setTgChannelTestResult(null);
+    try {
+      const r = await api.post('/telegram/test-channel');
+      setTgChannelTestResult({ ok: !!r.data.ok, error: r.data.error || r.data.description });
+    } catch (e) {
+      setTgChannelTestResult({ ok: false, error: e.response?.data?.error || 'Request failed' });
+    } finally {
+      setTestingTgChannel(false);
+    }
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim()) return;
     setSending(true); setSendResult(null);
     try {
-      const r = await api.post('/telegram/send', { text: message });
+      const r = await api.post('/telegram/send', { text: message, destination: 'group' });
       setSendResult({ ok: r.data.ok, msg: r.data.ok ? 'Sent!' : (r.data.description || 'Failed') });
       if (r.data.ok) setMessage('');
     } catch (e) {
@@ -1344,14 +1420,21 @@ export default function NotificationsPage() {
         dmEvolutionApiKey:   dmEvolutionApiKey   || undefined,
         dmEvolutionInstance: dmEvolutionInstance || undefined,
         dmEvolutionMethod,
+        dmProvider,
+        dmWhapiToken:        dmWhapiToken        || undefined,
+        dmGowaUrl:           dmGowaUrl,
+        dmGowaBasicAuth:     dmGowaBasicAuth     || undefined,
+        dmGowaDeviceId:      dmGowaDeviceId,
       });
       setDmEvolutionSaveMsg('Saved!');
       setDmEvolutionApiKey('');
+      setDmWhapiToken('');
       setDmEvolutionUrlSaved(dmEvolutionUrl);
       setDmEvolutionInstanceSaved(dmEvolutionInstance);
       // Refresh preview + health
       const r = await api.get('/notifications/dm/config');
       setDmEvolutionApiKeyPreview(r.data.dmEvolutionApiKeyPreview || '');
+      setDmWhapiTokenPreview(r.data.dmWhapiTokenPreview || '');
       const h = await api.get('/notifications/dm/health');
       setDmEvolutionHealth(h.data);
     } catch (err) {
@@ -1465,6 +1548,22 @@ export default function NotificationsPage() {
 
   // ── Settings handlers ─────────────────────────────────────────────────────
 
+  // Saves immediately on toggle — no separate Save button for a boolean.
+  const handleToggleBetCard = async () => {
+    const next = !betCardImage;
+    setBetCardImage(next);            // optimistic
+    setSavingBetCard(true); setBetCardMsg('');
+    try {
+      await api.post('/telegram/config', { betCardImageEnabled: next });
+      setBetCardMsg('Saved');
+    } catch (err) {
+      setBetCardImage(!next);         // revert on failure
+      setBetCardMsg(err.response?.data?.error || 'Failed');
+    } finally {
+      setSavingBetCard(false);
+    }
+  };
+
   const handleSaveThreshold = async (e) => {
     e.preventDefault();
     setSavingThreshold(true); setThresholdMsg('');
@@ -1549,6 +1648,10 @@ export default function NotificationsPage() {
           : (tgHealth && (tgHealth.apiReachable === false || tgHealth.botTokenValid === false || tgHealth.chatIdValid === false)) ? 'Error'
           : 'Active';
 
+        const tgChannelStatus = !status?.channelConfigured ? 'Needs Setup'
+          : !tgChannelEnabled ? 'Disabled'
+          : 'Active';
+
         const waGroupConfigured = !!(waStatus?.configured && waStatus?.groupIdSet);
         const waGroupStatus = !waGroupConfigured ? 'Needs Setup'
           : !waEnabled ? 'Disabled'
@@ -1589,6 +1692,7 @@ export default function NotificationsPage() {
 
         const channels = [
           { key: 'telegram',   name: 'Telegram Group',  status: tgStatus,        logs: tgLogs,  missingLabel: 'Bot Token + Chat ID' },
+          { key: 'tg_channel', name: 'Telegram Channel',status: tgChannelStatus, logs: tgLogs,  missingLabel: 'Channel ID' },
           { key: 'wa_group',   name: 'WhatsApp Group',  status: waGroupStatus,   logs: waLogs,  missingLabel: 'Evolution credentials' },
           { key: 'wa_channel', name: 'WhatsApp Channel',status: waChannelStatus, logs: waLogs,  missingLabel: 'Channel ID' },
         ];
@@ -1666,7 +1770,7 @@ export default function NotificationsPage() {
                 {/* Panel header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-vs-border">
                   <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' || selectedChannel === 'tg_channel' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
                       <ChanIcon channelKey={selectedChannel} size={18} className="text-white" />
                     </div>
                     <h2 className="text-base font-bold text-vs-text">{sel.name}</h2>
@@ -1674,13 +1778,13 @@ export default function NotificationsPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-vs-text-3">Notifications Enabled</span>
                     <button
-                      onClick={selectedChannel === 'telegram' ? handleToggleTg : handleToggleWa}
-                      disabled={selectedChannel === 'telegram' ? togglingTg : togglingWa}
+                      onClick={selectedChannel === 'telegram' ? handleToggleTg : selectedChannel === 'tg_channel' ? handleToggleTgChannel : handleToggleWa}
+                      disabled={selectedChannel === 'telegram' ? togglingTg : selectedChannel === 'tg_channel' ? togglingTgChannel : togglingWa}
                       className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
-                        (selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
+                        (selectedChannel === 'telegram' ? tgEnabled : selectedChannel === 'tg_channel' ? tgChannelEnabled : waEnabled) ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'
                       }`}
                     >
-                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${(selectedChannel === 'telegram' ? tgEnabled : waEnabled) ? 'left-6' : 'left-1'}`} />
+                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${(selectedChannel === 'telegram' ? tgEnabled : selectedChannel === 'tg_channel' ? tgChannelEnabled : waEnabled) ? 'left-6' : 'left-1'}`} />
                     </button>
                   </div>
                 </div>
@@ -1691,7 +1795,13 @@ export default function NotificationsPage() {
                   {/* A. Status Summary */}
                   <div className="p-5">
                     <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">A. Status Summary</p>
-                    {selectedChannel === 'telegram'
+                    {selectedChannel === 'tg_channel'
+                      ? [
+                          { label: 'Bot Token', value: status?.botTokenSet ? 'Set' : 'Missing', state: hs(!!status?.botTokenSet) },
+                          { label: 'Channel ID', value: status?.channelId || 'Missing', state: hs(!!status?.channelIdSet) },
+                          { label: 'Mirroring', value: tgChannelEnabled ? 'On' : 'Off', state: hs(tgChannelEnabled) },
+                        ].map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
+                      : selectedChannel === 'telegram'
                       ? tgHealthItems.map((it) => <StatusCheckRow key={it.label} label={it.label} value={it.value} state={it.state} />)
                       : waHealthItems(
                           selectedChannel === 'wa_group' ? 'Group ID' : 'Channel ID',
@@ -1755,43 +1865,131 @@ export default function NotificationsPage() {
                           saving={saving}
                           saveMsg={saveMsg}
                         />
+                        <div className="pt-3 border-t border-vs-border/50">
+                          <TextConfigRow
+                            label="Channel ID (optional)"
+                            fieldValue={status?.channelId || tgChannelId}
+                            placeholder="@mychannel or -1001234567890"
+                            mono
+                            onSave={async (val) => { const msg = await saveTgField('channelId', val); setSaveMsg(msg); setTgChannelId(val); }}
+                            saving={saving}
+                            saveMsg={saveMsg}
+                          />
+                          <p className="text-xs text-vs-text-3 mt-1">
+                            Set this to mirror every automated notification to a Telegram channel as well as the group.
+                            The bot must be an <strong>administrator</strong> of the channel. Leave blank to disable mirroring.
+                          </p>
+                          {status?.channelIdSet && (
+                            <div className="flex items-center gap-3 mt-2">
+                              <button type="button" onClick={handleTestTgChannel} disabled={testingTgChannel}
+                                className="px-3 py-1.5 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+                                {testingTgChannel ? 'Sending…' : 'Send test to channel'}
+                              </button>
+                              {tgChannelTestResult && (
+                                <p className={`text-xs ${tgChannelTestResult.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                                  {tgChannelTestResult.ok ? 'Sent!' : (tgChannelTestResult.error || 'Failed')}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {selectedChannel === 'tg_channel' && (
+                      <>
+                        <TextConfigRow
+                          label="Channel ID"
+                          fieldValue={status?.channelId || tgChannelId}
+                          placeholder="@mychannel or -1001234567890"
+                          mono
+                          onSave={async (val) => { const msg = await saveTgField('channelId', val); setSaveMsg(msg); setTgChannelId(val); }}
+                          saving={saving}
+                          saveMsg={saveMsg}
+                        />
+                        <p className="text-xs text-vs-text-3 mt-1">
+                          Public channels use <span className="font-mono">@name</span>; private ones use the
+                          <span className="font-mono"> -100…</span> numeric ID. The bot must be an
+                          <strong> administrator</strong> of the channel. This channel is switched
+                          independently of the group, so you can move notifications across without
+                          sending to both.
+                        </p>
                       </>
                     )}
 
                     {selectedChannel === 'wa_group' && (
                       <>
-                        <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
-                          onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <SecretConfigRow label="API Key" savedPreview={waStatus?.evolutionApiKeyPreview}
-                          inputValue={waEvolutionApiKey} onChange={setWaEvolutionApiKey}
-                          onSave={async () => { const msg = await saveWaField({ evolutionApiKey: waEvolutionApiKey }); setWaSaveMsg(msg); setWaEvolutionApiKey(''); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <TextConfigRow label="Instance Name" fieldValue={waEvolutionInstance} placeholder="Vermo Sports" mono
-                          onSave={async (val) => { const msg = await saveWaField({ evolutionInstance: val }); setWaSaveMsg(msg); setWaEvolutionInstance(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
-                        <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
-                          onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
-                          saving={waSaving} saveMsg={waSaveMsg} />
                         <div>
-                          <p className="text-xs text-vs-text-3 mb-1.5">Send Method</p>
+                          <p className="text-xs text-vs-text-3 mb-1.5">Provider</p>
                           <div className="flex gap-2">
-                            {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                            {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud'], ['gowa', 'GOWA']].map(([val, label]) => (
                               <button key={val} type="button"
-                                onClick={async () => { setWaEvolutionMethod(val); await saveWaField({ evolutionMethod: val }); }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                onClick={async () => { setWaProvider(val); const msg = await saveWaField({ provider: val }); setWaSaveMsg(msg); }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
                                 {label}
                               </button>
                             ))}
                           </div>
+                          <p className="text-xs text-vs-text-3 mt-1">Applies to both group and channel broadcasts. Direct messages have their own provider setting.</p>
                         </div>
+                        {waProvider === 'whapi' && (
+                          <SecretConfigRow label="Whapi API Token" savedPreview={waStatus?.whapiTokenSet ? 'Token saved' : null}
+                            inputValue={waWhapiToken} onChange={setWaWhapiToken}
+                            onSave={async () => { const msg = await saveWaField({ whapiToken: waWhapiToken }); setWaSaveMsg(msg); setWaWhapiToken(''); }}
+                            saving={waSaving} saveMsg={waSaveMsg} />
+                        )}
+                        {waProvider === 'gowa' && (
+                          <>
+                            <TextConfigRow label="GOWA API URL" fieldValue={waGowaUrl} placeholder="http://127.0.0.1:4500" mono
+                              onSave={async (val) => { const msg = await saveWaField({ gowaUrl: val }); setWaSaveMsg(msg); setWaGowaUrl(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <SecretConfigRow label="Basic Auth (user:pass)" savedPreview={waStatus?.gowaBasicAuthSet ? 'Saved' : null}
+                              inputValue={waGowaBasicAuth} onChange={setWaGowaBasicAuth}
+                              onSave={async () => { const msg = await saveWaField({ gowaBasicAuth: waGowaBasicAuth }); setWaSaveMsg(msg); setWaGowaBasicAuth(''); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <TextConfigRow label="Device ID (optional)" fieldValue={waGowaDeviceId} placeholder="leave blank for single-device" mono
+                              onSave={async (val) => { const msg = await saveWaField({ gowaDeviceId: val }); setWaSaveMsg(msg); setWaGowaDeviceId(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                          </>
+                        )}
+                        {waProvider === 'evolution' && (
+                          <>
+                            <TextConfigRow label="Evolution API URL" fieldValue={waEvolutionUrl} placeholder="http://localhost:8081" mono
+                              onSave={async (val) => { const msg = await saveWaField({ evolutionUrl: val }); setWaSaveMsg(msg); setWaEvolutionUrl(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <SecretConfigRow label="API Key" savedPreview={waStatus?.evolutionApiKeyPreview}
+                              inputValue={waEvolutionApiKey} onChange={setWaEvolutionApiKey}
+                              onSave={async () => { const msg = await saveWaField({ evolutionApiKey: waEvolutionApiKey }); setWaSaveMsg(msg); setWaEvolutionApiKey(''); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                            <TextConfigRow label="Instance Name" fieldValue={waEvolutionInstance} placeholder="Vermo Sports" mono
+                              onSave={async (val) => { const msg = await saveWaField({ evolutionInstance: val }); setWaSaveMsg(msg); setWaEvolutionInstance(val); }}
+                              saving={waSaving} saveMsg={waSaveMsg} />
+                          </>
+                        )}
+                        <TextConfigRow label="Group ID" fieldValue={waGroupId} placeholder="120363xxxxxxxxxx@g.us" mono
+                          onSave={async (val) => { const msg = await saveWaField({ groupId: val }); setWaSaveMsg(msg); setWaGroupId(val); }}
+                          saving={waSaving} saveMsg={waSaveMsg} />
+                        {waProvider === 'evolution' && (
+                          <div>
+                            <p className="text-xs text-vs-text-3 mb-1.5">Send Method</p>
+                            <div className="flex gap-2">
+                              {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                                <button key={val} type="button"
+                                  onClick={async () => { setWaEvolutionMethod(val); await saveWaField({ evolutionMethod: val }); }}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${waEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
                     {selectedChannel === 'wa_channel' && (
                       <>
                         <div className="mb-3 px-3 py-2 bg-vs-elevated/60 border border-vs-border rounded-lg text-xs text-vs-text-3">
-                          Shared Evolution connection — configure URL, Key & Instance on the WhatsApp Group panel.
+                          Shared connection — configure the provider and credentials on the WhatsApp Group panel.
                         </div>
                         <TextConfigRow label="Channel ID" fieldValue={waChannelId} placeholder="120363xxxxxxxxxx@newsletter" mono
                           onSave={async (val) => { const msg = await saveWaField({ channelId: val }); setWaSaveMsg(msg); setWaChannelId(val); }}
@@ -1805,13 +2003,13 @@ export default function NotificationsPage() {
                     <p className="text-xs font-semibold text-vs-text-3 uppercase tracking-wider mb-3">C. Actions</p>
                     <div className="space-y-2 mb-5">
                       <button
-                        onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
-                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup' || tgStatus === 'Disabled') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup' || waGroupStatus === 'Disabled') : (waChannelStatus === 'Needs Setup' || waChannelStatus === 'Disabled')}
+                        onClick={selectedChannel === 'telegram' ? handleTest : selectedChannel === 'tg_channel' ? handleTestTgChannel : selectedChannel === 'wa_group' ? handleWaTest : handleWaChannelTest}
+                        disabled={selectedChannel === 'telegram' ? (testing || tgStatus === 'Needs Setup' || tgStatus === 'Disabled') : selectedChannel === 'tg_channel' ? (testingTgChannel || tgChannelStatus === 'Needs Setup') : selectedChannel === 'wa_group' ? (waTesting || waGroupStatus === 'Needs Setup' || waGroupStatus === 'Disabled') : (waChannelStatus === 'Needs Setup' || waChannelStatus === 'Disabled')}
                         className="w-full py-2.5 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
                       >
-                        {(selectedChannel === 'telegram' ? testing : waTesting) ? 'Sending…' : 'Send Test Message'}
+                        {(selectedChannel === 'telegram' ? testing : selectedChannel === 'tg_channel' ? testingTgChannel : waTesting) ? 'Sending…' : 'Send Test Message'}
                       </button>
-                      {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult) && (
+                      {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'tg_channel' ? tgChannelTestResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult) && (
                         <p className={`text-xs text-center ${(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
                           {(selectedChannel === 'telegram' ? testResult : selectedChannel === 'wa_group' ? waTestResult : waChannelSendResult)?.msg}
                         </p>
@@ -1826,10 +2024,10 @@ export default function NotificationsPage() {
                       {sel.status !== 'Active' && (
                         <p className="text-xs text-vs-warning mb-2">{sel.status === 'Disabled' ? 'Notifications disabled.' : 'Channel not configured.'}</p>
                       )}
-                      <form onSubmit={selectedChannel === 'telegram' ? handleSend : selectedChannel === 'wa_group' ? handleWaSend : handleWaSendChannel}>
+                      <form onSubmit={selectedChannel === 'telegram' ? handleSend : selectedChannel === 'tg_channel' ? handleSendTgChannel : selectedChannel === 'wa_group' ? handleWaSend : handleWaSendChannel}>
                         <textarea
-                          value={selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage}
-                          onChange={(e) => selectedChannel === 'telegram' ? setMessage(e.target.value) : selectedChannel === 'wa_group' ? setWaMessage(e.target.value) : setWaChannelMessage(e.target.value)}
+                          value={selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage}
+                          onChange={(e) => selectedChannel === 'telegram' ? setMessage(e.target.value) : selectedChannel === 'tg_channel' ? setTgChannelMessage(e.target.value) : selectedChannel === 'wa_group' ? setWaMessage(e.target.value) : setWaChannelMessage(e.target.value)}
                           disabled={sel.status !== 'Active'}
                           rows={4}
                           maxLength={1024}
@@ -1838,27 +2036,30 @@ export default function NotificationsPage() {
                         />
                         <div className="flex justify-end mt-1">
                           <span className="text-xs text-vs-text-3">
-                            {(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).length} / 1024
+                            {(selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).length} / 1024
                           </span>
                         </div>
                         <div className="mt-2">
                           <p className="text-xs text-vs-text-3 mb-1.5">Destination</p>
                           <div className="flex items-center gap-2 px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg">
-                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
+                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${selectedChannel === 'telegram' || selectedChannel === 'tg_channel' ? 'bg-[#2AABEE]' : 'bg-[#25D366]'}`}>
                               <ChanIcon channelKey={selectedChannel} size={12} className="text-white" />
                             </div>
                             <span className="text-sm text-vs-text-2 flex-1">{sel.name}</span>
                             <button type="submit"
-                              disabled={sel.status !== 'Active' || (selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) || !(selectedChannel === 'telegram' ? message : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).trim()}
+                              disabled={sel.status !== 'Active' || (selectedChannel === 'telegram' ? sending : selectedChannel === 'tg_channel' ? tgChannelSending : selectedChannel === 'wa_group' ? waSending : waChannelSending) || !(selectedChannel === 'telegram' ? message : selectedChannel === 'tg_channel' ? tgChannelMessage : selectedChannel === 'wa_group' ? waMessage : waChannelMessage).trim()}
                               className="px-3 py-1 bg-vs-purple hover:bg-vs-purple/90 text-white text-xs font-semibold rounded-md transition-colors disabled:opacity-50">
-                              {(selectedChannel === 'telegram' ? sending : selectedChannel === 'wa_group' ? waSending : waChannelSending) ? '…' : 'Send'}
+                              {(selectedChannel === 'telegram' ? sending : selectedChannel === 'tg_channel' ? tgChannelSending : selectedChannel === 'wa_group' ? waSending : waChannelSending) ? '…' : 'Send'}
                             </button>
                           </div>
-                          {(selectedChannel === 'telegram' ? sendResult : selectedChannel === 'wa_group' ? waSendResult : null) && (
-                            <p className={`text-xs mt-1 ${(selectedChannel === 'telegram' ? sendResult : waSendResult)?.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                              {(selectedChannel === 'telegram' ? sendResult : waSendResult)?.msg}
-                            </p>
-                          )}
+                          {(() => {
+                            const r = selectedChannel === 'telegram' ? sendResult
+                              : selectedChannel === 'tg_channel' ? tgChannelSendResult
+                              : selectedChannel === 'wa_group' ? waSendResult : null;
+                            return r ? (
+                              <p className={`text-xs mt-1 ${r.ok ? 'text-vs-success' : 'text-vs-danger'}`}>{r.msg}</p>
+                            ) : null;
+                          })()}
                         </div>
                       </form>
                     </div>
@@ -2130,12 +2331,13 @@ export default function NotificationsPage() {
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-semibold text-vs-text-2">DM Evolution Connection</p>
+                          <p className="text-xs font-semibold text-vs-text-2">DM WhatsApp Connection</p>
                           <div className="flex items-center gap-2">
                             {dmEvolutionHealth && (
                               <span className={`flex items-center gap-1.5 text-xs ${dmEvolutionHealth.instanceConnected ? 'text-vs-success' : dmEvolutionHealth.configured ? 'text-yellow-400' : 'text-vs-danger'}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${dmEvolutionHealth.instanceConnected ? 'bg-vs-success' : dmEvolutionHealth.configured ? 'bg-yellow-400' : 'bg-vs-danger'}`} />
-                                {dmEvolutionHealth.instanceConnected ? `Connected (${dmEvolutionHealth.state})` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
+                                {dmEvolutionHealth.instanceConnected ? `Connected${dmEvolutionHealth.state ? ` (${dmEvolutionHealth.state})` : ''}` : dmEvolutionHealth.configured ? 'Configured' : 'Not configured'}
+                                {dmEvolutionHealth.provider ? ` · ${dmEvolutionHealth.provider === 'whapi' ? 'Whapi.Cloud' : dmEvolutionHealth.provider === 'gowa' ? 'GOWA' : 'Evolution'}` : ''}
                               </span>
                             )}
                             <button type="button" onClick={recheckDmHealth} className="text-xs text-vs-text-3 hover:text-vs-text underline">Check</button>
@@ -2143,35 +2345,82 @@ export default function NotificationsPage() {
                         </div>
                         <div className="space-y-3">
                           <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
-                            <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
-                              placeholder="https://evolution.example.com"
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
-                            <input type="password" value={dmEvolutionApiKey} onChange={(e) => setDmEvolutionApiKey(e.target.value)}
-                              placeholder={dmEvolutionApiKeyPreview || 'Enter API key'}
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                            {dmEvolutionApiKeyPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
-                            <input type="text" value={dmEvolutionInstance} onChange={(e) => setDmEvolutionInstance(e.target.value)}
-                              placeholder="e.g. vermo-dm"
-                              className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-vs-text-3 block mb-1.5">Send Method</label>
+                            <label className="text-xs text-vs-text-3 block mb-1.5">Provider</label>
                             <div className="flex gap-2">
-                              {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
-                                <button key={val} type="button" onClick={() => setDmEvolutionMethod(val)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                              {[['evolution', 'Evolution API'], ['whapi', 'Whapi.Cloud'], ['gowa', 'GOWA']].map(([val, label]) => (
+                                <button key={val} type="button" onClick={() => setDmProvider(val)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmProvider === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
                                   {label}
                                 </button>
                               ))}
                             </div>
                           </div>
+                          {dmProvider === 'whapi' && (
+                            <div>
+                              <label className="text-xs text-vs-text-3 block mb-1.5">Whapi API Token</label>
+                              <input type="password" value={dmWhapiToken} onChange={(e) => setDmWhapiToken(e.target.value)}
+                                placeholder={dmWhapiTokenPreview || 'Enter whapi.cloud token'}
+                                className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              {dmWhapiTokenPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current token.</p>}
+                            </div>
+                          )}
+                          {dmProvider === 'gowa' && (
+                            <>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">GOWA API URL</label>
+                                <input type="text" value={dmGowaUrl} onChange={(e) => setDmGowaUrl(e.target.value)}
+                                  placeholder="http://127.0.0.1:4500"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Basic Auth (user:pass)</label>
+                                <input type="password" value={dmGowaBasicAuth} onChange={(e) => setDmGowaBasicAuth(e.target.value)}
+                                  placeholder={dmGowaBasicAuthPreview || 'user:pass (optional)'}
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                                {dmGowaBasicAuthPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current credentials.</p>}
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Device ID (optional)</label>
+                                <input type="text" value={dmGowaDeviceId} onChange={(e) => setDmGowaDeviceId(e.target.value)}
+                                  placeholder="leave blank for single-device"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                            </>
+                          )}
+                          {dmProvider === 'evolution' && (
+                            <>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Evolution API URL</label>
+                                <input type="text" value={dmEvolutionUrl} onChange={(e) => setDmEvolutionUrl(e.target.value)}
+                                  placeholder="https://evolution.example.com"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">API Key</label>
+                                <input type="password" value={dmEvolutionApiKey} onChange={(e) => setDmEvolutionApiKey(e.target.value)}
+                                  placeholder={dmEvolutionApiKeyPreview || 'Enter API key'}
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                                {dmEvolutionApiKeyPreview && <p className="text-xs text-vs-text-3 mt-1">Leave blank to keep current key.</p>}
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Instance Name</label>
+                                <input type="text" value={dmEvolutionInstance} onChange={(e) => setDmEvolutionInstance(e.target.value)}
+                                  placeholder="e.g. vermo-dm"
+                                  className="w-full px-3 py-2 bg-vs-elevated border border-vs-border rounded-lg text-sm text-vs-text font-mono placeholder-vs-text-3 focus:outline-none focus:ring-2 focus:ring-vs-purple" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-vs-text-3 block mb-1.5">Send Method</label>
+                                <div className="flex gap-2">
+                                  {[['baileys', 'Baileys (Standard)'], ['cloud_api', 'WhatsApp Business Cloud']].map(([val, label]) => (
+                                    <button key={val} type="button" onClick={() => setDmEvolutionMethod(val)}
+                                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dmEvolutionMethod === val ? 'bg-vs-purple text-white border-vs-purple' : 'bg-vs-elevated text-vs-text-2 border-vs-border hover:border-vs-purple/50'}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
                           <div className="flex items-center gap-3">
                             <button type="button" onClick={handleSaveDmEvolution} disabled={dmEvolutionSaving}
                               className="px-4 py-2 bg-vs-purple hover:bg-vs-purple/90 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
@@ -2179,7 +2428,7 @@ export default function NotificationsPage() {
                             </button>
                             {dmEvolutionSaveMsg && <p className={`text-xs ${dmEvolutionSaveMsg === 'Saved!' ? 'text-vs-success' : 'text-vs-danger'}`}>{dmEvolutionSaveMsg}</p>}
                           </div>
-                          <p className="text-xs text-vs-text-3">Separate from the group/channel broadcast instance.</p>
+                          <p className="text-xs text-vs-text-3">Fully independent from the group/channel broadcast connection — nothing is shared between the two.</p>
                         </div>
                       </div>
                       <div className="pt-2 border-t border-vs-border/50">
@@ -2216,14 +2465,14 @@ export default function NotificationsPage() {
                   <div className="bg-vs-card border border-vs-border rounded-xl p-5">
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm font-semibold text-vs-text">C. Welcome Message</p>
-                      {dmEvolutionMethod === 'baileys'
+                      {(dmProvider === 'whapi' || dmProvider === 'gowa' || dmEvolutionMethod === 'baileys')
                         ? <span className="px-2 py-0.5 text-xs rounded-full bg-vs-elevated text-vs-text-2 border border-vs-border font-semibold">Editable</span>
                         : <span className="px-2 py-0.5 text-xs rounded-full bg-green-900/40 text-green-400 border border-green-700/30 font-semibold">Approved</span>
                       }
                     </div>
 
-                    {dmEvolutionMethod === 'baileys' ? (
-                      /* ── Editable welcome text (Baileys mode) ── */
+                    {(dmProvider === 'whapi' || dmProvider === 'gowa' || dmEvolutionMethod === 'baileys') ? (
+                      /* ── Editable welcome text (Baileys or whapi — plain text) ── */
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs text-vs-text-3">Insert variable:</span>
@@ -2557,7 +2806,8 @@ export default function NotificationsPage() {
                 className="px-2 py-1 bg-vs-elevated border border-vs-border rounded-lg text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple"
               >
                 <option value="all">All channels</option>
-                <option value="telegram">Telegram</option>
+                <option value="telegram">Telegram Group</option>
+                <option value="telegram_channel">Telegram Channel</option>
                 <option value="whatsapp">WhatsApp</option>
               </select>
               <select
@@ -2655,6 +2905,8 @@ export default function NotificationsPage() {
       {/* ── Settings tab ── */}
       {tab === 'Settings' && (
         <>
+          <ChatwootSettings />
+
           {/* Alert Settings */}
           <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3 mb-1">Alert Settings</p>
@@ -2675,6 +2927,26 @@ export default function NotificationsPage() {
                 {thresholdMsg && <p className={`text-xs ${thresholdMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{thresholdMsg}</p>}
               </div>
             </form>
+
+            <div className="border-t border-vs-border pt-5 mb-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-vs-text">Prize card image on new multiplayer bets</p>
+                  <p className="text-xs text-vs-text-3 mt-0.5 max-w-xl">
+                    Attach a screenshot of the Prize Projector card (maximum payout) to new multiplayer
+                    bet alerts, with the message text as the caption. Applies to both Telegram and
+                    WhatsApp. If the image can't be generated, the alert still sends as plain text.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                  {betCardMsg && <span className={`text-xs ${betCardMsg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{betCardMsg}</span>}
+                  <button type="button" onClick={handleToggleBetCard} disabled={savingBetCard}
+                    className={`relative w-10 h-5 rounded-full transition-colors disabled:opacity-50 ${betCardImage ? 'bg-vs-success' : 'bg-vs-elevated border border-vs-border'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${betCardImage ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </label>
+              </div>
+            </div>
 
             <div className="border-t border-vs-border pt-5">
               <form onSubmit={handleSaveTopN} className="flex items-end gap-4">

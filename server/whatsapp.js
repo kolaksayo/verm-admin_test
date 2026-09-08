@@ -7,18 +7,28 @@ function getConfig() {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
     return {
+      provider:          get('whatsapp_provider')   || 'evolution',
       evolutionUrl:      get('evolution_api_url')  || process.env.EVOLUTION_API_URL      || '',
       evolutionApiKey:   get('evolution_api_key')  || process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: get('evolution_instance') || process.env.EVOLUTION_INSTANCE     || '',
+      whapiToken:        get('whapi_api_token')     || '',
+      gowaUrl:           get('gowa_api_url')         || '',
+      gowaBasicAuth:     get('gowa_basic_auth')      || '',
+      gowaDeviceId:      get('gowa_device_id')       || '',
       groupId:           get('whatsapp_group_id')  || process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         get('whatsapp_channel_id')|| process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            get('evolution_method')   || 'baileys',
     };
   } catch {
     return {
+      provider:          'evolution',
       evolutionUrl:      process.env.EVOLUTION_API_URL      || '',
       evolutionApiKey:   process.env.EVOLUTION_API_KEY      || '',
       evolutionInstance: process.env.EVOLUTION_INSTANCE     || '',
+      whapiToken:        '',
+      gowaUrl:           '',
+      gowaBasicAuth:     '',
+      gowaDeviceId:      '',
       groupId:           process.env.WHATSAPP_GROUP_ID      || '',
       channelId:         process.env.WHATSAPP_CHANNEL_ID    || '',
       method:            'baileys',
@@ -27,24 +37,34 @@ function getConfig() {
 }
 
 // Separate credentials for direct messages (welcome, settled-bet DMs).
-// Falls back to the shared group config if DM-specific keys are not set.
+// Fully independent from the group/channel config — no fallback. A one-time
+// seed migration in sqlite.js copies the group Evolution values into the dm_*
+// keys for pre-existing installs that relied on the old implicit fallback.
 function getDmConfig() {
   try {
     const sqlite = getSQLite();
     const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
-    const shared = getConfig();
     return {
-      evolutionUrl:      get('dm_evolution_api_url')  || shared.evolutionUrl,
-      evolutionApiKey:   get('dm_evolution_api_key')  || shared.evolutionApiKey,
-      evolutionInstance: get('dm_evolution_instance') || shared.evolutionInstance,
+      provider:          get('dm_whatsapp_provider')  || 'evolution',
+      evolutionUrl:      get('dm_evolution_api_url')  || '',
+      evolutionApiKey:   get('dm_evolution_api_key')  || '',
+      evolutionInstance: get('dm_evolution_instance') || '',
+      whapiToken:        get('dm_whapi_api_token')    || '',
+      gowaUrl:           get('dm_gowa_api_url')        || '',
+      gowaBasicAuth:     get('dm_gowa_basic_auth')     || '',
+      gowaDeviceId:      get('dm_gowa_device_id')      || '',
       method:            get('dm_evolution_method')   || 'baileys',
     };
   } catch {
-    const shared = getConfig();
     return {
-      evolutionUrl:      shared.evolutionUrl,
-      evolutionApiKey:   shared.evolutionApiKey,
-      evolutionInstance: shared.evolutionInstance,
+      provider:          'evolution',
+      evolutionUrl:      '',
+      evolutionApiKey:   '',
+      evolutionInstance: '',
+      whapiToken:        '',
+      gowaUrl:           '',
+      gowaBasicAuth:     '',
+      gowaDeviceId:      '',
       method:            'baileys',
     };
   }
@@ -96,6 +116,144 @@ async function evolutionPostTemplate(to, templateName, languageCode, bodyParams,
   return { ok, json };
 }
 
+// ── Whapi.Cloud helpers ───────────────────────────────────────────────────────
+
+const WHAPI_BASE_URL = 'https://gate.whapi.cloud';
+
+// whapi accepts `to` as bare intl digits (2348012345678), a contact JID
+// (...@s.whatsapp.net), a group JID (...@g.us), or a newsletter ID — so the
+// same target strings used with Evolution pass through unchanged.
+async function whapiPost(to, text, { whapiToken: token }) {
+  if (!/^[\x00-\x7F]+$/.test(token || '')) throw new Error('api_key_invalid: stored whapi token contains non-ASCII characters — re-enter the full token in Settings');
+  const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/text`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, body: text }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
+  return { ok, json };
+}
+
+// ── GOWA helpers (go-whatsapp-web-multidevice) ────────────────────────────────
+// GOWA is self-hosted (default localhost:4500). Auth is HTTP Basic (from its
+// APP_BASIC_AUTH, "user:pass"); optional X-Device-Id selects a device in
+// multi-device mode. `to` is the recipient put straight into the `phone` field:
+// a bare intl number, or a full JID — group `<id>@g.us`, channel `<id>@newsletter`.
+function gowaBase(cfg) {
+  return String(cfg.gowaUrl || '').replace(/\/+$/, '');
+}
+function gowaHeaders(cfg, extra = {}) {
+  const h = { ...extra };
+  if (cfg.gowaBasicAuth) h['Authorization'] = `Basic ${Buffer.from(cfg.gowaBasicAuth).toString('base64')}`;
+  if (cfg.gowaDeviceId)  h['X-Device-Id'] = cfg.gowaDeviceId;
+  return h;
+}
+// GOWA success is HTTP 200 AND body.code === 'SUCCESS'.
+function gowaOk(res, json) {
+  return res.ok && json?.code === 'SUCCESS';
+}
+
+async function gowaPost(to, text, cfg) {
+  const res = await fetchWithTimeout(`${gowaBase(cfg)}/send/message`, {
+    method: 'POST',
+    headers: gowaHeaders(cfg, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ phone: to, message: text }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: gowaOk(res, json), json };
+}
+
+async function gowaPostMedia(to, { base64, mimetype, filename, caption }, cfg) {
+  // GOWA /send/image takes multipart form-data with a file part `image`
+  // (no base64 field) — reconstruct the bytes from our stored base64.
+  const fd = new FormData();
+  fd.append('phone', to);
+  if (caption) fd.append('caption', caption);
+  const bytes = Buffer.from(base64 || '', 'base64');
+  fd.append('image', new Blob([bytes], { type: mimetype || 'application/octet-stream' }), filename || 'image');
+  // No Content-Type header — fetch sets the multipart boundary.
+  const res = await fetchWithTimeout(`${gowaBase(cfg)}/send/image`, {
+    method: 'POST',
+    headers: gowaHeaders(cfg),
+    body: fd,
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: gowaOk(res, json), json };
+}
+
+// Provider dispatch — every text send funnels through here so the per-scope
+// provider choice (cfg.provider from getConfig/getDmConfig) is honored without
+// any call-site changes.
+function dispatchText(to, text, cfg) {
+  if (cfg.provider === 'whapi') return whapiPost(to, text, cfg);
+  if (cfg.provider === 'gowa')  return gowaPost(to, text, cfg);
+  return evolutionPost(to, text, cfg);
+}
+
+// ── Media (image) helpers — mirror the text path ─────────────────────────────
+
+async function evolutionPostMedia(to, { base64, mimetype, filename, caption }, { evolutionUrl: url, evolutionApiKey: apiKey, evolutionInstance: instance }) {
+  if (!/^[\x00-\x7F]+$/.test(apiKey || '')) throw new Error('api_key_invalid: stored key contains non-ASCII characters — re-enter the full API key in Settings');
+  const res = await fetchWithTimeout(`${url}/message/sendMedia/${instance}`, {
+    method: 'POST',
+    headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      number:    to,
+      mediatype: 'image',
+      mimetype,
+      caption,
+      media:     base64,   // raw base64, no data: prefix
+      fileName:  filename,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const ok = res.ok && !!(json.key?.id);
+  return { ok, json };
+}
+
+async function whapiPostMedia(to, { base64, mimetype, caption }, { whapiToken: token }) {
+  if (!/^[\x00-\x7F]+$/.test(token || '')) throw new Error('api_key_invalid: stored whapi token contains non-ASCII characters — re-enter the full token in Settings');
+  const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/messages/image`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, media: `data:${mimetype};base64,${base64}`, caption }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const ok = res.ok && (json.sent === true || !!json.message?.id || !!json.id);
+  return { ok, json };
+}
+
+// Pull a human-readable error out of a provider response, which varies by
+// provider/version: whapi uses { error: { message } }; Evolution uses
+// { message } or { response: { message: [...] } } or a bare { error }.
+function extractApiError(json) {
+  if (!json || typeof json !== 'object') return 'api_error';
+  const cands = [
+    json.message,
+    json.error?.message,
+    Array.isArray(json.response?.message) ? json.response.message.join('; ') : json.response?.message,
+    typeof json.error === 'string' ? json.error : null,
+  ];
+  const msg = cands.find((c) => typeof c === 'string' && c.trim());
+  if (!msg) return 'api_error';
+  // Keep the surfaced reason short for the UI/logs.
+  return String(msg).slice(0, 300);
+}
+
+function dispatchMedia(to, media, cfg) {
+  if (cfg.provider === 'whapi') return whapiPostMedia(to, media, cfg);
+  if (cfg.provider === 'gowa')  return gowaPostMedia(to, media, cfg);
+  return evolutionPostMedia(to, media, cfg);
+}
+
+// A scope is send-ready when its selected provider has its own credentials.
+function providerReady(cfg) {
+  if (cfg.provider === 'whapi') return !!cfg.whapiToken;
+  if (cfg.provider === 'gowa')  return !!cfg.gowaUrl;
+  return !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance);
+}
+
 // ── Logging helpers ───────────────────────────────────────────────────────────
 
 function logSend(trigger, text, ok, error = null) {
@@ -142,13 +300,13 @@ async function sendMessage(text, trigger = 'manual', _isRetry = false) {
   const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.groupId) {
+  if (!providerReady(cfg) || !cfg.groupId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await evolutionPost(cfg.groupId, plain, cfg);
+    const { ok, json } = await dispatchText(cfg.groupId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -169,13 +327,13 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
   const cfg = getConfig();
   const plain = stripHtml(text);
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !cfg.channelId) {
+  if (!providerReady(cfg) || !cfg.channelId) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   try {
-    const { ok, json } = await evolutionPost(cfg.channelId, plain, cfg);
+    const { ok, json } = await dispatchText(cfg.channelId, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     if (!ok && !_isRetry) {
@@ -192,16 +350,73 @@ async function sendToChannel(text, trigger = 'manual', _isRetry = false) {
   }
 }
 
+// Media mirrors of sendMessage/sendToChannel — same guards, logging (the caption
+// is what gets logged), and one-shot 5-minute retry, with the retry closure
+// holding the in-memory media object.
+async function sendMediaMessage(media, trigger = 'manual', _isRetry = false) {
+  const cfg = getConfig();
+  const payload = { ...media, caption: stripHtml(media.caption || '') };
+
+  if (!providerReady(cfg) || !cfg.groupId) {
+    logSend(trigger, payload.caption, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  try {
+    const { ok, json } = await dispatchMedia(cfg.groupId, payload, cfg);
+    const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
+    logSend(trigger, payload.caption, ok, errMsg);
+    if (!ok && !_isRetry) {
+      setTimeout(() => sendMediaMessage(media, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logSend(trigger, payload.caption, false, reason);
+    if (!_isRetry) {
+      setTimeout(() => sendMediaMessage(media, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return { ok: false, reason };
+  }
+}
+
+async function sendMediaToChannel(media, trigger = 'manual', _isRetry = false) {
+  const cfg = getConfig();
+  const payload = { ...media, caption: stripHtml(media.caption || '') };
+
+  if (!providerReady(cfg) || !cfg.channelId) {
+    logSend(trigger, payload.caption, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  try {
+    const { ok, json } = await dispatchMedia(cfg.channelId, payload, cfg);
+    const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
+    logSend(trigger, payload.caption, ok, errMsg);
+    if (!ok && !_isRetry) {
+      setTimeout(() => sendMediaToChannel(media, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logSend(trigger, payload.caption, false, reason);
+    if (!_isRetry) {
+      setTimeout(() => sendMediaToChannel(media, trigger, true).catch(() => {}), 5 * 60 * 1000);
+    }
+    return { ok: false, reason };
+  }
+}
+
 async function sendDirectMessage(phone, text, trigger = 'manual') {
   const cfg = getDmConfig();
   const digits = normalizePhone(phone);
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance || !digits) {
+  if (!providerReady(cfg) || !digits) {
     logSend(trigger, text, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
   const plain = stripHtml(text);
   try {
-    const { ok, json } = await evolutionPost(digits, plain, cfg);
+    const { ok, json } = await dispatchText(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
     logSend(trigger, text, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
@@ -221,15 +436,50 @@ async function sendDM(userId, phone, username, text, trigger = 'user_registered'
     return { ok: false, reason: 'no_phone' };
   }
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
+  if (!providerReady(cfg)) {
     logUserDm(userId, phone, username, trigger, false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
 
   const plain = stripHtml(text);
   try {
-    const { ok, json } = await evolutionPost(digits, plain, cfg);
+    const { ok, json } = await dispatchText(digits, plain, cfg);
     const errMsg = ok ? null : (json.message || json.error?.message || 'api_error');
+    logUserDm(userId, phone, username, trigger, ok, errMsg);
+    return ok ? { ok: true } : { ok: false, reason: errMsg };
+  } catch (err) {
+    const reason = err.name === 'AbortError' ? 'timeout' : err.message;
+    logUserDm(userId, phone, username, trigger, false, reason);
+    return { ok: false, reason };
+  }
+}
+
+// Media DM — mirrors sendDM but sends an image with the message as caption,
+// using the DM-scope config. Same no_phone / not_configured guards + user-DM
+// logging (the caption is what gets logged).
+async function sendMediaDM(userId, phone, username, media, trigger = 'campaign_dm') {
+  const cfg = getDmConfig();
+  const digits = normalizePhone(phone);
+  const payload = { ...media, caption: stripHtml(media?.caption || '') };
+
+  if (!digits) {
+    logUserDm(userId, phone, username, trigger, false, 'no_phone');
+    return { ok: false, reason: 'no_phone' };
+  }
+
+  if (!providerReady(cfg)) {
+    logUserDm(userId, phone, username, trigger, false, 'not_configured');
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  try {
+    const { ok, json } = await dispatchMedia(digits, payload, cfg);
+    const errMsg = ok ? null : extractApiError(json);
+    if (!ok) {
+      // Surface the raw provider response so image-send failures can be diagnosed
+      // (e.g. Evolution couldn't fetch the media URL).
+      console.error('sendMediaDM failed:', { provider: cfg.provider, mediaUrl: media?.url || '(base64)', response: json });
+    }
     logUserDm(userId, phone, username, trigger, ok, errMsg);
     return ok ? { ok: true } : { ok: false, reason: errMsg };
   } catch (err) {
@@ -248,7 +498,7 @@ async function sendWelcomeTemplate(userId, phone, username) {
     return { ok: false, reason: 'no_phone' };
   }
 
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) {
+  if (!providerReady(cfg)) {
     logUserDm(userId, phone, username, 'user_registered', false, 'not_configured');
     return { ok: false, reason: 'not_configured' };
   }
@@ -285,7 +535,9 @@ async function sendWelcomeTemplate(userId, phone, username) {
 
   try {
     let ok, json;
-    if (cfg.method === 'cloud_api') {
+    // Evolution cloud_api templates don't exist on whapi/gowa — they always send
+    // the plain-text welcome, same as the Baileys path.
+    if (!['whapi', 'gowa'].includes(cfg.provider) && cfg.method === 'cloud_api') {
       let templateName = '', templateLanguage = '';
       try {
         const sqlite = getSQLite();
@@ -300,8 +552,8 @@ async function sendWelcomeTemplate(userId, phone, username) {
       }
       ({ ok, json } = await evolutionPostTemplate(digits, templateName, templateLanguage, [username || 'there'], cfg));
     } else {
-      // Baileys (default): plain text via sendText
-      ({ ok, json } = await evolutionPost(digits, WELCOME_TEXT, cfg));
+      // Baileys (default) or whapi: plain text
+      ({ ok, json } = await dispatchText(digits, WELCOME_TEXT, cfg));
     }
     const errMsg = ok ? null : (json?.message || json?.error?.message || 'api_error');
     logUserDm(userId, phone, username, 'user_registered', ok, errMsg);
@@ -316,31 +568,56 @@ async function sendWelcomeTemplate(userId, phone, username) {
 // ── Status checks ─────────────────────────────────────────────────────────────
 
 function isConfigured() {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance, groupId } = getConfig();
-  return !!(evolutionUrl && evolutionApiKey && evolutionInstance && groupId);
+  const cfg = getConfig();
+  return providerReady(cfg) && !!cfg.groupId;
 }
 
 function isDmConfigured() {
-  const { evolutionUrl, evolutionApiKey, evolutionInstance } = getDmConfig();
-  return !!(evolutionUrl && evolutionApiKey && evolutionInstance);
+  return providerReady(getDmConfig());
 }
 
 // ── Health probes ───────────────────────────────────────────────────────────
 
-async function checkHealth() {
-  const cfg = getConfig();
-  const result = {
-    configured:          !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
-    urlReachable:        false,
-    apiKeyValid:         false,
-    instanceConnected:   false,
-    state:               null,
-    groupIdConfigured:   /@g\.us$/.test(cfg.groupId || ''),
-    channelIdConfigured: /@newsletter$/.test(cfg.channelId || ''),
-    checkedAt:           new Date().toISOString(),
-  };
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
+// Shared probe: Evolution hits /instance/connectionState, whapi hits
+// gate.whapi.cloud/health. Both map onto the same result fields the UI reads
+// (urlReachable / apiKeyValid / instanceConnected / state).
+async function probeProvider(cfg, result) {
+  if (cfg.provider === 'whapi') {
+    if (!cfg.whapiToken) return;
+    try {
+      const res = await fetchWithTimeout(`${WHAPI_BASE_URL}/health`, {
+        method: 'GET', headers: { 'Authorization': `Bearer ${cfg.whapiToken}` },
+      });
+      result.urlReachable = true;
+      result.apiKeyValid = res.status !== 401 && res.status !== 403;
+      const json = await res.json().catch(() => ({}));
+      const status = json.status?.text || json.status || null;
+      result.state = typeof status === 'string' ? status : null;
+      result.instanceConnected = res.ok && result.apiKeyValid;
+    } catch {
+      // network error / timeout — urlReachable stays false
+    }
+    return;
+  }
 
+  if (cfg.provider === 'gowa') {
+    if (!cfg.gowaUrl) return;
+    try {
+      // /health is public (mounted before basic-auth) and always at root.
+      const res = await fetchWithTimeout(`${gowaBase(cfg)}/health`, { method: 'GET' });
+      result.urlReachable = true;
+      // GOWA /health needs no auth, so a 200 means reachable; deeper "logged-in"
+      // status would require the authenticated /app/devices endpoint.
+      result.apiKeyValid = res.status !== 401 && res.status !== 403;
+      result.instanceConnected = res.ok;
+      result.state = res.ok ? 'reachable' : null;
+    } catch {
+      // network error / timeout — urlReachable stays false
+    }
+    return;
+  }
+
+  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return;
   try {
     const res = await fetchWithTimeout(
       `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
@@ -355,37 +632,37 @@ async function checkHealth() {
   } catch {
     // network error / timeout — urlReachable stays false
   }
+}
 
+async function checkHealth() {
+  const cfg = getConfig();
+  const result = {
+    provider:            cfg.provider,
+    configured:          providerReady(cfg),
+    urlReachable:        false,
+    apiKeyValid:         false,
+    instanceConnected:   false,
+    state:               null,
+    groupIdConfigured:   /@g\.us$/.test(cfg.groupId || ''),
+    channelIdConfigured: /@newsletter$/.test(cfg.channelId || ''),
+    checkedAt:           new Date().toISOString(),
+  };
+  await probeProvider(cfg, result);
   return result;
 }
 
 async function checkDmHealth() {
   const cfg = getDmConfig();
   const result = {
-    configured:        !!(cfg.evolutionUrl && cfg.evolutionApiKey && cfg.evolutionInstance),
+    provider:          cfg.provider,
+    configured:        providerReady(cfg),
     urlReachable:      false,
     apiKeyValid:       false,
     instanceConnected: false,
     state:             null,
     checkedAt:         new Date().toISOString(),
   };
-  if (!cfg.evolutionUrl || !cfg.evolutionApiKey || !cfg.evolutionInstance) return result;
-
-  try {
-    const res = await fetchWithTimeout(
-      `${cfg.evolutionUrl}/instance/connectionState/${cfg.evolutionInstance}`,
-      { method: 'GET', headers: { 'apikey': cfg.evolutionApiKey } },
-    );
-    result.urlReachable = true;
-    result.apiKeyValid = res.status !== 401 && res.status !== 403;
-    const json = await res.json().catch(() => ({}));
-    const state = json.instance?.state || json.state || null;
-    result.state = state;
-    result.instanceConnected = state === 'open';
-  } catch {
-    // network error / timeout
-  }
-
+  await probeProvider(cfg, result);
   return result;
 }
 
@@ -394,6 +671,9 @@ module.exports = {
   sendDM,
   sendDirectMessage,
   sendToChannel,
+  sendMediaMessage,
+  sendMediaToChannel,
+  sendMediaDM,
   sendWelcomeTemplate,
   isConfigured,
   isDmConfigured,
