@@ -29,24 +29,25 @@ Leave the workflow's `segmentField` blank to skip writing segments entirely.
 
 In n8n: **Workflows → Import from File →** `vermo-contacts-to-twenty.json`.
 
-Then create the credential the HTTP nodes use:
-
-**Credentials → New → Header Auth**
-
-| Field | Value |
-|---|---|
-| Name | `Authorization` |
-| Value | `Bearer YOUR_TWENTY_API_KEY` |
+That is the whole import — there is no credential to attach. The three HTTP
+nodes send `Authorization: Bearer <twentyApiKey>` built from the Config node,
+so nothing needs selecting per node.
 
 Get the API key from Twenty: **Settings → API & Webhooks → Create API key**.
 
-Select that credential on all three HTTP Request nodes (find / create / update).
+> Prefer n8n's credential store? Set each HTTP node's Authentication to
+> *Generic → Header Auth* with a credential of `Authorization` /
+> `Bearer <key>`, and delete the Authorization entry under Headers. Just
+> remember an imported workflow has no credential attached until you pick one
+> on **all three** nodes — otherwise Twenty answers
+> `403 Missing authentication token`.
 
 ## 3. Fill in the Config node
 
 | Field | Meaning |
 |---|---|
 | `twentyUrl` | Base URL of your Twenty instance, no trailing slash (e.g. `https://crm.example.com`) |
+| `twentyApiKey` | Twenty API key (Settings → API & Webhooks → Create API key). Sent as `Authorization: Bearer …` |
 | `webhookSecret` | Shared secret — must match **Shared secret** in the admin (System → CRM Sync). Leave *both* blank to accept unsigned requests (not recommended) |
 | `segmentField` | API name of the Person field that holds segments (default `segments`) |
 | `segmentMode` | `text` for a Text field, `multiselect` for a Multi-Select field |
@@ -176,7 +177,8 @@ that are unchanged since the last successful push, so it is safe to run often.
 | "Node was not executed" on **Twenty: find person** | The batch had nothing to push, so the "Any contacts to sync?" IF sent it down the no-op branch. Check the Verify & expand output: if it shows one item with `__empty`, the request carried no contacts — usually from pressing "Execute workflow" without the admin actually sending one |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
 | `Twenty rejected 1 contact(s) — HTTP 400: Field 'segments' does not exist on Person` | The Person field has not been created, or `segmentField` does not match its API name. Create it (step 1) or clear `segmentField` to stop sending segments |
-| `Twenty lookup failed (HTTP 401)` | The Header Auth credential is missing, not selected on a node, or the value lacks the `Bearer ` prefix |
+| `Twenty lookup failed (HTTP 403): Missing authentication token` | `twentyApiKey` is empty in the Config node — or, on an older import, the Header Auth credential was never selected on the node |
+| `Twenty lookup failed (HTTP 401): Invalid token` | `twentyApiKey` is set but wrong or expired — create a fresh key in Twenty |
 | `Twenty lookup failed (HTTP 404)` | `twentyUrl` in the Config node is wrong — it is still the `https://crm.example.com` placeholder unless you changed it |
 | Test says delivered but nothing in Twenty | An old workflow copy. Re-import: writes are now checked and failures reported |
 | "carried no contacts" on a batch you know had some | An old workflow copy: the Config (Set) node replaced the item, dropping the webhook body before Verify & expand read it. Re-import — Verify now reads the Webhook node directly |

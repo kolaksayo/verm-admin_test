@@ -32,6 +32,12 @@
               "type": "string"
             },
             {
+              "id": "a5",
+              "name": "twentyApiKey",
+              "value": "",
+              "type": "string"
+            },
+            {
               "id": "a2",
               "name": "webhookSecret",
               "value": "",
@@ -62,7 +68,7 @@
         0,
         300
       ],
-      "notes": "Set twentyUrl and webhookSecret here. webhookSecret must match the \"Shared secret\" in the admin (System > CRM Sync). Leave both blank to skip signature checking. segmentMode: text | multiselect"
+      "notes": "Set twentyUrl and twentyApiKey (Twenty > Settings > API & Webhooks > Create API key). webhookSecret must match the admin. segmentMode: text | multiselect"
     },
     {
       "parameters": {
@@ -95,8 +101,6 @@
     {
       "parameters": {
         "url": "={{ $('Config').first().json.twentyUrl }}/rest/people",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -117,6 +121,15 @@
               "fullResponse": true
             }
           }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config').first().json.twentyApiKey }}"
+            }
+          ]
         }
       },
       "id": "find",
@@ -127,11 +140,11 @@
         880,
         300
       ],
-      "notes": "Twenty has no REST upsert, so look up first and branch."
+      "notes": "Twenty has no REST upsert, so look up first and branch. Auth header comes from twentyApiKey in the Config node."
     },
     {
       "parameters": {
-        "jsCode": "// Merge each Twenty lookup result with its contact and build the request body.\n// Emits __action so the IF node can route create vs update.\n//\n// The HTTP node returns one response per input item in order, so responses are\n// matched to contacts by index.\nconst cfg = $('Config').first().json;\nconst segmentField = (cfg.segmentField || '').trim();\nconst segmentMode = (cfg.segmentMode || 'text').toLowerCase();\n\nconst contacts = $('Build search filter').all();\nconst responses = $input.all();\nconst out = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const contact = contacts[i] && contacts[i].json;\n  if (!contact) continue;\n\n  // Full Response is on, so the payload is { statusCode, body, headers }.\n  const raw = responses[i].json || {};\n  const status = raw.statusCode != null ? raw.statusCode : 200;\n  const payload = raw.body != null ? raw.body : raw;\n\n  // A failed lookup must not fall through to \"not found\" \u2014 that would create a\n  // duplicate for someone who already exists. Every contact hits the same URL\n  // and credential, so one failure means the whole batch is misconfigured.\n  if (status >= 400) {\n    const msg = (payload && (payload.message || payload.error))\n      || (typeof payload === 'string' ? payload : JSON.stringify(payload || {}).slice(0, 200));\n    throw new Error(\n      `Twenty lookup failed (HTTP ${status}): ${msg}. ` +\n      'Check twentyUrl in the Config node and the Header Auth credential ' +\n      '(Authorization: Bearer <API key>) on the three HTTP nodes.',\n    );\n  }\n\n  const people = (payload && payload.data && payload.data.people) || [];\n  const found = people.length ? people[0] : null;\n\n  const body = {\n    name: { firstName: contact.firstName || '', lastName: contact.lastName || '' },\n  };\n\n  if (contact.email) {\n    body.emails = { primaryEmail: contact.email };\n  }\n  if (contact.phoneNumber) {\n    body.phones = {\n      primaryPhoneNumber: contact.phoneNumber,\n      primaryPhoneCallingCode: contact.phoneCallingCode || '',\n    };\n  }\n\n  // Segments go into a custom field on Person. A Text field takes a joined\n  // string; a Multi-Select field takes the array of slugs.\n  const segments = Array.isArray(contact.segments) ? contact.segments : [];\n  if (segmentField) {\n    body[segmentField] = segmentMode === 'multiselect' ? segments : segments.join(', ');\n  }\n\n  out.push({\n    json: {\n      __action: found ? 'update' : 'create',\n      __personId: found ? found.id : null,\n      __userId: contact.userId,\n      __segments: segments,\n      body,\n    },\n  });\n}\n\nreturn out;"
+        "jsCode": "// Merge each Twenty lookup result with its contact and build the request body.\n// Emits __action so the IF node can route create vs update.\n//\n// The HTTP node returns one response per input item in order, so responses are\n// matched to contacts by index.\nconst cfg = $('Config').first().json;\nconst segmentField = (cfg.segmentField || '').trim();\nconst segmentMode = (cfg.segmentMode || 'text').toLowerCase();\n\nconst contacts = $('Build search filter').all();\nconst responses = $input.all();\nconst out = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const contact = contacts[i] && contacts[i].json;\n  if (!contact) continue;\n\n  // Full Response is on, so the payload is { statusCode, body, headers }.\n  const raw = responses[i].json || {};\n  const status = raw.statusCode != null ? raw.statusCode : 200;\n  const payload = raw.body != null ? raw.body : raw;\n\n  // A failed lookup must not fall through to \"not found\" \u2014 that would create a\n  // duplicate for someone who already exists. Every contact hits the same URL\n  // and credential, so one failure means the whole batch is misconfigured.\n  if (status >= 400) {\n    // Twenty puts the useful detail in `messages`; `error` is only a code.\n    const msg = (payload && Array.isArray(payload.messages) && payload.messages.length)\n      ? payload.messages.join('; ')\n      : (payload && (payload.message || payload.error))\n        || (typeof payload === 'string' ? payload : JSON.stringify(payload || {}).slice(0, 200));\n    const hint = (status === 401 || status === 403)\n      ? 'Set twentyApiKey in the Config node (Twenty > Settings > API & Webhooks > Create API key).'\n      : 'Check twentyUrl in the Config node.';\n    throw new Error(`Twenty lookup failed (HTTP ${status}): ${msg}. ${hint}`);\n  }\n\n  const people = (payload && payload.data && payload.data.people) || [];\n  const found = people.length ? people[0] : null;\n\n  const body = {\n    name: { firstName: contact.firstName || '', lastName: contact.lastName || '' },\n  };\n\n  if (contact.email) {\n    body.emails = { primaryEmail: contact.email };\n  }\n  if (contact.phoneNumber) {\n    body.phones = {\n      primaryPhoneNumber: contact.phoneNumber,\n      primaryPhoneCallingCode: contact.phoneCallingCode || '',\n    };\n  }\n\n  // Segments go into a custom field on Person. A Text field takes a joined\n  // string; a Multi-Select field takes the array of slugs.\n  const segments = Array.isArray(contact.segments) ? contact.segments : [];\n  if (segmentField) {\n    body[segmentField] = segmentMode === 'multiselect' ? segments : segments.join(', ');\n  }\n\n  out.push({\n    json: {\n      __action: found ? 'update' : 'create',\n      __personId: found ? found.id : null,\n      __userId: contact.userId,\n      __segments: segments,\n      body,\n    },\n  });\n}\n\nreturn out;"
       },
       "id": "build",
       "name": "Build person body",
@@ -178,8 +191,6 @@
       "parameters": {
         "method": "PATCH",
         "url": "={{ $('Config').first().json.twentyUrl }}/rest/people/{{ $json.__personId }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}",
@@ -190,6 +201,15 @@
               "fullResponse": true
             }
           }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config').first().json.twentyApiKey }}"
+            }
+          ]
         }
       },
       "id": "update",
@@ -199,14 +219,13 @@
       "position": [
         1560,
         200
-      ]
+      ],
+      "notes": "Auth header comes from twentyApiKey in the Config node."
     },
     {
       "parameters": {
         "method": "POST",
         "url": "={{ $('Config').first().json.twentyUrl }}/rest/people",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}",
@@ -217,6 +236,15 @@
               "fullResponse": true
             }
           }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config').first().json.twentyApiKey }}"
+            }
+          ]
         }
       },
       "id": "create",
@@ -226,11 +254,12 @@
       "position": [
         1560,
         400
-      ]
+      ],
+      "notes": "Auth header comes from twentyApiKey in the Config node."
     },
     {
       "parameters": {
-        "jsCode": "// Collapse the per-contact results into one response for the admin.\n//\n// Full Response is on, so a rejected write is visible here as a status code\n// instead of silently looking like \"no person returned\".\nconst items = $input.all();\n\n// The \"nothing to do\" path routes the marker item here directly.\nconst marker = items.find((i) => i.json && i.json.__nothing);\nif (marker) {\n  return [{\n    json: {\n      ok: true,\n      received: marker.json.received || 0,\n      upserted: 0,\n      failed: 0,\n      skipped: marker.json.skipped || 0,\n      note: (marker.json.received || 0) === 0\n        ? 'The request reached the workflow but carried no contacts.'\n        : `All ${marker.json.skipped || 0} contact(s) in this batch lacked an email or phone to match on.`,\n    },\n  }];\n}\n\nlet upserted = 0;\nconst errors = [];\n\nfor (const item of items) {\n  const raw = item.json || {};\n  const status = raw.statusCode != null ? raw.statusCode : 200;\n  const payload = raw.body != null ? raw.body : raw;\n  const person = (payload && payload.data && (payload.data.createPerson || payload.data.updatePerson)) || null;\n\n  if (status < 400 && person) {\n    upserted++;\n  } else {\n    const msg = (payload && (payload.message || payload.error))\n      || (typeof payload === 'string' ? payload : JSON.stringify(payload || {}).slice(0, 300));\n    errors.push(`HTTP ${status}: ${Array.isArray(msg) ? msg.join('; ') : msg}`);\n  }\n}\n\n// ok:false makes the admin show the failure instead of reporting delivery.\nreturn [{\n  json: {\n    ok: errors.length === 0,\n    received: items.length,\n    upserted,\n    failed: errors.length,\n    errors: errors.slice(0, 5),\n  },\n}];"
+        "jsCode": "// Collapse the per-contact results into one response for the admin.\n//\n// Full Response is on, so a rejected write is visible here as a status code\n// instead of silently looking like \"no person returned\".\nconst items = $input.all();\n\n// The \"nothing to do\" path routes the marker item here directly.\nconst marker = items.find((i) => i.json && i.json.__nothing);\nif (marker) {\n  return [{\n    json: {\n      ok: true,\n      received: marker.json.received || 0,\n      upserted: 0,\n      failed: 0,\n      skipped: marker.json.skipped || 0,\n      note: (marker.json.received || 0) === 0\n        ? 'The request reached the workflow but carried no contacts.'\n        : `All ${marker.json.skipped || 0} contact(s) in this batch lacked an email or phone to match on.`,\n    },\n  }];\n}\n\nlet upserted = 0;\nconst errors = [];\n\nfor (const item of items) {\n  const raw = item.json || {};\n  const status = raw.statusCode != null ? raw.statusCode : 200;\n  const payload = raw.body != null ? raw.body : raw;\n  const person = (payload && payload.data && (payload.data.createPerson || payload.data.updatePerson)) || null;\n\n  if (status < 400 && person) {\n    upserted++;\n  } else {\n    // Twenty puts the useful detail in `messages`; `error` is only a code.\n    const msg = (payload && Array.isArray(payload.messages) && payload.messages.length)\n      ? payload.messages.join('; ')\n      : (payload && (payload.message || payload.error))\n        || (typeof payload === 'string' ? payload : JSON.stringify(payload || {}).slice(0, 300));\n    errors.push(`HTTP ${status}: ${Array.isArray(msg) ? msg.join('; ') : msg}`);\n  }\n}\n\n// ok:false makes the admin show the failure instead of reporting delivery.\nreturn [{\n  json: {\n    ok: errors.length === 0,\n    received: items.length,\n    upserted,\n    failed: errors.length,\n    errors: errors.slice(0, 5),\n  },\n}];"
       },
       "id": "summary",
       "name": "Summarise",
