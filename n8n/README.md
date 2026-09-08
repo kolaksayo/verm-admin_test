@@ -47,7 +47,7 @@ Select that credential on all three HTTP Request nodes (find / create / update).
 | Field | Meaning |
 |---|---|
 | `twentyUrl` | Base URL of your Twenty instance, no trailing slash (e.g. `https://crm.example.com`) |
-| `webhookSecret` | Shared secret — must match the one saved in the admin. Leave blank to accept unsigned requests (not recommended) |
+| `webhookSecret` | Shared secret — must match **Shared secret** in the admin (System → CRM Sync). Leave *both* blank to accept unsigned requests (not recommended) |
 | `segmentField` | API name of the Person field that holds segments (default `segments`) |
 | `segmentMode` | `text` for a Text field, `multiselect` for a Multi-Select field |
 
@@ -89,6 +89,24 @@ A successful test creates "Vermo Test Contact" in Twenty. Delete it afterwards.
   ]
 }
 ```
+
+### Where the shared secret goes
+
+It is one value that you choose, entered in **two** places, and they must match:
+
+1. **Admin** → System → CRM Sync → **Shared secret** → Save
+2. **n8n** → this workflow → **Config** node → `webhookSecret`
+
+Any random string works — e.g. `openssl rand -hex 24`. If the two differ, every
+batch fails with `HTTP 401: Invalid signature`. Leaving *both* blank disables
+signature checking, which is only sensible on a private network.
+
+The signature is computed with the **Web Crypto API** (`globalThis.crypto`), a
+standard global in Node 18+. It deliberately does not `require('crypto')`,
+because the Code node sandbox blocks built-in modules and would fail with
+`Module 'crypto' is disallowed`. (If you prefer the module, start n8n with
+`NODE_FUNCTION_ALLOW_BUILTIN=crypto` — but the shipped workflow needs no such
+setting.)
 
 Header `x-vermo-signature: sha256=<hex>` is an HMAC-SHA256 of the **exact request
 body** using the shared secret. The workflow recomputes it from the raw body —
@@ -146,6 +164,8 @@ that are unchanged since the last successful push, so it is safe to run often.
 |---|---|
 | `HTTP 404` | Workflow not active, or the test URL was used instead of the production one |
 | `HTTP 401` + "Invalid signature" | The secret in the Config node does not match the admin |
+| `Module 'crypto' is disallowed` | An old copy of the workflow. Re-import this file — the current one uses Web Crypto and needs no env var |
+| "Web Crypto is unavailable" | n8n is on Node < 18. Upgrade, or clear `webhookSecret` to run unsigned |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
 | Twenty returns 400 | Usually the segments field name or type is wrong — check `segmentField` / `segmentMode` against the field you created |
 | Duplicate people | An existing person has a different email/phone than the dashboard holds, so the lookup misses |
