@@ -35,12 +35,37 @@ so nothing needs selecting per node.
 
 Get the API key from Twenty: **Settings → API & Webhooks → Create API key**.
 
-> Prefer n8n's credential store? Set each HTTP node's Authentication to
-> *Generic → Header Auth* with a credential of `Authorization` /
-> `Bearer <key>`, and delete the Authorization entry under Headers. Just
-> remember an imported workflow has no credential attached until you pick one
-> on **all three** nodes — otherwise Twenty answers
-> `403 Missing authentication token`.
+### Using n8n's credential store instead
+
+The Config-node route above puts the key in the workflow. To keep it in n8n's
+encrypted credential store instead:
+
+1. **Credentials → New → Header Auth**, and fill in both fields:
+
+   | Field | Value |
+   |---|---|
+   | Name | `Authorization` |
+   | Value | `Bearer YOUR_TWENTY_API_KEY` |
+
+   `Name` is the **HTTP header name** — it must be spelled exactly
+   `Authorization`. A typo here (`Authorizarion`) sends a header Twenty
+   ignores, and it answers `403 Missing authentication token` as if no key
+   were sent at all. Leave the `fx` expression toggle off; these are literal
+   values, not expressions.
+
+   Optionally set **Allowed HTTP Request Domains** to your Twenty host rather
+   than `All`, so the key cannot be sent anywhere else.
+
+2. On **each of the three** HTTP nodes (find / create / update):
+   - Authentication → **Generic Credential Type** → **Header Auth**
+   - pick the credential you just made
+   - under **Headers**, delete the `Authorization` entry the workflow ships
+     with — otherwise both are sent and the blank one can win
+
+3. Leave `twentyApiKey` empty in the Config node.
+
+A credential is not attached by importing a workflow, so this has to be done
+after every re-import — which is why the shipped default uses the Config node.
 
 ## 3. Fill in the Config node
 
