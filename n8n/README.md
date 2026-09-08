@@ -101,7 +101,7 @@ after every re-import — which is why the shipped default uses the Config node.
 | `twentyApiKey` | Twenty API key (Settings → API & Webhooks → Create API key). Sent as `Authorization: Bearer …` |
 | `webhookSecret` | Shared secret — must match **Shared secret** in the admin (System → CRM Sync). Leave *both* blank to accept unsigned requests (not recommended) |
 | `segmentField` | API name of the Person field that holds segments (default `segments`) |
-| `segmentMode` | `text` for a Text field, `multiselect` for a Multi-Select field |
+| `segmentMode` | `text` for a Text field, `multiselect` for a Multi-Select field, `select` for a single Select field (keeps only the first segment) |
 | `segmentValueCase` | Blank to send slugs as-is; `upper` if Twenty's Multi-Select option values are upper-cased |
 
 ## 4. Activate and connect
@@ -224,6 +224,17 @@ boundary, the batch waits 60 seconds and retries once.
 
 If you have raised Twenty's limit, set **Twenty rate limit /min** on the CRM
 Sync page to match and the pacing widens automatically.
+
+### Using a Select field
+
+A Select holds one value, but most contacts match several segments, so
+`segmentMode: select` sends only the **first** one and the rest are lost. The
+order is the order `SEGMENT_DEFS` declares in `server/segments.js` — move an
+entry up there to make it win.
+
+That makes a Select useful only as a coarse "primary segment". Multi-Select is
+the right type if you want to keep everything a contact matches, and it filters
+just as well.
 
 ## Switching a Text field to Multi-Select
 
