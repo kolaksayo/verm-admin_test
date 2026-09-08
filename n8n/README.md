@@ -179,4 +179,5 @@ that are unchanged since the last successful push, so it is safe to run often.
 | `Twenty lookup failed (HTTP 401)` | The Header Auth credential is missing, not selected on a node, or the value lacks the `Bearer ` prefix |
 | `Twenty lookup failed (HTTP 404)` | `twentyUrl` in the Config node is wrong — it is still the `https://crm.example.com` placeholder unless you changed it |
 | Test says delivered but nothing in Twenty | An old workflow copy. Re-import: writes are now checked and failures reported |
+| "carried no contacts" on a batch you know had some | An old workflow copy: the Config (Set) node replaced the item, dropping the webhook body before Verify & expand read it. Re-import — Verify now reads the Webhook node directly |
 | Duplicate people | An existing person has a different email/phone than the dashboard holds, so the lookup misses |
