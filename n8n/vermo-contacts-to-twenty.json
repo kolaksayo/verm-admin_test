@@ -79,8 +79,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build the Twenty search filter for this contact.\n// Email is the primary key when present; otherwise fall back to phone. A\n// contact with neither cannot be matched or created, so it is skipped.\nconst c = $json;\nif (c.__empty) return [];\n\nconst email = (c.email || '').trim();\nconst phone = (c.phoneNumber || '').trim();\n\nlet filter = '';\nif (email) filter = `emails.primaryEmail[eq]:${email}`;\nelse if (phone) filter = `phones.primaryPhoneNumber[eq]:${phone}`;\n\nif (!filter) {\n  return [{ json: { ...c, __skip: true, __reason: 'no email or phone' } }];\n}\nreturn [{ json: { ...c, __filter: filter } }];",
-        "mode": "runOnceForEachItem"
+        "jsCode": "// Build the Twenty search filter for each contact.\n//\n// Runs over all items (not per-item) so contacts that cannot be matched are\n// dropped here rather than reaching the HTTP node with an empty filter.\n// Email is the key when present; phone is the fallback.\nconst out = [];\n\nfor (const item of $input.all()) {\n  const c = item.json;\n  if (c.__empty) continue;                 // empty batch marker\n\n  const email = (c.email || '').trim();\n  const phone = (c.phoneNumber || '').trim();\n\n  let filter = '';\n  if (email) filter = `emails.primaryEmail[eq]:${email}`;\n  else if (phone) filter = `phones.primaryPhoneNumber[eq]:${phone}`;\n\n  // Nothing for the CRM to key on \u2014 skip instead of creating an orphan record.\n  if (!filter) continue;\n\n  out.push({ json: { ...c, __filter: filter } });\n}\n\nreturn out;"
       },
       "id": "filter",
       "name": "Build search filter",
@@ -89,7 +88,8 @@
       "position": [
         440,
         300
-      ]
+      ],
+      "notes": "Runs over all items so unmatched contacts are dropped before the HTTP call."
     },
     {
       "parameters": {
@@ -129,8 +129,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge the Twenty lookup result with the original contact and build the\n// request body. Emits __action so the IF node can route create vs update.\nconst contact = $('Build search filter').item.json;\nconst found = $json?.data?.people?.[0] || null;\n\nconst cfg = $('Config').first().json;\nconst segmentField = (cfg.segmentField || '').trim();\nconst segmentMode = (cfg.segmentMode || 'text').toLowerCase();\n\nconst body = {\n  name: { firstName: contact.firstName || '', lastName: contact.lastName || '' },\n};\n\nif (contact.email) {\n  body.emails = { primaryEmail: contact.email };\n}\nif (contact.phoneNumber) {\n  body.phones = {\n    primaryPhoneNumber: contact.phoneNumber,\n    primaryPhoneCallingCode: contact.phoneCallingCode || '',\n  };\n}\n\n// Segments go into a custom field on Person. A Text field takes a joined\n// string; a Multi-Select field takes the array of slugs.\nconst segments = Array.isArray(contact.segments) ? contact.segments : [];\nif (segmentField) {\n  body[segmentField] = segmentMode === 'multiselect' ? segments : segments.join(', ');\n}\n\nreturn [{\n  json: {\n    __action: found ? 'update' : 'create',\n    __personId: found ? found.id : null,\n    __userId: contact.userId,\n    __segments: segments,\n    body,\n  },\n}];",
-        "mode": "runOnceForEachItem"
+        "jsCode": "// Merge each Twenty lookup result with its contact and build the request body.\n// Emits __action so the IF node can route create vs update.\n//\n// The HTTP node returns one response per input item in order, so responses are\n// matched to contacts by index.\nconst cfg = $('Config').first().json;\nconst segmentField = (cfg.segmentField || '').trim();\nconst segmentMode = (cfg.segmentMode || 'text').toLowerCase();\n\nconst contacts = $('Build search filter').all();\nconst responses = $input.all();\nconst out = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const contact = contacts[i] && contacts[i].json;\n  if (!contact) continue;\n\n  const resp = responses[i].json || {};\n  const people = (resp.data && resp.data.people) || [];\n  const found = people.length ? people[0] : null;\n\n  const body = {\n    name: { firstName: contact.firstName || '', lastName: contact.lastName || '' },\n  };\n\n  if (contact.email) {\n    body.emails = { primaryEmail: contact.email };\n  }\n  if (contact.phoneNumber) {\n    body.phones = {\n      primaryPhoneNumber: contact.phoneNumber,\n      primaryPhoneCallingCode: contact.phoneCallingCode || '',\n    };\n  }\n\n  // Segments go into a custom field on Person. A Text field takes a joined\n  // string; a Multi-Select field takes the array of slugs.\n  const segments = Array.isArray(contact.segments) ? contact.segments : [];\n  if (segmentField) {\n    body[segmentField] = segmentMode === 'multiselect' ? segments : segments.join(', ');\n  }\n\n  out.push({\n    json: {\n      __action: found ? 'update' : 'create',\n      __personId: found ? found.id : null,\n      __userId: contact.userId,\n      __segments: segments,\n      body,\n    },\n  });\n}\n\nreturn out;"
       },
       "id": "build",
       "name": "Build person body",
@@ -139,7 +138,8 @@
       "position": [
         880,
         300
-      ]
+      ],
+      "notes": "Responses are matched to contacts by index."
     },
     {
       "parameters": {

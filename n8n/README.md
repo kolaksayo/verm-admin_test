@@ -166,6 +166,7 @@ that are unchanged since the last successful push, so it is safe to run often.
 | `HTTP 401` + "Invalid signature" | The secret in the Config node does not match the admin |
 | `Module 'crypto' is disallowed` | An old copy of the workflow. Re-import this file — the current one uses Web Crypto and needs no env var |
 | "Web Crypto is unavailable" | n8n is on Node < 18. Upgrade, or clear `webhookSecret` to run unsigned |
+| `A 'json' property isn't an object` | An old copy of the workflow. Re-import this file — every Code node now runs in "Run Once for All Items" mode and returns an array |
 | `timeout` | Workflow is slow or n8n is unreachable; large batches on a small instance can exceed 30s — lower the batch size |
 | Twenty returns 400 | Usually the segments field name or type is wrong — check `segmentField` / `segmentMode` against the field you created |
 | Duplicate people | An existing person has a different email/phone than the dashboard holds, so the lookup misses |
