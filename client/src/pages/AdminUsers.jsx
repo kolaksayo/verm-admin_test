@@ -291,74 +291,76 @@ export default function AdminUsers() {
       )}
 
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-vs-elevated border-b border-vs-border">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Email</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Role</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">2FA</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Created</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-vs-border">
-            {loading && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">Loading…</td></tr>
-            )}
-            {!loading && users.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">No admin users found.</td></tr>
-            )}
-            {users.map((u) => (
-              <tr key={u.id} className="hover:bg-vs-elevated transition-colors">
-                <td className="px-4 py-3 font-medium text-vs-text">
-                  {u.email || u.username}
-                  {u.username === currentUser && (
-                    <span className="ml-2 text-xs text-vs-text-3">(you)</span>
-                  )}
-                </td>
-                <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                <td className="px-4 py-3">
-                  {u.two_factor_enabled
-                    ? <span className="inline-flex items-center gap-1 text-xs text-vs-success font-medium"><Check className="w-3 h-3" /> Enabled</span>
-                    : <span className="text-xs text-vs-text-3">Disabled</span>}
-                </td>
-                <td className="px-4 py-3 text-vs-text-3 text-xs">{formatDate(u.created_at)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        editUserIdRef.current = u.id;
-                        setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError('');
-                        setEditGrants([]);
-                        setGrantsError(false);
-                        if (u.role !== 'superadmin') {
-                          setGrantsLoading(true);
-                          api.get(`/admin-users/${u.id}/permissions`)
-                            .then((r) => { if (editUserIdRef.current === u.id) setEditGrants(r.data.grants); })
-                            .catch(() => { if (editUserIdRef.current === u.id) setGrantsError(true); })
-                            .finally(() => { if (editUserIdRef.current === u.id) setGrantsLoading(false); });
-                        }
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    {u.username !== currentUser && (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => { setDeleteUser(u); setFormError(''); }}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-vs-elevated border-b border-vs-border">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">2FA</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-vs-text-3 uppercase tracking-wider">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-vs-border">
+              {loading && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">Loading…</td></tr>
+              )}
+              {!loading && users.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-vs-text-3 text-sm">No admin users found.</td></tr>
+              )}
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-vs-elevated transition-colors">
+                  <td className="px-4 py-3 font-medium text-vs-text">
+                    {u.email || u.username}
+                    {u.username === currentUser && (
+                      <span className="ml-2 text-xs text-vs-text-3">(you)</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
+                  <td className="px-4 py-3">
+                    {u.two_factor_enabled
+                      ? <span className="inline-flex items-center gap-1 text-xs text-vs-success font-medium"><Check className="w-3 h-3" /> Enabled</span>
+                      : <span className="text-xs text-vs-text-3">Disabled</span>}
+                  </td>
+                  <td className="px-4 py-3 text-vs-text-3 text-xs">{formatDate(u.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          editUserIdRef.current = u.id;
+                          setEditUser(u); setEditRole(u.role); setEditPassword(''); setEditEmail(u.email || ''); setFormError('');
+                          setEditGrants([]);
+                          setGrantsError(false);
+                          if (u.role !== 'superadmin') {
+                            setGrantsLoading(true);
+                            api.get(`/admin-users/${u.id}/permissions`)
+                              .then((r) => { if (editUserIdRef.current === u.id) setEditGrants(r.data.grants); })
+                              .catch(() => { if (editUserIdRef.current === u.id) setGrantsError(true); })
+                              .finally(() => { if (editUserIdRef.current === u.id) setGrantsLoading(false); });
+                          }
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      {u.username !== currentUser && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => { setDeleteUser(u); setFormError(''); }}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {/* Create modal */}

@@ -160,42 +160,44 @@ export default function DollarNairaRate() {
           <p className="text-xs font-semibold uppercase tracking-wider text-vs-text-3">Rate History by Day</p>
           <p className="text-xs text-vs-text-3">{total} entries</p>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-vs-border bg-vs-elevated/40">
-              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Date</th>
-              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-warning">Morning</th>
-              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Midday</th>
-              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-purple-light">Night</th>
-              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Avg</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-vs-border">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
-                  <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
-                ))}</tr>
-              ))
-            ) : history.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots recorded yet.</td></tr>
-            ) : (
-              history.map((doc) => {
-                const vals = PERIODS.map((p) => doc[p]).filter(Boolean);
-                const avg  = vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
-                return (
-                  <tr key={doc.date} className="hover:bg-vs-elevated/40 transition-colors">
-                    <td className="px-5 py-3 font-medium text-vs-text">{fmtDate(doc.date)}</td>
-                    <td className="px-5 py-3 text-right font-mono text-vs-warning">{fmtRate(doc.morning)}</td>
-                    <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(doc.midday)}</td>
-                    <td className="px-5 py-3 text-right font-mono text-vs-purple-light">{fmtRate(doc.night)}</td>
-                    <td className="px-5 py-3 text-right font-mono text-vs-text-3">{fmtRate(avg)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-vs-border bg-vs-elevated/40">
+                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Date</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-warning">Morning</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Midday</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-purple-light">Night</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Avg</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-vs-border">
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                    <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
+                  ))}</tr>
+                ))
+              ) : history.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots recorded yet.</td></tr>
+              ) : (
+                history.map((doc) => {
+                  const vals = PERIODS.map((p) => doc[p]).filter(Boolean);
+                  const avg  = vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+                  return (
+                    <tr key={doc.date} className="hover:bg-vs-elevated/40 transition-colors">
+                      <td className="px-5 py-3 font-medium text-vs-text">{fmtDate(doc.date)}</td>
+                      <td className="px-5 py-3 text-right font-mono text-vs-warning">{fmtRate(doc.morning)}</td>
+                      <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(doc.midday)}</td>
+                      <td className="px-5 py-3 text-right font-mono text-vs-purple-light">{fmtRate(doc.night)}</td>
+                      <td className="px-5 py-3 text-right font-mono text-vs-text-3">{fmtRate(avg)}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-vs-border">
             <span className="text-xs text-vs-text-3">Page {page} of {totalPages}</span>
@@ -233,42 +235,44 @@ export default function DollarNairaRate() {
         {snapshotMsg && (
           <div className="px-5 py-2 border-b border-vs-border text-xs text-vs-text-3">{snapshotMsg}</div>
         )}
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-vs-border bg-vs-elevated/40">
-              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Date</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Period</th>
-              <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Rate</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Source</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Captured</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-vs-border">
-            {sqliteLoading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
-                  <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
-                ))}</tr>
-              ))
-            ) : sqliteRows.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots yet — rates are auto-saved at 6 AM, 12 PM and 6 PM (Nigeria time).</td></tr>
-            ) : (
-              sqliteRows.map((row) => (
-                <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
-                  <td className="px-5 py-3 font-medium text-vs-text">{fmtDate(row.date)}</td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${PERIOD_BADGE[row.period]}`}>
-                      {PERIOD_LABELS[row.period]}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(row.rate)}</td>
-                  <td className="px-5 py-3 text-vs-text-3 capitalize">{row.source}</td>
-                  <td className="px-5 py-3 text-vs-text-3 text-xs">{row.captured_at}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-vs-border bg-vs-elevated/40">
+                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Date</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Period</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-lime">Rate</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Source</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Captured</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-vs-border">
+              {sqliteLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                    <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
+                  ))}</tr>
+                ))
+              ) : sqliteRows.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-10 text-vs-text-3 text-sm">No snapshots yet — rates are auto-saved at 6 AM, 12 PM and 6 PM (Nigeria time).</td></tr>
+              ) : (
+                sqliteRows.map((row) => (
+                  <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
+                    <td className="px-5 py-3 font-medium text-vs-text">{fmtDate(row.date)}</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${PERIOD_BADGE[row.period]}`}>
+                        {PERIOD_LABELS[row.period]}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right font-mono text-vs-lime">{fmtRate(row.rate)}</td>
+                    <td className="px-5 py-3 text-vs-text-3 capitalize">{row.source}</td>
+                    <td className="px-5 py-3 text-vs-text-3 text-xs">{row.captured_at}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
         {sqliteTotalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-vs-border">
             <span className="text-xs text-vs-text-3">Page {sqlitePage} of {sqliteTotalPages}</span>
