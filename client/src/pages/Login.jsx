@@ -114,7 +114,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-vs-bg flex items-center justify-center p-4">
+    <div className="min-h-screen supports-[height:100dvh]:min-h-dvh bg-vs-bg flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
