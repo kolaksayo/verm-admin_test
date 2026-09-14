@@ -19,8 +19,9 @@ visible headings — nothing to fix. Detail in §5.
 
 **b. `<th>` counts are per file, not per table.** `AuditPage` has **4 tables**,
 not a 31-column one; `CashFlow` has 3; `UserActivity` has 4. The real count is
-**15 tables in 7 files** (§1) plus those still being inventoried. Card layout is
-decided per table, so this document is organised that way.
+**26 tables in 15 files** (§1), verified with
+`grep -r '<table' --include=*.jsx client/src | wc -l`. Card layout is decided
+per table, so this document is organised that way.
 
 **c. Recharts is already in its own chunk.** `vite.config.js:16` puts it in
 `vendor-recharts`. But it is statically imported by three pages and there is no
@@ -35,7 +36,7 @@ and `FixturesView.jsx:256-259`. The compact variant must cover both.
 
 ## 1. Table inventory
 
-15 tables across 7 files. ACTIONABLE = drives a decision on the row;
+26 tables across 15 files. ACTIONABLE = drives a decision on the row;
 REFERENCE = detail. The split drives what goes on the card face versus behind a
 tap.
 
@@ -280,7 +281,7 @@ Severity = how broken at 390px. Effort = S/M/L.
 | Route | File | Lines | Resp | Severity | Effort |
 |---|---|---|---|---|---|
 | *(all)* | `Layout.jsx` | 298 | **0** | **Critical** — sidebar `w-60` leaves ~120px of content | M |
-| `/login` | `Login.jsx` | 264 | **0** | **Critical** — first screen, `max-w-sm` + `p-8` | S |
+| `/login` | `Login.jsx` | 264 | **0** | Low — `min-h-screen p-4` → `max-w-sm` → `Card p-8` renders acceptably at 390px; only defects are sub-16px inputs and `min-h-screen`, both fixed globally in Phase 1 | S |
 | `/notifications` | `NotificationsPage.jsx` | 3144 | 10 | **Critical** — 15 unprefixed grids, 2 tables, 36 controls | **L — own phase** |
 | `collections/:name` | `DataTable.jsx` + `Collection.jsx` | 493 | **0** | High — 7 dynamic cols, `_id`-first fallback | M |
 | `/audit` | `AuditPage.jsx` | 494 | **0** | High — 4 tables, 4 selects | M |
@@ -397,9 +398,10 @@ issues — they clip on a narrow desktop window. Adding the missing
 `overflow-x-auto` is a one-line fix per table, carries no `lg:+` visual change,
 and stops the same content being lost before `ResponsiveTable` ever lands.
 
-**`Login.jsx`** — Critical severity, zero responsive classes, and not in any
-phase of the brief. It is the first screen on every device; `max-w-sm` + `p-8`
-inside a `Card` is close to workable, so this is an S.
+**`Login.jsx`** — Low severity, S effort. It renders acceptably at 390px today;
+its two defects (sub-16px inputs, `min-h-screen`) are fixed globally in Phase 1
+anyway. Kept in Phase 1 because it is the first screen on every device and the
+remaining change (`min-h-dvh`, verify `p-8` at 320px) is one line.
 
 ### Deduplicate rather than migrate twice
 
