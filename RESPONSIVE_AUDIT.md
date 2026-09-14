@@ -296,7 +296,7 @@ Severity = how broken at 390px. Effort = S/M/L.
 | `/user-snapshot` | `UserSnapshot.jsx` | 268 | 5 | Medium — 7 grids, charts | S |
 | `/` | `Dashboard.jsx` | — | 4 | Medium — 6 grids | S |
 | `/dollar-naira-rate` | `DollarNairaRate.jsx` | 286 | **0** | Medium — 2 tables + chart | S |
-| `/telegram` | `TelegramSettings.jsx` | 1120 | 1 | Medium — 11 controls | M |
+| `/telegram` | `TelegramSettings.jsx` | 1120 | 1 | **Unreachable** — `App.jsx` redirects `/telegram` to `/notifications` and nothing imports this file. Found during Phase 1; decision needed (delete, or re-route) before any Phase 3 effort is spent on it | — |
 | `/crm-sync` | `CrmSync.jsx` | 381 | 2 | Low — recently built, partly responsive | S |
 | `/profile` | `Profile.jsx` | 249 | **0** | Low — single column already | S |
 | `/social-data` | `SocialData.jsx` | — | **0** | Low | S |
@@ -409,6 +409,14 @@ remaining change (`min-h-dvh`, verify `p-8` at 320px) is one line.
 once during Phase 3 and both pages get it — and the two `« ‹ › »` pagination
 blocks (`DataTable:220`, `FixturesView:256`) should both move onto the compact
 variant built in Phase 2.
+
+### Found during Phase 1, noted for §6
+
+- **`TelegramSettings.jsx` (1,120 lines) is dead code.** `App.jsx` redirects
+  `/telegram` to `/notifications` and no file imports the page. Its send-log
+  table is the duplicate of `NotificationsPage:2828` noted in §1 — so the
+  "extract once" recommendation collapses to "delete the dead copy". Needs a
+  decision before Phase 3; ranked accordingly in §6.
 
 ### Out of scope, flagged not fixed
 
