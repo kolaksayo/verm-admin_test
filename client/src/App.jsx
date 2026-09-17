@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { NAV_ITEM_PERMISSIONS, COLLECTION_PERMISSIONS } from './config/navCategories';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -19,6 +20,10 @@ import CrmSync from './pages/CrmSync';
 import SocialData from './pages/SocialData';
 import SystemLogs from './pages/SystemLogs';
 import AuditPage from './pages/AuditPage';
+import InfluencerPortal from './pages/InfluencerPortal';
+import WagerCardFrame from './pages/WagerCardFrame';
+import InfluencerDashboard from './pages/InfluencerDashboard';
+import RequestLogs from './pages/RequestLogs';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -32,6 +37,31 @@ function SuperadminRoute({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (role !== 'superadmin') return <Navigate to="/" replace />;
   return children;
+}
+
+// Generalized nav-category route guard. Client-side only — a UX convenience
+// that redirects away from a hidden page; the server's requirePermission/
+// requireCollectionPermission middleware is the real access-control boundary.
+function PermissionRoute({ category, subcategory, children }) {
+  const { user, hasPermission, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!hasPermission(category, subcategory)) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Collection routes resolve their category/subcategory from the :name param.
+function CollectionRoute() {
+  const { name } = useParams();
+  const { user, hasPermission, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  // Fail closed: an unmapped collection name is treated as not permitted, not as
+  // permitted-by-default — matches Layout.jsx's nav-filtering default and means a
+  // missing registry entry hides/blocks a page instead of silently exposing it.
+  const perm = NAV_ITEM_PERMISSIONS[name] || COLLECTION_PERMISSIONS[name];
+  if (!perm || !hasPermission(perm.category, perm.subcategory)) return <Navigate to="/" replace />;
+  return <Collection />;
 }
 
 function AppRoutes() {
@@ -48,20 +78,21 @@ function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="collections/:name" element={<Collection />} />
-        <Route path="cash-flow" element={<CashFlow />} />
-        <Route path="user-snapshot" element={<UserSnapshot />} />
-        <Route path="user-activity" element={<UserActivity />} />
-        <Route path="transactions" element={<Transactions />} />
-        <Route path="football-data" element={<FootballData />} />
-        <Route path="dollar-naira-rate" element={<DollarNairaRate />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="campaigns" element={<CampaignsPage />} />
-        <Route path="crm-sync" element={<CrmSync />} />
+        <Route path="collections/:name" element={<CollectionRoute />} />
+        <Route path="cash-flow" element={<PermissionRoute category="overview" subcategory="cash_flow"><CashFlow /></PermissionRoute>} />
+        <Route path="user-snapshot" element={<PermissionRoute category="overview" subcategory="user_snapshot"><UserSnapshot /></PermissionRoute>} />
+        <Route path="user-activity" element={<PermissionRoute category="overview" subcategory="user_activity"><UserActivity /></PermissionRoute>} />
+        <Route path="transactions" element={<PermissionRoute category="users_finance" subcategory="transactions"><Transactions /></PermissionRoute>} />
+        <Route path="football-data" element={<PermissionRoute category="football" subcategory="football_data"><FootballData /></PermissionRoute>} />
+        <Route path="dollar-naira-rate" element={<PermissionRoute category="system" subcategory="dollar_naira_rate"><DollarNairaRate /></PermissionRoute>} />
+        <Route path="notifications" element={<PermissionRoute category="system" subcategory="notifications"><NotificationsPage /></PermissionRoute>} />
+        <Route path="campaigns" element={<PermissionRoute category="system" subcategory="campaigns"><CampaignsPage /></PermissionRoute>} />
+        <Route path="crm-sync" element={<PermissionRoute category="system" subcategory="crm_sync"><CrmSync /></PermissionRoute>} />
         <Route path="telegram" element={<Navigate to="/notifications" replace />} />
-        <Route path="social-data" element={<SocialData />} />
-        <Route path="system-logs" element={<SystemLogs />} />
-        <Route path="audit" element={<AuditPage />} />
+        <Route path="social-data" element={<PermissionRoute category="social" subcategory="social_data"><SocialData /></PermissionRoute>} />
+        <Route path="system-logs" element={<PermissionRoute category="system" subcategory="logs"><SystemLogs /></PermissionRoute>} />
+        <Route path="audit" element={<PermissionRoute category="system" subcategory="audit"><AuditPage /></PermissionRoute>} />
+        <Route path="request-logs" element={<PermissionRoute category="system" subcategory="request_logs"><RequestLogs /></PermissionRoute>} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin-users"
@@ -72,6 +103,11 @@ function AppRoutes() {
           }
         />
       </Route>
+      <Route path="/influencer" element={<InfluencerPortal />} />
+      <Route path="/influencer/:code" element={<InfluencerPortal />} />
+      {/* Off-screen render target for notification card screenshots (no auth,
+          data supplied entirely via the ?d= query param). */}
+      <Route path="/wager-card" element={<WagerCardFrame />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

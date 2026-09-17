@@ -13,6 +13,12 @@ function explainError(err) {
   if (err === 'timeout') return 'n8n did not respond in time — check the workflow is active.';
   if (/^HTTP 404/.test(err)) return `${err} — the webhook path is wrong, or the workflow is not active (test URLs only accept one call after you press "Test step").`;
   if (/^HTTP 401|^HTTP 403/.test(err)) return `${err} — the workflow rejected the signature. Check the shared secret matches.`;
+  if (/doesn't have any .*field/i.test(err)) {
+    return `${err} Create that field on Person in Twenty (Settings → Data model → Person → Add field), or clear segmentField in the workflow's Config node to sync contacts without segments.`;
+  }
+  if (/\b429\b|Limit reached/i.test(err)) {
+    return `${err} — Twenty's rate limit. Each contact costs two calls, so lower the batch size above.`;
+  }
   if (/^HTTP 5/.test(err)) return `${err} — the workflow errored. Open the n8n execution log for the failing node.`;
   return err;
 }
@@ -23,6 +29,7 @@ export default function CrmSync() {
   const [secret, setSecret]       = useState('');
   const [batchSize, setBatchSize] = useState(50);
   const [callingCode, setCallingCode] = useState('234');
+  const [rateLimit, setRateLimit] = useState(100);
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState('');
   const [testing, setTesting]     = useState(false);
@@ -32,6 +39,7 @@ export default function CrmSync() {
   const [counts, setCounts]       = useState(null);
   const [totalContacts, setTotalContacts] = useState(null);
   const [picked, setPicked]       = useState([]);      // empty = all contacts
+  const [onlyPicked, setOnlyPicked] = useState(false); // trim what the CRM stores
   const [loadingSegs, setLoadingSegs] = useState(false);
 
   const [job, setJob]             = useState(null);
@@ -46,7 +54,8 @@ export default function CrmSync() {
       const r = await api.get('/n8n/config');
       setCfg(r.data);
       setWebhookUrl(r.data.webhookUrl || '');
-      setBatchSize(r.data.batchSize ?? 50);
+      setBatchSize(r.data.batchSize ?? 20);
+      setRateLimit(r.data.rateLimitPerMin ?? 100);
       setCallingCode(r.data.callingCode || '234');
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load CRM sync settings');
@@ -96,6 +105,7 @@ export default function CrmSync() {
     try {
       await api.post('/n8n/config', {
         webhookUrl, batchSize: Number(batchSize), callingCode,
+        rateLimitPerMin: Number(rateLimit),
         secret: secret || undefined,        // blank keeps the stored secret
       });
       setSecret('');
@@ -123,7 +133,9 @@ export default function CrmSync() {
   const handleSync = async (mode) => {
     setStarting(true); setError('');
     try {
-      const r = await api.post('/n8n/sync', { mode, segments: picked });
+      const r = await api.post('/n8n/sync', {
+        mode, segments: picked, onlySelectedSegments: onlyPicked,
+      });
       if (!r.data.started) setError(r.data.reason || 'Nothing to push.');
       else { await loadStatus(); startPolling(); }
     } catch (err) {
@@ -176,7 +188,7 @@ export default function CrmSync() {
             accepts one call after you press "Test step" in n8n.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-vs-text-3 block mb-1">Shared secret</label>
             <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)}
@@ -188,11 +200,22 @@ export default function CrmSync() {
               onChange={(e) => setBatchSize(e.target.value)} className={input} />
           </div>
           <div>
+            <label className="text-xs text-vs-text-3 block mb-1">Twenty rate limit /min</label>
+            <input type="number" min={10} max={10000} value={rateLimit}
+              onChange={(e) => setRateLimit(e.target.value)} className={input} />
+          </div>
+          <div>
             <label className="text-xs text-vs-text-3 block mb-1">Default calling code</label>
             <input type="text" value={callingCode} onChange={(e) => setCallingCode(e.target.value)}
               placeholder="234" className={input} />
           </div>
         </div>
+        <p className="text-xs text-vs-text-3">
+          Each contact costs <strong>two</strong> Twenty calls (a lookup, then a create or update),
+          so a batch of {batchSize || 0} uses {(Number(batchSize) || 0) * 2} of your {rateLimit || 0}/minute
+          budget. Batches are spaced to stay inside it; raise the limit only if you have raised
+          Twenty's own.
+        </p>
         <p className="text-xs text-vs-text-3">
           The secret signs each batch (<span className="font-mono">x-vermo-signature</span>). Paste the
           same value into the workflow's Config node so it can verify the request.
@@ -253,10 +276,22 @@ export default function CrmSync() {
           })}
         </div>
         {picked.length > 0 && (
-          <p className="text-xs text-vs-text-3 mt-3">
-            Pushing contacts in {picked.length} selected segment{picked.length !== 1 ? 's' : ''}.
-            {' '}<button type="button" onClick={() => setPicked([])} className="underline hover:text-vs-text">Clear</button>
-          </p>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-vs-text-3">
+              Pushing contacts in {picked.length} selected segment{picked.length !== 1 ? 's' : ''}.
+              {' '}<button type="button" onClick={() => setPicked([])} className="underline hover:text-vs-text">Clear</button>
+            </p>
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)}
+                className="w-4 h-4 mt-0.5 accent-purple-500" />
+              <span className="text-xs text-vs-text-3">
+                <span className="text-vs-text">Send only the selected segments</span> — by default a
+                contact carries every segment it matches, so the CRM has the full picture. Tick this
+                to record just the ones above. The CRM field is overwritten, so contacts already
+                there lose any segment outside your selection.
+              </span>
+            </label>
+          </div>
         )}
       </div>
 
@@ -300,6 +335,8 @@ export default function CrmSync() {
               <p className="text-xs text-vs-text-3">
                 Pushing {job.processed.toLocaleString()} / {job.total.toLocaleString()} ({pct}%) —
                 {' '}{job.batches} batch{job.batches !== 1 ? 'es' : ''}, {job.failed} failed
+                {job.etaMs ? `, about ${Math.max(1, Math.round(job.etaMs / 60000))} min total` : ''}
+                {job.rateLimitHits ? ` · paused ${job.rateLimitHits}× for rate limits` : ''}
               </p>
               <button type="button" onClick={handleCancel}
                 className="px-2.5 py-1 bg-vs-elevated hover:bg-vs-border border border-vs-border text-vs-text text-xs rounded-lg transition-colors">
@@ -326,6 +363,7 @@ export default function CrmSync() {
             {job && !job.running && job.finishedAt && (
               <p className="text-xs text-vs-text-3">
                 Last run: pushed {job.pushed}, failed {job.failed} across {job.batches} batches
+                {job.rateLimitHits ? `, ${job.rateLimitHits} rate-limit pause(s)` : ''}
                 {job.error ? ` — ${job.error}` : ''}
               </p>
             )}
@@ -334,7 +372,8 @@ export default function CrmSync() {
         )}
         <p className="text-xs text-vs-text-3 mt-3">
           "Push new &amp; changed" skips contacts whose details and segments are unchanged since the
-          last successful push, so it is safe to run often.
+          last successful push, so it is safe to run often. A large first sync is deliberately slow —
+          it is paced to Twenty's rate limit and keeps running if you leave the page.
         </p>
       </div>
     </div>

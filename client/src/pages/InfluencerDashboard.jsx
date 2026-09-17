@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import UserProfileModal from '../components/UserProfileModal';
 
 function fmtPct(n) {
@@ -58,9 +59,144 @@ function FunnelBar({ label, count, pct, accent, subLabel }) {
   );
 }
 
-const SORT_KEYS = ['referred', 'funded', 'bet', 'conversionRate', 'lastReferralAt'];
+function Toggle({ checked, onChange, label, disabled }) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer select-none">
+      <div
+        onClick={() => !disabled && onChange(!checked)}
+        className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-vs-purple' : 'bg-vs-elevated'} border border-vs-border ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+      </div>
+      <span className="text-sm text-vs-text-2">{label}</span>
+    </label>
+  );
+}
+
+function PortalSettingsPanel({ onSettingsChange }) {
+  const { editMode, requestElevation } = useAuth();
+  const [settings, setSettings]     = useState(null);
+  const [saving, setSaving]         = useState(false);
+  const [elevating, setElevating]   = useState(false);
+  const [elevErr, setElevErr]       = useState('');
+  const [msg, setMsg]               = useState('');
+
+  useEffect(() => {
+    api.get('/influencer-dashboard/settings').then((r) => setSettings(r.data)).catch(() => {});
+  }, []);
+
+  const save = async (patch) => {
+    setSaving(true); setMsg('');
+    try {
+      await api.post('/influencer-dashboard/settings', patch);
+      setSettings((s) => ({ ...s, ...patch }));
+      if (onSettingsChange) onSettingsChange(patch);
+      setMsg('Saved');
+      setTimeout(() => setMsg(''), 2000);
+    } catch (e) {
+      setMsg(e.response?.data?.error || 'Failed');
+    } finally {
+      setSaving(false); }
+  };
+
+  const handleElevate = async () => {
+    setElevating(true); setElevErr('');
+    try { await requestElevation('Influencer portal settings'); }
+    catch (e) { setElevErr(e.response?.data?.error || e.message || 'Failed'); }
+    finally { setElevating(false); }
+  };
+
+  if (!settings) return null;
+
+  return (
+    <div className="bg-vs-card border border-vs-border rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-semibold text-vs-text">Influencer Portal Settings</p>
+        <a href="/influencer" target="_blank" rel="noopener noreferrer"
+          className="text-xs text-vs-purple hover:underline">
+          Open public portal ↗
+        </a>
+      </div>
+      {!editMode ? (
+        <div className="space-y-2">
+          <p className="text-xs text-vs-text-3">Edit access required to change settings.</p>
+          <button onClick={handleElevate} disabled={elevating}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+            {elevating ? 'Requesting…' : '🔓 Request Edit Access'}
+          </button>
+          {elevErr && <p className="text-xs text-vs-danger">{elevErr}</p>}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Toggle
+            checked={settings.showFunnel}
+            onChange={(v) => save({ showFunnel: v })}
+            label="Show conversion funnel (Funded + Placed Bet steps)"
+            disabled={saving}
+          />
+          <Toggle
+            checked={settings.showEarnings}
+            onChange={(v) => save({ showEarnings: v })}
+            label="Show earnings section"
+            disabled={saving}
+          />
+          {msg && <p className={`text-xs ${msg === 'Saved' ? 'text-vs-success' : 'text-vs-danger'}`}>{msg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SORT_KEYS = ['referred', 'funded', 'bet', 'conversionRate', 'lastReferralAt', 'earnings'];
+
+function RateCell({ inf, editMode, onSaved }) {
+  const [editing, setEditing]   = useState(false);
+  const [val, setVal]           = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [err, setErr]           = useState('');
+
+  const open = () => { setVal(inf.rate > 0 ? String(inf.rate) : ''); setEditing(true); setErr(''); };
+  const cancel = () => { setEditing(false); setErr(''); };
+
+  const save = async () => {
+    const code = inf.referralCode;
+    if (!code) { setErr('No referral code'); return; }
+    setSaving(true); setErr('');
+    try {
+      await api.post(`/influencer-dashboard/rates/${encodeURIComponent(code)}`, { rate: parseFloat(val) || 0 });
+      onSaved(code, parseFloat(val) || 0);
+      setEditing(false);
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Failed');
+    } finally { setSaving(false); }
+  };
+
+  if (!inf.referralCode) return <span className="text-vs-text-3 text-xs">—</span>;
+
+  if (!editing) {
+    return (
+      <button onClick={editMode ? open : undefined}
+        className={`text-xs font-mono ${editMode ? 'hover:text-vs-purple cursor-pointer' : 'cursor-default'} ${inf.rate > 0 ? 'text-vs-lime' : 'text-vs-text-3'}`}
+        title={editMode ? 'Click to edit rate' : undefined}>
+        {inf.rate > 0 ? `₦${inf.rate.toLocaleString()}` : editMode ? '+ Set rate' : '—'}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <input type="number" value={val} onChange={(e) => setVal(e.target.value)} min="0" step="any"
+        className="w-20 px-2 py-0.5 bg-vs-elevated border border-vs-border rounded text-xs text-vs-text focus:outline-none focus:ring-1 focus:ring-vs-purple"
+        autoFocus />
+      <button onClick={save} disabled={saving} className="text-xs text-vs-success hover:text-vs-success/80 disabled:opacity-40">✓</button>
+      <button onClick={cancel} className="text-xs text-vs-text-3 hover:text-vs-text">✕</button>
+      {err && <span className="text-vs-danger text-xs">{err}</span>}
+    </div>
+  );
+}
 
 export default function InfluencerDashboard({ embedded = false }) {
+  const { editMode } = useAuth();
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -69,6 +205,8 @@ export default function InfluencerDashboard({ embedded = false }) {
   const [sortKey, setSortKey]   = useState('referred');
   const [sortDir, setSortDir]   = useState('desc');
   const [profileUser, setProfileUser] = useState(null);
+  const [showEarnings, setShowEarnings] = useState(false);
+  const [localRates, setLocalRates] = useState({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -76,8 +214,14 @@ export default function InfluencerDashboard({ embedded = false }) {
     const params = {};
     if (dateFrom) params.dateFrom = dateFrom;
     if (dateTo)   params.dateTo   = dateTo;
-    api.get('/influencer-dashboard', { params })
-      .then((res) => setData(res.data))
+    Promise.all([
+      api.get('/influencer-dashboard', { params }),
+      api.get('/influencer-dashboard/settings'),
+    ])
+      .then(([dataRes, settingsRes]) => {
+        setData(dataRes.data);
+        setShowEarnings(settingsRes.data.showEarnings);
+      })
       .catch(() => setError('Failed to load influencer data'))
       .finally(() => setLoading(false));
   }, [dateFrom, dateTo]);
@@ -141,8 +285,15 @@ export default function InfluencerDashboard({ embedded = false }) {
 
   const maxReferred = Math.max(...influencers.map((x) => x.referred), 1);
 
+  const handleRateSaved = (code, rate) => {
+    setLocalRates((prev) => ({ ...prev, [code.toUpperCase()]: rate }));
+  };
+
   return (
     <div>
+      <PortalSettingsPanel onSettingsChange={(patch) => {
+        if (patch.showEarnings !== undefined) setShowEarnings(patch.showEarnings);
+      }} />
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         {!embedded && (
@@ -241,6 +392,12 @@ export default function InfluencerDashboard({ embedded = false }) {
                   <th onClick={() => handleSort('lastReferralAt')} className={`${thCls('lastReferralAt')} hidden lg:table-cell`}>
                     Last Referral{sortArrow('lastReferralAt')}
                   </th>
+                  {showEarnings && (
+                    <th onClick={() => handleSort('earnings')} className={thCls('earnings')}>
+                      Earnings{sortArrow('earnings')}
+                    </th>
+                  )}
+                  {showEarnings && <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-vs-text-3 text-right">Rate</th>}
                   <th className="px-4 py-2 hidden xl:table-cell w-32" />
                 </tr>
               </thead>
@@ -285,6 +442,24 @@ export default function InfluencerDashboard({ embedded = false }) {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right text-vs-text-3 text-xs hidden lg:table-cell">{relTime(inf.lastReferralAt)}</td>
+                      {showEarnings && (() => {
+                        const effectiveRate = localRates[(inf.referralCode || '').toUpperCase()] ?? inf.rate ?? 0;
+                        const earnings = effectiveRate * inf.bet;
+                        return (
+                          <td className="px-4 py-2.5 text-right text-xs font-mono text-vs-lime">
+                            {earnings > 0 ? `₦${earnings.toLocaleString()}` : '—'}
+                          </td>
+                        );
+                      })()}
+                      {showEarnings && (
+                        <td className="px-4 py-2.5 text-right">
+                          <RateCell
+                            inf={{ ...inf, rate: localRates[(inf.referralCode || '').toUpperCase()] ?? inf.rate ?? 0 }}
+                            editMode={editMode}
+                            onSaved={handleRateSaved}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 hidden xl:table-cell">
                         <MiniBar value={inf.referred} max={maxReferred} />
                       </td>
@@ -304,6 +479,18 @@ export default function InfluencerDashboard({ embedded = false }) {
                     </span>
                   </td>
                   <td className="hidden lg:table-cell" />
+                  {showEarnings && (() => {
+                    const totalEarnings = sortedInfluencers.reduce((s, inf) => {
+                      const r = localRates[(inf.referralCode || '').toUpperCase()] ?? inf.rate ?? 0;
+                      return s + r * inf.bet;
+                    }, 0);
+                    return (
+                      <td className="px-4 py-2 text-right font-bold text-vs-lime text-xs font-mono">
+                        {totalEarnings > 0 ? `₦${totalEarnings.toLocaleString()}` : '—'}
+                      </td>
+                    );
+                  })()}
+                  {showEarnings && <td className="hidden" />}
                   <td className="hidden xl:table-cell" />
                 </tr>
               </tfoot>

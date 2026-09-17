@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Sun, Moon, Menu, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { NAV_ITEM_PERMISSIONS } from '../config/navCategories';
 import api from '../api';
 
 const NAV_GROUPS = [
@@ -55,6 +57,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'Logs', path: '/system-logs' },
       { label: 'Audit', path: '/audit' },
+      { label: 'Request Logs', path: '/request-logs' },
       { name: 'currencytypes', label: 'Currency Types' },
       { label: 'Dollar/Naira Rate', path: '/dollar-naira-rate' },
       { label: 'Notifications', path: '/notifications' },
@@ -64,17 +67,21 @@ const NAV_GROUPS = [
   },
 ];
 
+// Sidebar is always dark (globe colour) — fixed so it stays dark in both themes.
+const SIDEBAR_BG      = '#1C1B20';   // globe
+const SIDEBAR_BORDER  = '#303030';   // divider light
+
 const ROLE_COLORS = {
-  superadmin: 'text-vs-purple-light',
-  admin:      'text-vs-lime',
-  viewer:     'text-vs-text-3',
+  superadmin: 'text-[#B19CFF]',   // accent_primary (light purple)
+  admin:      'text-vs-lime',      // secondary (lime)
+  viewer:     'text-[#9F9F9F]',   // text tertiary
 };
 
 const linkClass = ({ isActive }) =>
-  `flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-colors ${
+  `flex items-center justify-between px-3 py-2.5 lg:py-1.5 rounded-lg text-sm transition-colors ${
     isActive
-      ? 'bg-vs-purple text-white font-medium'
-      : 'text-vs-text-3 hover:bg-vs-hover hover:text-vs-text'
+      ? 'bg-[#775CDF]/15 text-[#B19CFF] font-medium'
+      : 'text-[#9F9F9F] hover:bg-[#313038] hover:text-white'
   }`;
 
 function ElevationBanner({ expiry, onDrop }) {
@@ -93,9 +100,10 @@ function ElevationBanner({ expiry, onDrop }) {
   }, [tick]);
 
   return (
-    <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
-      <span className="text-amber-400 font-medium">
-        ⚠ Edit mode active — all changes are logged.
+    <div className="flex-shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 px-4 sm:px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
+      <span className="flex items-center gap-1.5 text-amber-400 font-medium">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Edit mode active — all changes are logged.
         {minsLeft != null && <span className="opacity-70 ml-1">({minsLeft} min remaining)</span>}
       </span>
       <button
@@ -108,11 +116,45 @@ function ElevationBanner({ expiry, onDrop }) {
   );
 }
 
+// Dashboard is always visible — it's the post-login landing page and is
+// intentionally outside the permission model (see NAV_ITEM_PERMISSIONS).
+function isNavItemVisible(item, hasPermission) {
+  if (item.path === '/') return true;
+  const perm = NAV_ITEM_PERMISSIONS[item.path ?? item.name];
+  return perm ? hasPermission(perm.category, perm.subcategory) : false;
+}
+
+// Tailwind's `lg` — the breakpoint at which the sidebar stops being a drawer.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+const isDesktop = () => typeof window === 'undefined' || window.matchMedia(DESKTOP_QUERY).matches;
+
+// Title for the mobile top bar, resolved against the nav so it always agrees
+// with the highlighted link.
+function pageTitle(pathname) {
+  if (pathname === '/profile') return 'Profile';
+  if (pathname === '/admin-users') return 'Admin Users';
+  const collection = pathname.match(/^\/collections\/([^/]+)/)?.[1];
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.path === pathname) return item.label;
+      if (collection && item.name === collection) return item.label;
+    }
+  }
+  return collection ? collection.replace(/_/g, ' ') : 'VermoSports Admin';
+}
+
 export default function Layout() {
-  const { user, role, logout, editMode, elevationExpiry, dropElevation } = useAuth();
+  const { user, role, hasPermission, logout, editMode, elevationExpiry, dropElevation } = useAuth();
   const { theme, toggle } = useTheme();
+
+  const visibleGroups = NAV_GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => isNavItemVisible(item, hasPermission)) }))
+    .filter((group) => group.items.length > 0);
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location = useLocation();
+  // Open by default on desktop (the flex-sibling sidebar), closed on mobile so
+  // the drawer never covers the page on first paint.
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktop);
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nav_collapsed') || '{}'); } catch { return {}; }
   });
@@ -125,6 +167,35 @@ export default function Layout() {
     fetchBadges();
     const id = setInterval(fetchBadges, 60000);
     return () => clearInterval(id);
+  }, []);
+
+  // The drawer is modal on mobile: it closes on navigation and Escape and
+  // freezes the page behind it. None of this applies to the desktop sidebar,
+  // hence the isDesktop() guards — collapsing it on every route change would
+  // be a regression.
+  useEffect(() => {
+    if (!isDesktop()) setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen || isDesktop()) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sidebarOpen]);
+
+  // Crossing the breakpoint resets to that size's default, so a window resized
+  // from phone width does not arrive on desktop with the sidebar collapsed.
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e) => setSidebarOpen(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const toggleGroup = (label) => {
@@ -141,32 +212,38 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-vs-bg">
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 bg-vs-card flex flex-col transition-all duration-200 border-r border-vs-border`}>
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-vs-bg">
+      {/* Sidebar — always dark (Gentelella signature dark-navy panel).
+          Below lg it is a fixed drawer that slides in over the page; at lg+ it
+          is the flex sibling it always was, including the w-0 collapse. */}
+      <aside
+        id="app-sidebar"
+        aria-label="Sidebar"
+        style={{ backgroundColor: SIDEBAR_BG, borderColor: SIDEBAR_BORDER }}
+        className={`fixed inset-y-0 left-0 z-40 w-60 lg:static lg:inset-auto lg:z-auto lg:transform-none flex-shrink-0 flex flex-col transition-all duration-200 border-r ${
+          sidebarOpen ? 'translate-x-0 lg:w-60' : '-translate-x-full lg:w-0 lg:overflow-hidden'
+        }`}
+      >
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-vs-border flex-shrink-0">
+        <div style={{ borderColor: SIDEBAR_BORDER }} className="flex items-center gap-2.5 px-4 py-4 border-b flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-vs-purple flex items-center justify-center flex-shrink-0">
             <span className="text-white text-sm font-bold">V</span>
           </div>
-          <span className="text-vs-text font-bold text-sm tracking-wide">VermoSports Admin</span>
+          <span className="text-white font-bold text-sm tracking-wide">VermoSports Admin</span>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
-          {NAV_GROUPS.map((group, gi) => (
+          {visibleGroups.map((group, gi) => (
             <div key={group.label} className={`${gi > 0 ? 'mt-4' : ''} mb-1`}>
               <button
                 onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a4858] hover:text-[#9F9F9F] transition-colors"
               >
                 <span>{group.label}</span>
-                <svg
+                <ChevronDown
                   className={`w-2.5 h-2.5 transition-transform ${collapsed[group.label] ? '-rotate-90' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
               {!collapsed[group.label] && (
                 <ul className="px-2 space-y-0.5 mt-1">
@@ -199,15 +276,12 @@ export default function Layout() {
             <div className="mt-4 mb-1">
               <button
                 onClick={() => toggleGroup('Admin')}
-                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-vs-text-3 opacity-40 hover:opacity-80 transition-opacity"
+                className="w-full flex items-center justify-between px-4 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#4a4858] hover:text-[#9F9F9F] transition-colors"
               >
                 <span>Admin</span>
-                <svg
+                <ChevronDown
                   className={`w-2.5 h-2.5 transition-transform ${collapsed['Admin'] ? '-rotate-90' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
               {!collapsed['Admin'] && (
                 <ul className="px-2 space-y-0.5 mt-1">
@@ -223,42 +297,56 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-3 border-t border-vs-border flex-shrink-0">
+        <div style={{ borderColor: SIDEBAR_BORDER }} className="px-4 py-3 border-t flex-shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-7 h-7 rounded-full bg-vs-purple flex items-center justify-center flex-shrink-0">
               <span className="text-white text-xs font-bold">{(user || '?')[0].toUpperCase()}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-vs-text font-medium truncate">{user}</p>
-              <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-vs-text-3'}`}>{role}</span>
+              <p className="text-xs text-white font-medium truncate">{user}</p>
+              <span className={`text-xs font-medium ${ROLE_COLORS[role] || 'text-[#7b8fa3]'}`}>{role}</span>
             </div>
           </div>
           <div className="flex items-center gap-3 pl-9">
-            <NavLink to="/profile" className="text-xs text-vs-text-3 hover:text-vs-text-2 transition-colors">
+            <NavLink to="/profile" className="text-xs text-[#9F9F9F] hover:text-white transition-colors">
               Profile
             </NavLink>
-            <span className="text-vs-border text-xs">·</span>
-            <button onClick={handleLogout} className="text-xs text-vs-text-3 hover:text-vs-danger transition-colors">
+            <span className="text-[#4a4858] text-xs">·</span>
+            <button onClick={handleLogout} className="text-xs text-[#7b8fa3] hover:text-vs-danger transition-colors">
               Sign out
             </button>
           </div>
         </div>
       </aside>
 
+      {/* Drawer backdrop — mobile only. touch-none stops the page behind it
+          scrolling under a finger on iOS; taps still reach onClick. */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden touch-none"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-vs-card border-b border-vs-border">
+          {/* p-3.5 around a 16px icon is a 44px target; md: restores the desktop size */}
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="text-vs-text-3 hover:text-vs-text p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
+            className="text-vs-text-3 hover:text-vs-text p-3.5 md:p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
             aria-label="Toggle sidebar"
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <Menu className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-1.5">
+          <span className="lg:hidden text-sm font-medium text-vs-text truncate min-w-0">
+            {pageTitle(location.pathname)}
+          </span>
+          <div className="hidden sm:flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-vs-success inline-block" />
             <span className="text-xs text-vs-text-3">vermo-production</span>
           </div>
@@ -267,9 +355,9 @@ export default function Layout() {
           <button
             onClick={toggle}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="ml-auto p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors text-base leading-none"
+            className="ml-auto p-3.5 md:p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors"
           >
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
         </header>
 
@@ -277,7 +365,7 @@ export default function Layout() {
           <ElevationBanner expiry={elevationExpiry} onDrop={dropElevation} />
         )}
 
-        <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
           <Outlet />
         </main>
       </div>

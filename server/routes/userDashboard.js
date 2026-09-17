@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const { getBettingSet } = require('../utils/bettingSet');
 
 const router = express.Router();
@@ -36,7 +37,7 @@ async function resolveUsernames(db, ids) {
 // ── GET /api/user-dashboard/snapshot ─────────────────────────────────────────
 // All-time platform state — no date filter.
 
-router.get('/snapshot', auth, async (req, res) => {
+router.get('/snapshot', auth, requirePermission('overview', 'user_snapshot'), async (req, res) => {
   try {
     const db = getDb();
 
@@ -138,7 +139,7 @@ router.get('/snapshot', auth, async (req, res) => {
 // ── GET /api/user-dashboard/activity ─────────────────────────────────────────
 // Date-filtered activity — signups, deposits, bets, withdrawals in period.
 
-router.get('/activity', auth, async (req, res) => {
+router.get('/activity', auth, requirePermission('overview', 'user_activity'), async (req, res) => {
   try {
     const db = getDb();
 
@@ -158,6 +159,9 @@ router.get('/activity', auth, async (req, res) => {
       referralDocs,
       referralTotal,
       depositedUserIds,
+      depositorCountResult,
+      activeBettorSet,
+      withdrawalCount,
     ] = await Promise.all([
 
       db.collection('users').aggregate([
@@ -209,6 +213,19 @@ router.get('/activity', auth, async (req, res) => {
       // Deposit set scoped to the same period as the referrals (so conversion is
       // measured within the window, not against all-time deposits)
       db.collection('transactions').distinct('user', depFilter),
+
+      // Total distinct depositors in period
+      db.collection('transactions').aggregate([
+        { $match: depFilter },
+        { $group: { _id: '$user' } },
+        { $count: 'count' },
+      ]).toArray(),
+
+      // Active bettors in period = participants ∪ creators (see utils/bettingSet.js)
+      getBettingSet(db, betFilter),
+
+      // Total withdrawal transactions in period
+      db.collection('transactions').countDocuments(witFilter),
     ]);
 
     const depositedSet = new Set(depositedUserIds.map(String));
@@ -222,7 +239,15 @@ router.get('/activity', auth, async (req, res) => {
     ].filter(Boolean);
     const userMap = await resolveUsernames(db, allUserIds);
 
+    const newUsers = signupsDaily.reduce((s, d) => s + d.count, 0);
+
     res.json({
+      summary: {
+        newUsers,
+        depositorCount:    depositorCountResult[0]?.count ?? 0,
+        activeBettorCount: activeBettorSet.size,
+        withdrawalCount,
+      },
       dateRange: {
         from: dateFrom.toISOString().slice(0, 10),
         to:   dateTo ? dateTo.toISOString().slice(0, 10) : null,

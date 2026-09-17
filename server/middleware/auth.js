@@ -8,6 +8,11 @@ function authMiddleware(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.pending2fa) return res.status(401).json({ error: 'Complete 2FA verification first' });
+    if (payload.pendingMfaSetup) {
+      req.user = payload;
+      req.pendingMfaSetup = true;
+      return next();
+    }
     req.user = payload;
     next();
   } catch {
@@ -25,6 +30,7 @@ function requireRole(...roles) {
 }
 
 function requireEditMode(req, res, next) {
+  if (req.pendingMfaSetup) return res.status(403).json({ error: 'MFA setup required', code: 'MFA_SETUP_REQUIRED' });
   const { id, role } = req.user || {};
   if (!['superadmin', 'admin'].includes(role)) {
     return res.status(403).json({ error: 'Edit access requires admin role or higher' });

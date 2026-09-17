@@ -845,79 +845,81 @@ export default function TelegramSettings() {
                 Refresh
               </button>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-vs-border bg-vs-elevated/40">
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Channel</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Trigger</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-vs-border">
-                {logsLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
-                      <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
-                    ))}</tr>
-                  ))
-                ) : visibleLogs.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-vs-text-3 text-sm">
-                    {logTriggerFilter ? 'No sends recorded for this trigger.' : 'No sends recorded yet.'}
-                  </td></tr>
-                ) : (
-                  visibleLogs.map((row) => (
-                    <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
-                      <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          row.channel === 'whatsapp'
-                            ? 'bg-vs-success/15 text-vs-success'
-                            : 'bg-vs-purple/15 text-vs-purple-light'
-                        }`}>
-                          {row.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
-                        }`}>
-                          {TRIGGER_LABELS[row.trigger] || row.trigger}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={`text-xs font-semibold ${row.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
-                          {row.ok ? 'OK' : 'FAIL'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-xs text-vs-text-3 max-w-[280px] truncate">{row.preview}</td>
-                      <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
-                      <td className="px-5 py-3 text-right">
-                        {!row.ok && (
-                          <div className="flex items-center justify-end gap-2">
-                            {retryResults[row.id] && (
-                              <span className={`text-xs ${retryResults[row.id] === 'ok' ? 'text-vs-success' : 'text-vs-danger'}`}>
-                                {retryResults[row.id] === 'ok' ? '✓ Sent' : retryResults[row.id]}
-                              </span>
-                            )}
-                            <button
-                              onClick={() => handleRetry(row.id, row.channel)}
-                              disabled={retryingId === row.id}
-                              className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40"
-                            >
-                              {retryingId === row.id ? '…' : 'Retry'}
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-vs-border bg-vs-elevated/40">
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Time</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Channel</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Trigger</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Status</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Message Preview</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Error</th>
+                    <th className="px-5 py-3" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-vs-border">
+                  {logsLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
+                        <td key={j} className="px-5 py-3"><div className="h-4 bg-vs-elevated rounded animate-pulse" /></td>
+                      ))}</tr>
+                    ))
+                  ) : visibleLogs.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-10 text-vs-text-3 text-sm">
+                      {logTriggerFilter ? 'No sends recorded for this trigger.' : 'No sends recorded yet.'}
+                    </td></tr>
+                  ) : (
+                    visibleLogs.map((row) => (
+                      <tr key={row.id} className="hover:bg-vs-elevated/40 transition-colors">
+                        <td className="px-5 py-3 text-xs text-vs-text-3 whitespace-nowrap">{row.created_at}</td>
+                        <td className="px-5 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            row.channel === 'whatsapp'
+                              ? 'bg-vs-success/15 text-vs-success'
+                              : 'bg-vs-purple/15 text-vs-purple-light'
+                          }`}>
+                            {row.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            TRIGGER_COLORS[row.trigger] || 'bg-vs-elevated text-vs-text-3'
+                          }`}>
+                            {TRIGGER_LABELS[row.trigger] || row.trigger}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className={`text-xs font-semibold ${row.ok ? 'text-vs-success' : 'text-vs-danger'}`}>
+                            {row.ok ? 'OK' : 'FAIL'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-vs-text-3 max-w-[280px] truncate">{row.preview}</td>
+                        <td className="px-5 py-3 text-xs text-vs-danger">{row.error || '—'}</td>
+                        <td className="px-5 py-3 text-right">
+                          {!row.ok && (
+                            <div className="flex items-center justify-end gap-2">
+                              {retryResults[row.id] && (
+                                <span className={`text-xs ${retryResults[row.id] === 'ok' ? 'text-vs-success' : 'text-vs-danger'}`}>
+                                  {retryResults[row.id] === 'ok' ? '✓ Sent' : retryResults[row.id]}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => handleRetry(row.id, row.channel)}
+                                disabled={retryingId === row.id}
+                                className="text-xs text-vs-purple-light hover:text-vs-purple border border-vs-purple/30 rounded px-2 py-0.5 hover:bg-vs-purple/10 transition-colors disabled:opacity-40"
+                              >
+                                {retryingId === row.id ? '…' : 'Retry'}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         );
       })()}

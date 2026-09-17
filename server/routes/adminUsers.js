@@ -5,6 +5,7 @@ const QRCode = require('qrcode');
 const { getDb } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireRole } = require('../middleware/auth');
+const { isValidPair } = require('../permissionCategories');
 
 const router = express.Router();
 
@@ -14,8 +15,10 @@ function safeUser(u) {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || null,
     role: u.role,
     two_factor_enabled: !!u.two_factor_enabled,
+    two_factor_exempt: !!u.two_factor_exempt,
     created_at: u.created_at,
     updated_at: u.updated_at,
   };
@@ -150,10 +153,13 @@ router.get('/', auth, requireRole('superadmin'), (req, res) => {
 });
 
 router.post('/', auth, requireRole('superadmin'), (req, res) => {
-  const { username, password, role } = req.body;
+  const { email, username, password, role } = req.body;
 
-  if (!username || !password || !role) {
-    return res.status(400).json({ error: 'Username, password and role are required' });
+  if (!email || !password || !role) {
+    return res.status(400).json({ error: 'Email, password and role are required' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email address' });
   }
   if (!VALID_ROLES.includes(role)) {
     return res.status(400).json({ error: `Role must be one of: ${VALID_ROLES.join(', ')}` });
@@ -162,14 +168,20 @@ router.post('/', auth, requireRole('superadmin'), (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+  const displayName = username?.trim() || normalizedEmail.split('@')[0];
+
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
-  if (existing) return res.status(409).json({ error: 'Username already exists' });
+  const existingEmail = db.prepare('SELECT id FROM admin_users WHERE email = ?').get(normalizedEmail);
+  if (existingEmail) return res.status(409).json({ error: 'Email already exists' });
+
+  const existingUsername = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(displayName);
+  const finalUsername = existingUsername ? normalizedEmail : displayName;
 
   const hashed = bcrypt.hashSync(password, 12);
   const result = db.prepare(
-    'INSERT INTO admin_users (username, password, role) VALUES (?, ?, ?)'
-  ).run(username, hashed, role);
+    'INSERT INTO admin_users (username, email, password, role) VALUES (?, ?, ?, ?)'
+  ).run(finalUsername, normalizedEmail, hashed, role);
 
   const created = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(safeUser(created));
@@ -177,7 +189,7 @@ router.post('/', auth, requireRole('superadmin'), (req, res) => {
 
 router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
   const id = parseInt(req.params.id);
-  const { role, password } = req.body;
+  const { role, password, email } = req.body;
 
   const db = getDb();
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
@@ -203,8 +215,97 @@ router.patch('/:id', auth, requireRole('superadmin'), (req, res) => {
     db.prepare('UPDATE admin_users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashed, id);
   }
 
+  if (email !== undefined) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    const normalized = email.trim().toLowerCase();
+    const conflict = db.prepare('SELECT id FROM admin_users WHERE email = ? AND id != ?').get(normalized, id);
+    if (conflict) return res.status(409).json({ error: 'Email already in use' });
+    db.prepare('UPDATE admin_users SET email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(normalized, id);
+  }
+
   const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
   res.json(safeUser(updated));
+});
+
+// ── Category/subcategory permission grants ───────────────────────────────────
+
+router.get('/:id/permissions', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const grants = db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(id);
+  res.json({ grants });
+});
+
+// Full-replace semantics — the caller sends the complete desired grant set every time.
+router.put('/:id/permissions', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const { grants } = req.body;
+
+  if (!Array.isArray(grants)) {
+    return res.status(400).json({ error: 'grants must be an array' });
+  }
+
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'superadmin') {
+    return res.status(400).json({ error: 'Superadmin accounts cannot have restricted permissions' });
+  }
+
+  const deduped = new Map();
+  for (const g of grants) {
+    const key = g && `${g.category}:${g.subcategory}`;
+    if (!g || typeof g.category !== 'string' || typeof g.subcategory !== 'string' || !isValidPair(g.category, g.subcategory)) {
+      return res.status(400).json({ error: `Invalid category/subcategory pair: ${g?.category}/${g?.subcategory}` });
+    }
+    deduped.set(key, { category: g.category, subcategory: g.subcategory });
+  }
+
+  const replace = db.transaction((rows) => {
+    db.prepare('DELETE FROM admin_permission_grants WHERE user_id = ?').run(id);
+    const insert = db.prepare('INSERT INTO admin_permission_grants (user_id, category, subcategory) VALUES (?, ?, ?)');
+    for (const row of rows) insert.run(id, row.category, row.subcategory);
+  });
+  replace([...deduped.values()]);
+
+  const saved = db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(id);
+  res.json({ grants: saved });
+});
+
+router.delete('/:id/2fa', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.prepare('UPDATE admin_users SET two_factor_secret = NULL, two_factor_enabled = 0, two_factor_exempt = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+router.post('/:id/2fa/disable', auth, requireRole('superadmin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.prepare('UPDATE admin_users SET two_factor_enabled = 0, two_factor_exempt = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+router.get('/mfa-settings', auth, requireRole('superadmin'), (req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM admin_settings WHERE key = 'enforce_mfa'").get();
+  res.json({ enforceMfa: row ? row.value === 'true' : false });
+});
+
+router.post('/mfa-settings', auth, requireRole('superadmin'), (req, res) => {
+  const { enforceMfa } = req.body;
+  const db = getDb();
+  db.prepare("INSERT INTO admin_settings (key, value) VALUES ('enforce_mfa', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(enforceMfa ? 'true' : 'false');
+  res.json({ ok: true });
 });
 
 router.delete('/:id', auth, requireRole('superadmin'), (req, res) => {

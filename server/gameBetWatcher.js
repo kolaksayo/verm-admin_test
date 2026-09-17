@@ -1,8 +1,14 @@
 const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const { getDb: getSQLite } = require('./sqlite');
-const { sendMessage, isConfigured } = require('./telegram');
-const { sendMessage: sendWhatsApp, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage } = require('./whatsapp');
+const { sendMessage, sendPhoto, sendToChannel: sendTgChannel, sendPhotoToChannel: sendTgChannelPhoto, isConfigured, isChannelConfigured: isTgChannelConfigured } = require('./telegram');
+const { sendMessage: sendWhatsApp, sendMediaMessage: sendWhatsAppMedia, isConfigured: isWAConfigured, getConfig: getWAConfig, sendDM, sendDirectMessage, sendWelcomeTemplate, normalizePhone } = require('./whatsapp');
+const { buildContestForBet } = require('./contestShape');
+const {
+  getConfig: chatwootConfig, isConfigured: chatwootConfigured,
+  pushContact: pushChatwootContact, recordSync: recordChatwootSync, contactName,
+} = require('./chatwoot');
+const { renderWagerCard } = require('./wagerCard');
 
 const POLL_INTERVAL_MS     = 2 * 60 * 1000; // 2 min — fill progress + countdowns + settled
 const NEW_BET_INTERVAL_MS  = 30 * 1000;      // 30 sec — new bets only
@@ -25,17 +31,32 @@ const watcherState = {
 
 function getWatcherState() {
   try {
-    const get = (key) => getSQLite()
-      .prepare('SELECT value FROM admin_settings WHERE key = ?')
-      .get(key)?.value || null;
+    const sqlite = getSQLite();
+    const get = (key) => sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value || null;
+    const getBool = (key, def = true) => {
+      const v = get(key);
+      return v === null ? def : v !== '0';
+    };
     return {
       ...watcherState,
-      rankingsWeeklySentAt:  get('rankings_weekly_sent_at'),
-      rankingsMonthlySentAt: get('rankings_monthly_sent_at'),
-      lastUserDmCheckAt:     get('whatsapp_dm_last_check_at'),
+      rankingsWeeklySentAt:   get('rankings_weekly_sent_at'),
+      rankingsMonthlySentAt:  get('rankings_monthly_sent_at'),
+      lastUserDmCheckAt:      get('whatsapp_dm_last_check_at'),
+      pollNewBetEnabled:      getBool('poll_newbet_enabled'),
+      pollProgressEnabled:    getBool('poll_progress_enabled'),
+      pollUserDmEnabled:      getBool('whatsapp_dm_enabled'),
     };
   } catch {
-    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null, lastUserDmCheckAt: null };
+    return { ...watcherState, rankingsWeeklySentAt: null, rankingsMonthlySentAt: null, lastUserDmCheckAt: null, pollNewBetEnabled: true, pollProgressEnabled: true, pollUserDmEnabled: true };
+  }
+}
+
+function isPollEnabled(key, def = true) {
+  try {
+    const v = getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(key)?.value;
+    return v === null || v === undefined ? def : v !== '0';
+  } catch {
+    return def;
   }
 }
 
@@ -178,6 +199,30 @@ Top players this month on VermoSports:
 
 {{total_players}} players competed this month
 Generated: {{generated_at}}`,
+
+  game_bet_countdown_grouped: `⏰ {{count}} Challenges Starting in {{time_label}}!
+
+{{bets_list}}
+
+Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_1hr: `⏰ {{count}} Challenge(s) Starting in 1 Hour!
+
+{{bets_list_full}}
+
+Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_30min: `⏰ {{count}} Challenge(s) Starting in 30 Minutes!
+
+{{bets_list_full}}
+
+Open the VermoSports app to join! 🚀`,
+
+  game_bet_countdown_15min: `🚀 {{count}} Challenge(s) Starting in 15 Minutes!
+
+{{bets_list_full}}
+
+Open the VermoSports app to join! 🚀`,
 };
 
 // Backward-compat alias
@@ -194,6 +239,8 @@ const GAME_BET_MACROS = [
   { key: '{{mode}}',      desc: 'Bet mode (e.g. Multiplayer)' },
   { key: '{{slots}}',     desc: 'Max participants' },
   { key: '{{league}}',    desc: 'League name' },
+  { key: '{{bet_type}}',  desc: 'Bet type (e.g. SHOTSOFFGOAL)' },
+  { key: '{{handicap}}',  desc: 'Handicap value from optionsCreatedBy (blank if not set)' },
 ];
 
 const MULTI_BASE_MACROS = [
@@ -232,6 +279,12 @@ const SINGLE_COUNTDOWN_MACROS = [
   { key: '{{creator}}',             desc: 'Creator username' },
   { key: '{{kickoff_time}}',        desc: 'Formatted kickoff time (e.g. 20:00)' },
   { key: '{{minutes_until_match}}', desc: 'Minutes until kickoff' },
+];
+
+const GROUPED_COUNTDOWN_MACROS = [
+  { key: '{{count}}',          desc: 'Number of challenges starting in this window' },
+  { key: '{{bets_list}}',      desc: 'One line per challenge — teams and player count only (compact)' },
+  { key: '{{bets_list_full}}', desc: 'One line per challenge — includes code and kickoff time' },
 ];
 
 const RANKINGS_MACROS = [
@@ -430,10 +483,62 @@ function isChannelEnabled(channel) {
 async function notifyAll(text, trigger) {
   const sends = [];
   if (isConfigured()   && isChannelEnabled('telegram'))  sends.push(sendMessage(text, trigger));
+  // Mirrored to the Telegram channel when one is configured; independently
+  // switchable via telegram_channel_enabled.
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) sends.push(sendTgChannel(text, trigger));
   if (isWAConfigured() && isChannelEnabled('whatsapp'))  sends.push(sendWhatsApp(text, trigger));
   if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
   const [primary] = await Promise.allSettled(sends);
   return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
+}
+
+// Telegram rejects photo captions longer than 1024 characters, so the caption
+// is capped for both channels to keep the two messages identical.
+const CAPTION_MAX = 1024;
+function toCaption(text) {
+  const t = String(text || '');
+  return t.length <= CAPTION_MAX ? t : t.slice(0, CAPTION_MAX - 1) + '…';
+}
+
+// Same channel/enablement rules as notifyAll, but sends an image with the
+// notification text as its caption.
+async function notifyAllMedia({ buffer, mimetype, filename }, text, trigger) {
+  const caption = toCaption(text);
+  const sends = [];
+  if (isConfigured() && isChannelEnabled('telegram')) {
+    sends.push(sendPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isTgChannelConfigured() && isChannelEnabled('telegram_channel')) {
+    sends.push(sendTgChannelPhoto(buffer, mimetype, filename, caption, trigger));
+  }
+  if (isWAConfigured() && isChannelEnabled('whatsapp')) {
+    sends.push(sendWhatsAppMedia({
+      base64: buffer.toString('base64'), mimetype, filename, caption,
+    }, trigger));
+  }
+  if (!sends.length) return { ok: false, reason: 'no_channels_enabled' };
+  const [primary] = await Promise.allSettled(sends);
+  return primary.status === 'fulfilled' ? primary.value : { ok: false, reason: primary.reason?.message };
+}
+
+// Multiplayer bet creation is announced with a screenshot of the Prize Projector
+// card (Maximum pot base) captioned with the usual notification text. Rendering
+// is best-effort: any failure falls back to the plain-text notification so an
+// image problem can never cost us the alert.
+async function notifyNewMultiBet(db, bet, message, trigger) {
+  try {
+    const contest = await buildContestForBet(db, bet);
+    // Any bet isMultiplayer() accepts gets a card — that's capacity 3+ (or a
+    // non-SINGLE betMode). Tiers below 5 fall into the 5-slot split, which
+    // still sums exactly to the pot. Guard only against data that can't render.
+    if (contest && contest.capacity >= 3 && contest.amount > 0) {
+      const card = await renderWagerCard(contest, 'maximum');
+      if (card) return await notifyAllMedia(card, message, trigger);
+    }
+  } catch (err) {
+    console.error('[GameBetWatcher] wager card render failed:', err.message);
+  }
+  return notifyAll(message, trigger);
 }
 
 // ── SQLite dedup helpers ───────────────────────────────────────────────────────
@@ -457,6 +562,18 @@ function markNotified(betId, key) {
   } catch {
     // ignore
   }
+}
+
+// Track per-user DM failures within a bet using sub-keys (no schema change).
+// Returns true when the failure count reaches MAX_DM_AUTO_RETRIES (give up).
+function recordDmFailureAndCheckGiveUp(betId, key) {
+  let count = 0;
+  for (let n = 1; n <= MAX_DM_AUTO_RETRIES; n++) {
+    if (hasNotified(betId, `${key}_f${n}`)) count = n; else break;
+  }
+  const next = count + 1;
+  markNotified(betId, `${key}_f${next}`);
+  return next >= MAX_DM_AUTO_RETRIES;
 }
 
 // ── lastChecked persistence ────────────────────────────────────────────────────
@@ -559,6 +676,19 @@ function hasUserDmSent(userId, trigger) {
   }
 }
 
+const MAX_DM_AUTO_RETRIES = 3;
+
+function countUserDmFailures(userId, trigger) {
+  try {
+    const row = getSQLite()
+      .prepare('SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE user_id = ? AND trigger = ? AND ok = 0')
+      .get(String(userId), trigger);
+    return row?.c || 0;
+  } catch {
+    return 0;
+  }
+}
+
 function getWelcomeConfig() {
   try {
     const get = (k) => getSQLite().prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
@@ -571,30 +701,94 @@ function getWelcomeConfig() {
   }
 }
 
+// Pushes users that aren't in chatwoot_contacts yet. Bounded per run so a big
+// backlog trickles through rather than hammering Chatwoot — use the dashboard's
+// "Sync all contacts" for the initial backfill.
+const CHATWOOT_POLL_LIMIT = 50;
+
+async function pollChatwootContacts(db) {
+  const cfg = chatwootConfig();
+  if (!chatwootConfigured(cfg) || !cfg.autoSync) return;
+
+  const sqlite = getSQLite();
+  const known = sqlite.prepare('SELECT user_id FROM chatwoot_contacts').all()
+    .map((r) => r.user_id)
+    .filter((id) => /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => { try { return new ObjectId(id); } catch { return null; } })
+    .filter(Boolean);
+
+  const filter = {
+    $and: [
+      { $or: [
+        { mobile: { $exists: true, $nin: [null, ''] } },
+        { email:  { $exists: true, $nin: [null, ''] } },
+      ] },
+      ...(known.length ? [{ _id: { $nin: known } }] : []),
+    ],
+  };
+
+  const users = await db.collection('users')
+    .find(filter, { projection: { username: 1, displayName: 1, name: 1, fullName: 1, email: 1, mobile: 1, phone: 1 } })
+    .sort({ createdAt: -1 })
+    .limit(CHATWOOT_POLL_LIMIT)
+    .toArray();
+
+  for (const user of users) {
+    const phoneDigits = normalizePhone(user.mobile || user.phone || '');
+    const result = await pushChatwootContact(user, phoneDigits, cfg);
+    recordChatwootSync(user._id, {
+      contactId: result.contactId,
+      phone: phoneDigits || null,
+      email: user.email || null,
+      name: contactName(user),
+      ok: result.ok,
+      error: result.error,
+    });
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (users.length) console.log(`[Chatwoot] auto-synced ${users.length} new contact(s)`);
+}
+
 async function pollNewUsers(db) {
   if (!isWADmEnabled()) return;
 
-  // Fetch all users with a mobile number, oldest first so backfill processes
-  // historical users before newly registered ones. Limit to 50 per query;
-  // hasUserDmSent dedup skips already-sent rows quickly.
+  const sqlite = getSQLite();
+
+  // Build exclusion list from SQLite so MongoDB only returns users who still need a DM
+  const sentIds = sqlite
+    .prepare("SELECT DISTINCT user_id FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 1")
+    .all()
+    .map((r) => r.user_id);
+
+  const maxedIds = sqlite
+    .prepare(`SELECT user_id FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 0 GROUP BY user_id HAVING COUNT(*) >= ${MAX_DM_AUTO_RETRIES}`)
+    .all()
+    .map((r) => r.user_id);
+
+  const excludeStrings = [...new Set([...sentIds, ...maxedIds])];
+  const excludeOIds = excludeStrings
+    .filter((id) => id && id !== '__test__' && /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => { try { return new ObjectId(id); } catch { return null; } })
+    .filter(Boolean);
+
+  // Newest first so fresh registrations are processed immediately
   const candidates = await db.collection('users')
-    .find({ mobile: { $exists: true, $nin: ['', null] } })
-    .sort({ createdAt: 1 })
-    .limit(50)
+    .find({
+      mobile: { $exists: true, $nin: ['', null] },
+      ...(excludeOIds.length ? { _id: { $nin: excludeOIds } } : {}),
+    })
+    .sort({ createdAt: -1 })
+    .limit(10)
     .toArray();
 
   let sent = 0;
-  const MAX_PER_POLL = 20; // avoid rate-limiting
 
   for (const user of candidates) {
-    if (sent >= MAX_PER_POLL) break;
+    if (sent >= 10) break;
     const userId = user._id.toString();
-    if (hasUserDmSent(userId, 'user_registered')) continue;
-
     const username = user.username || user.name || user.displayName || 'there';
 
-    // sendDM routes 'user_registered' to the Interakt.ai approved template
-    const result = await sendDM(userId, user.mobile, username, null, 'user_registered');
+    const result = await sendWelcomeTemplate(userId, user.mobile, username);
     if (result.ok) {
       console.log(`[GameBetWatcher] Welcome DM sent to ${username || userId}`);
       sent++;
@@ -716,10 +910,14 @@ async function pollNewBets(db, since) {
           mode:      formatMode(bet),
           slots:     bet.capacity ?? bet.maxParticipants ?? '—',
           league:    fixture.league || '—',
+          bet_type:  bet.betType || '—',
+          handicap:  bet.optionsCreatedBy != null ? String(bet.optionsCreatedBy) : '',
         };
       }
       const message = renderTemplate(template, vars);
-      const result  = await notifyAll(message, triggerKey);
+      const result  = multi
+        ? await notifyNewMultiBet(db, bet, message, triggerKey)
+        : await notifyAll(message, triggerKey);
       if (result.ok) {
         console.log(`[GameBetWatcher] Notified (${triggerKey}): ${vars.code}`);
       } else {
@@ -806,6 +1004,190 @@ async function pollFillProgress(db) {
           markNotified(betId, 'almost_1');
           console.log(`[GameBetWatcher] Last-slot notified: ${vars.code}`);
         }
+      }
+    }
+  }
+}
+
+function buildBetsList(singles, multis, full = false) {
+  const singleLines = singles.map(({ vars }) =>
+    full
+      ? `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+      : `• ${vars.home_team} vs ${vars.away_team} — Code: ${vars.code}`
+  );
+  const multiLines = multis.map(({ vars }) => {
+    const firstLine = (vars.fixtures_list || '').split('\n')[0]?.replace(/^•\s*/, '')
+      || `${vars.home_team} vs ${vars.away_team}`;
+    const players = `${vars.current_players}/${vars.max_players} players`;
+    return full
+      ? `• ${firstLine} — ${players} — Code: ${vars.code} | Kickoff: ${vars.kickoff_time}`
+      : `• ${firstLine} — ${players} — Code: ${vars.code}`;
+  });
+
+  if (singleLines.length > 0 && multiLines.length > 0) {
+    return `⚽ Single Bets:\n${singleLines.join('\n')}\n\n🎮 Multiplayer Bets:\n${multiLines.join('\n')}`;
+  }
+  if (singleLines.length > 0) return singleLines.join('\n');
+  return multiLines.join('\n');
+}
+
+async function pollCountdowns(db) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const bets = await db.collection('game_bet').find({
+    createdAt: { $gt: thirtyDaysAgo },
+    status: { $not: { $regex: /^(FINISHED|SETTLED|COMPLETED|CANCELLED|CANCELED|CLOSED|EXPIRED|DELETED|finished|settled|completed|cancelled|canceled|closed|expired|deleted)$/ } },
+    gameFixtureId: { $exists: true },
+  }).toArray();
+
+  const checkpoints = [
+    { key: '1hr',   trigger: 'game_bet_countdown_1hr',   threshold: 65 },
+    { key: '30min', trigger: 'game_bet_countdown_30min',  threshold: 35 },
+    { key: '15min', trigger: 'game_bet_countdown_15min',  threshold: 20 },
+  ];
+
+  // Collect candidates per checkpoint
+  const cpGroups = {};
+  for (const cp of checkpoints) {
+    cpGroups[cp.key] = { broadcast: [], dm: [] };
+  }
+
+  for (const bet of bets) {
+    const multi = isMultiplayer(bet);
+    const betId = bet._id.toString();
+
+    if (multi) {
+      const currentPlayers = getCurrentPlayers(bet);
+      const maxPlayers = Number(bet.capacity || bet.maxParticipants) || 0;
+      if (currentPlayers < 2) continue;
+      if (maxPlayers > 0 && currentPlayers >= maxPlayers) continue; // already full
+
+      const allFixtures = await resolveAllFixtures(db, bet);
+      const primaryFixture = allFixtures[0] || {};
+      if (!primaryFixture.kickoff) continue;
+      const kickoffMs = new Date(primaryFixture.kickoff).getTime();
+      if (isNaN(kickoffMs)) continue;
+      const minutesAway = (kickoffMs - Date.now()) / 60000;
+
+      const needsNotif = checkpoints.some(cp =>
+        minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)
+      );
+      if (!needsNotif) continue;
+
+      const creatorName = await resolveCreator(db, bet);
+      const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+      });
+      const vars = {
+        ...buildMultiVars(bet, allFixtures, creatorName, currentPlayers),
+        minutes_until_match: Math.round(minutesAway),
+        kickoff_time: kickoffTime,
+      };
+
+      for (const cp of checkpoints) {
+        if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
+          cpGroups[cp.key].broadcast.push({ betId, vars, type: 'multi' });
+        }
+      }
+    } else {
+      const fixture = await resolveFixture(db, bet);
+      if (!fixture.kickoff) continue;
+      const kickoffMs = new Date(fixture.kickoff).getTime();
+      if (isNaN(kickoffMs)) continue;
+      const minutesAway = (kickoffMs - Date.now()) / 60000;
+
+      const needsNotif = checkpoints.some(cp =>
+        minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)
+      );
+      if (!needsNotif) continue;
+
+      const stakeAmt = bet.amount != null ? Number(bet.amount) : bet.stake != null ? Number(bet.stake) : null;
+      const isJoined = getCurrentPlayers(bet) >= 2 || !!bet.acceptedBy;
+      const creatorName = await resolveCreator(db, bet);
+      const kickoffTime = new Date(kickoffMs).toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos',
+      });
+      const vars = {
+        home_team:           fixture.homeTeam || '—',
+        away_team:           fixture.awayTeam || '—',
+        league:              fixture.league   || '—',
+        stake:               stakeAmt != null ? `$${stakeAmt.toFixed(2)}` : '—',
+        code:                bet.bookingCode || bet.title || bet.name || betId,
+        creator:             creatorName || '—',
+        kickoff_time:        kickoffTime,
+        minutes_until_match: Math.round(minutesAway),
+      };
+
+      for (const cp of checkpoints) {
+        if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
+          if (!isJoined) {
+            cpGroups[cp.key].broadcast.push({ betId, vars, type: 'single' });
+          } else {
+            cpGroups[cp.key].dm.push({ betId, bet, vars });
+          }
+        }
+      }
+    }
+  }
+
+  // Process each checkpoint
+  for (const cp of checkpoints) {
+    const { broadcast, dm } = cpGroups[cp.key];
+
+    if (broadcast.length > 0) {
+      const template = getTemplate(cp.trigger);
+      if (template) {
+        const singles = broadcast.filter(b => b.type === 'single');
+        const multis  = broadcast.filter(b => b.type === 'multi');
+        const gVars = {
+          count:          broadcast.length,
+          bets_list:      buildBetsList(singles, multis, false),
+          bets_list_full: buildBetsList(singles, multis, true),
+        };
+        const result = await notifyAll(renderTemplate(template, gVars), cp.trigger);
+        if (result.ok) {
+          for (const { betId } of broadcast) markNotified(betId, cp.key);
+          console.log(`[GameBetWatcher] ${cp.key} countdown: ${broadcast.length} bets (${singles.length} single, ${multis.length} multi)`);
+        }
+      }
+    }
+
+    // DMs for joined single bets — per-bet plain text (not the grouped format)
+    for (const { betId, bet, vars } of dm) {
+      const dmText = `⏰ Your Match Kicks Off Soon!\n\n⚽ ${vars.home_team} vs ${vars.away_team}\n🏆 ${vars.league}\n\nKickoff: ${vars.kickoff_time}\nStake: ${vars.stake} | Code: ${vars.code}`;
+      const userIds = getParticipantUserIds(bet);
+      let anyOk = false;
+      let allGaveUp = userIds.length > 0;
+      for (const uid of userIds) {
+        const dmKey = `cdm_${cp.key}_${uid.slice(-8)}`;
+        try {
+          const user = await db.collection('users').findOne(
+            { _id: new ObjectId(uid) },
+            { projection: { mobile: 1 } }
+          );
+          const phone = user?.mobile;
+          if (!phone) { markNotified(betId, dmKey); continue; }
+          const dmResult = await sendDirectMessage(phone, dmText, cp.trigger);
+          if (dmResult?.ok) {
+            anyOk = true;
+            markNotified(betId, dmKey);
+          } else {
+            const giveUp = recordDmFailureAndCheckGiveUp(betId, dmKey);
+            if (giveUp) {
+              markNotified(betId, dmKey);
+              console.warn(`[GameBetWatcher] Giving up countdown DM → ${uid} after ${MAX_DM_AUTO_RETRIES} failures`);
+            } else {
+              allGaveUp = false;
+              console.error(`[GameBetWatcher] DM failed for user ${uid}:`, dmResult.reason);
+            }
+          }
+        } catch (e) {
+          allGaveUp = false;
+          console.error(`[GameBetWatcher] DM failed for user ${uid}:`, e.message);
+        }
+      }
+      if (anyOk || allGaveUp) {
+        markNotified(betId, cp.key);
+        console.log(`[GameBetWatcher] Single ${cp.key} countdown (joined, DMs sent): ${vars.code}`);
       }
     }
   }
@@ -913,14 +1295,59 @@ async function pollSingleCountdowns(db) {
       { key: '15min', trigger: 'game_bet_single_15min',  threshold: 20 },
     ];
 
+    const isJoined = getCurrentPlayers(bet) >= 2 || !!bet.acceptedBy;
+
     for (const cp of checkpoints) {
       if (minutesAway <= cp.threshold && minutesAway > -60 && !hasNotified(betId, cp.key)) {
         const template = getTemplate(cp.trigger);
-        if (template) {
-          const result = await notifyAll(renderTemplate(template, vars), cp.trigger);
+        if (!template) continue;
+
+        const message = renderTemplate(template, vars);
+
+        if (!isJoined) {
+          // No one has joined yet — broadcast to groups with a join caption
+          const broadcastMsg = message + `\n\n🔓 This bet is still open! Join now with code ${vars.code}`;
+          const result = await notifyAll(broadcastMsg, cp.trigger);
           if (result.ok) {
             markNotified(betId, cp.key);
-            console.log(`[GameBetWatcher] Single ${cp.key} countdown: ${vars.code}`);
+            console.log(`[GameBetWatcher] Single ${cp.key} countdown (open): ${vars.code}`);
+          }
+        } else {
+          // Bet has been joined — DM each participant via WhatsApp only (no Telegram DM capability)
+          const userIds = getParticipantUserIds(bet);
+          let anyOk = false;
+          let allGaveUp = userIds.length > 0;
+          for (const uid of userIds) {
+            const dmKey = `cdm_${cp.key}_${uid.slice(-8)}`;
+            try {
+              const user = await db.collection('users').findOne(
+                { _id: new ObjectId(uid) },
+                { projection: { mobile: 1 } }
+              );
+              const phone = user?.mobile;
+              if (!phone) { markNotified(betId, dmKey); continue; }
+              const dmResult = await sendDirectMessage(phone, message, cp.trigger);
+              if (dmResult?.ok) {
+                anyOk = true;
+                markNotified(betId, dmKey);
+              } else {
+                const giveUp = recordDmFailureAndCheckGiveUp(betId, dmKey);
+                if (giveUp) {
+                  markNotified(betId, dmKey);
+                  console.warn(`[GameBetWatcher] Giving up countdown DM → ${uid} after ${MAX_DM_AUTO_RETRIES} failures`);
+                } else {
+                  allGaveUp = false;
+                  console.error(`[GameBetWatcher] DM failed for user ${uid}:`, dmResult.reason);
+                }
+              }
+            } catch (e) {
+              allGaveUp = false;
+              console.error(`[GameBetWatcher] DM failed for user ${uid}:`, e.message);
+            }
+          }
+          if (anyOk || allGaveUp) {
+            markNotified(betId, cp.key);
+            console.log(`[GameBetWatcher] Single ${cp.key} countdown (joined, DMs sent): ${vars.code}`);
           }
         }
       }
@@ -1046,8 +1473,14 @@ async function pollSettledBets(db) {
         markNotified(betId, perKey);
         console.log(`[GameBetWatcher] Settled DM → ${recipient} (${betCode})`);
       } else {
-        allDone = false;
-        console.error(`[GameBetWatcher] Settled DM failed → ${recipient}:`, result.reason);
+        const giveUp = recordDmFailureAndCheckGiveUp(betId, perKey);
+        if (giveUp) {
+          markNotified(betId, perKey); // stop retrying
+          console.warn(`[GameBetWatcher] Giving up settled DM → ${recipient} after ${MAX_DM_AUTO_RETRIES} failures`);
+        } else {
+          allDone = false;
+          console.error(`[GameBetWatcher] Settled DM failed → ${recipient}:`, result.reason);
+        }
       }
     }
 
@@ -1066,7 +1499,8 @@ async function buildRankingsVars(db, period, topN, options = {}) {
 
   if (options.weekStart) {
     // weekStart is any ISO date — we compute the Monday of that week
-    const d    = new Date(options.weekStart);
+    const d = new Date(options.weekStart);
+    if (isNaN(d.getTime())) throw new Error(`Invalid weekStart: "${options.weekStart}" — expected YYYY-MM-DD`);
     const day  = d.getDay();
     const diff = day === 0 ? 6 : day - 1;
     d.setHours(0, 0, 0, 0);
@@ -1075,8 +1509,12 @@ async function buildRankingsVars(db, period, topN, options = {}) {
     periodLabel = `Week of ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   } else if (options.monthOf) {
     // monthOf is 'YYYY-MM'
+    if (!/^\d{4}-\d{2}$/.test(String(options.monthOf).trim())) {
+      throw new Error(`Invalid monthOf: "${options.monthOf}" — expected YYYY-MM (e.g. 2025-04)`);
+    }
     const [yr, mo] = options.monthOf.split('-').map(Number);
     periodStart = new Date(yr, mo - 1, 1);
+    if (isNaN(periodStart.getTime())) throw new Error(`Invalid monthOf: "${options.monthOf}"`);
     periodLabel = periodStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   } else if (period === 'weekly') {
     const day  = now.getDay();
@@ -1227,7 +1665,7 @@ function startWatcher() {
 
   // New bets — fast poll (30 s)
   setInterval(async () => {
-    if (!isConfigured()) return;
+    if (!isConfigured() || !isPollEnabled('poll_newbet_enabled')) return;
     try {
       const db    = getDb();
       const since = lastChecked;
@@ -1246,13 +1684,12 @@ function startWatcher() {
 
   // Fill progress + countdowns + settled — slow poll (2 min)
   setInterval(async () => {
-    if (!isConfigured()) return;
+    if (!isConfigured() || !isPollEnabled('poll_progress_enabled')) return;
     try {
       const db = getDb();
       await Promise.allSettled([
         pollFillProgress(db),
-        pollSingleCountdowns(db),
-        pollMatchCountdowns(db),
+        pollCountdowns(db),
         pollSettledBets(db),
       ]);
       watcherState.lastProgressPoll  = new Date();
@@ -1264,8 +1701,8 @@ function startWatcher() {
     }
   }, POLL_INTERVAL_MS);
 
-  // User welcome DMs — 5 min poll
-  setInterval(async () => {
+  // User welcome DMs — run once on startup then every 5 min
+  const runUserDmPoll = async () => {
     try {
       await pollNewUsers(getDb());
       watcherState.lastUserDmPoll  = new Date();
@@ -1275,7 +1712,21 @@ function startWatcher() {
       watcherState.lastErrorAt = new Date();
       console.error('[GameBetWatcher] User DM poll error:', err.message);
     }
-  }, USER_DM_INTERVAL_MS);
+  };
+  setTimeout(runUserDmPoll, 5000); // run shortly after startup
+  setInterval(runUserDmPoll, USER_DM_INTERVAL_MS);
+
+  // Chatwoot contact sync for new signups — deliberately separate from the
+  // welcome-DM poll so it keeps working when WhatsApp DMs are switched off.
+  const runChatwootPoll = async () => {
+    try {
+      await pollChatwootContacts(getDb());
+    } catch (err) {
+      console.error('[Chatwoot] new-contact poll error:', err.message);
+    }
+  };
+  setTimeout(runChatwootPoll, 20000);
+  setInterval(runChatwootPoll, USER_DM_INTERVAL_MS);
 
   // Daily cleanup + rankings check
   const runDaily = async () => {
@@ -1310,6 +1761,7 @@ module.exports = {
   COUNTDOWN_MACROS,
   LARGE_STAKE_MACROS,
   SINGLE_COUNTDOWN_MACROS,
+  GROUPED_COUNTDOWN_MACROS,
   SETTLED_MACROS,
   RANKINGS_MACROS,
   renderTemplate,
@@ -1323,4 +1775,7 @@ module.exports = {
   isMultiplayer,
   getCurrentPlayers,
   notifyAll,
+  notifyAllMedia,
+  notifyNewMultiBet,
+  toCaption,
 };

@@ -4,13 +4,13 @@ const { getDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const {
   getConfig, isConfigured, toContactPayload, postBatch,
-  contactHash, recordPush, pushedHashes, pushStats,
+  contactHash, recordPush, pushedHashes, pushStats, batchIntervalMs,
 } = require('../n8n');
 const {
   computeSegments, buildBetStats, allSegmentSlugs, describeSegments, mergeConfig,
 } = require('../segments');
 const auth = require('../middleware/auth');
-const { requireRole } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -28,7 +28,9 @@ const USER_PROJECTION = {
   gender: 1, nairaAccount: 1, coinAddress: 1,
 };
 
-const BATCH_PAUSE_MS = 200;   // gap between batches so n8n is not flooded
+// Twenty answers 429 once its per-minute budget is spent, so batches are paced
+// against that budget rather than fired back to back.
+const RATE_LIMIT_BACKOFF_MS = 60000;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One sync at a time; the UI polls for progress.
@@ -50,12 +52,13 @@ function upsertSetting(key, value) {
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-router.get('/config', auth, requireRole('superadmin', 'admin'), (req, res) => {
+router.get('/config', auth, requirePermission('system', 'crm_sync'), (req, res) => {
   const cfg = getConfig();
   res.json({
     webhookUrl:   cfg.webhookUrl,
     secretSet:    !!cfg.secret,
     batchSize:    cfg.batchSize,
+    rateLimitPerMin: cfg.rateLimitPerMin,
     autoPush:     cfg.autoPush,
     callingCode:  cfg.callingCode,
     segmentConfig: mergeConfig(cfg.segmentConfig),
@@ -64,13 +67,13 @@ router.get('/config', auth, requireRole('superadmin', 'admin'), (req, res) => {
   });
 });
 
-router.post('/config', auth, requireRole('superadmin', 'admin'), (req, res) => {
-  const { webhookUrl, secret, batchSize, autoPush, callingCode, segmentConfig } = req.body || {};
+router.post('/config', auth, requirePermission('system', 'crm_sync'), (req, res) => {
+  const { webhookUrl, secret, batchSize, autoPush, callingCode, segmentConfig, rateLimitPerMin } = req.body || {};
 
   const has = (v) => v != null;
   const hasSecret = has(secret) && String(secret).trim() !== '';   // blank keeps the stored one
   if (!has(webhookUrl) && !hasSecret && !has(batchSize) && !has(autoPush)
-      && !has(callingCode) && !has(segmentConfig)) {
+      && !has(callingCode) && !has(segmentConfig) && !has(rateLimitPerMin)) {
     return res.status(400).json({ ok: false, error: 'Provide at least one field to update' });
   }
 
@@ -94,6 +97,13 @@ router.post('/config', auth, requireRole('superadmin', 'admin'), (req, res) => {
     if (has(autoPush))     upsertSetting('n8n_auto_push', autoPush ? '1' : '0');
     if (has(callingCode))  upsertSetting('n8n_calling_code', String(callingCode).replace(/\D/g, '') || '234');
     if (has(segmentConfig)) upsertSetting('n8n_segment_config', JSON.stringify(mergeConfig(segmentConfig)));
+    if (has(rateLimitPerMin)) {
+      const n = Number(rateLimitPerMin);
+      if (!Number.isInteger(n) || n < 10 || n > 10000) {
+        return res.status(400).json({ ok: false, error: 'Rate limit must be between 10 and 10000 requests per minute' });
+      }
+      upsertSetting('n8n_rate_limit_per_min', String(n));
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -104,7 +114,7 @@ router.post('/config', auth, requireRole('superadmin', 'admin'), (req, res) => {
 
 // GET /api/n8n/segments — definitions plus how many contacts fall in each.
 // `?counts=0` skips the scan when only the definitions are needed.
-router.get('/segments', auth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/segments', auth, requirePermission('system', 'crm_sync'), async (req, res) => {
   const cfg = getConfig();
   const defs = describeSegments(cfg.segmentConfig);
   if (req.query.counts === '0') return res.json({ segments: defs, counts: null, total: 0 });
@@ -127,11 +137,47 @@ router.get('/segments', auth, requireRole('superadmin', 'admin'), async (req, re
   }
 });
 
+// The workflow answers 200 even when Twenty rejected every contact, so a
+// delivered batch is not the same as a synced one. Read the body it returns.
+function readWorkflowResult(result) {
+  if (!result.ok) {
+    return {
+      ok: false,
+      rateLimited: /\b429\b|rate limit|Limit reached/i.test(result.error || ''),
+      error: result.error,
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.response || '{}');
+  } catch {
+    return { ok: true, error: null, detail: null };   // non-JSON body, nothing to check
+  }
+  const failed = Number(parsed.failed) || 0;
+  const upserted = Number(parsed.upserted) || 0;
+  const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+
+  if (parsed.ok === false || failed > 0) {
+    const first = errors[0] || '';
+    return {
+      ok: false,
+      rateLimited: /\b429\b|rate limit|Limit reached/i.test(first),
+      error: `Twenty rejected ${failed || 'the'} contact(s)` + (first ? ` — ${first}` : ''),
+      detail: parsed,
+    };
+  }
+  // Delivered, accepted, but nothing written — usually every contact was skipped.
+  if (upserted === 0 && parsed.note) {
+    return { ok: false, error: parsed.note, detail: parsed };
+  }
+  return { ok: true, error: null, detail: parsed };
+}
+
 // ── Test ────────────────────────────────────────────────────────────────────
 
 // POST /api/n8n/test — sends a single clearly-marked sample contact so the
 // workflow can be verified without touching real records.
-router.post('/test', auth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'crm_sync'), async (req, res) => {
   const cfg = getConfig();
   if (!isConfigured(cfg)) return res.status(400).json({ ok: false, error: 'Save an n8n webhook URL first' });
 
@@ -141,21 +187,25 @@ router.post('/test', auth, requireRole('superadmin', 'admin'), async (req, res) 
     email: 'test-contact@vermo.invalid',    // .invalid never resolves
     phone: '+2348000000000', phoneNumber: '8000000000', phoneCallingCode: '+234',
     username: 'vermo_test', createdAt: new Date().toISOString(),
-    segments: ['test'],
+    // A real slug, not a made-up one: a Multi-Select field in Twenty rejects
+    // values outside its option list, so 'test' would fail on a correctly
+    // configured field.
+    segments: ['new_signup'],
     attributes: { role: 'USER', registrationStage: 'COMPLETED', referralCode: null, gender: null },
   };
 
   const result = await postBatch([sample], { index: 0, size: 1, total: 1, test: true }, cfg);
-  res.json(result.ok
-    ? { ok: true, response: result.response }
-    : { ok: false, error: result.error });
+  const verdict = readWorkflowResult(result);
+  res.json(verdict.ok
+    ? { ok: true, response: result.response, detail: verdict.detail }
+    : { ok: false, error: verdict.error, detail: verdict.detail });
 });
 
 // ── Sync ────────────────────────────────────────────────────────────────────
 
-router.get('/sync/status', auth, requireRole('superadmin', 'admin'), (req, res) => res.json(jobView()));
+router.get('/sync/status', auth, requirePermission('system', 'crm_sync'), (req, res) => res.json(jobView()));
 
-router.post('/sync/cancel', auth, requireRole('superadmin', 'admin'), (req, res) => {
+router.post('/sync/cancel', auth, requirePermission('system', 'crm_sync'), (req, res) => {
   if (!job || !job.running) return res.status(400).json({ ok: false, error: 'No sync in progress' });
   job.cancel = true;
   res.json({ ok: true });
@@ -163,13 +213,17 @@ router.post('/sync/cancel', auth, requireRole('superadmin', 'admin'), (req, res)
 
 /**
  * POST /api/n8n/sync
- * body: { mode?: 'changed'|'all'|'failed', segments?: string[] }
+ * body: { mode?: 'changed'|'all'|'failed', segments?: string[],
+ *         onlySelectedSegments?: boolean }
  *   changed — contacts never pushed, or whose details/segments changed (default)
  *   all     — every contact, regardless of what was pushed before
  *   failed  — retry only contacts whose last push failed
  * `segments` restricts the push to contacts in at least one of those segments.
+ * `onlySelectedSegments` additionally trims each contact's segment list to the
+ * selected ones, so the CRM records only those rather than everything the
+ * contact matches.
  */
-router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/sync', auth, requirePermission('system', 'crm_sync'), async (req, res) => {
   if (job && job.running) return res.status(409).json({ ok: false, error: 'A sync is already running' });
 
   const cfg = getConfig();
@@ -181,6 +235,7 @@ router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) 
   }
 
   const wanted = Array.isArray(req.body?.segments) ? req.body.segments.filter(Boolean) : [];
+  const onlySelected = !!req.body?.onlySelectedSegments;
   const known = new Set(allSegmentSlugs());
   const unknown = wanted.filter((s) => !known.has(s));
   if (unknown.length) {
@@ -213,7 +268,14 @@ router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) 
     const segments = computeSegments(u, stats.get(String(u._id)), cfg.segmentConfig);
     if (wanted.length && !segments.some((s) => wanted.includes(s))) continue;
 
-    const payload = toContactPayload(u, segments, cfg);
+    // By default the CRM gets the full picture. onlySelectedSegments narrows it
+    // to the chosen ones — note the CRM field is overwritten, so a contact
+    // already there loses any segment not in the selection.
+    const sendSegments = (wanted.length && onlySelected)
+      ? segments.filter((s) => wanted.includes(s))
+      : segments;
+
+    const payload = toContactPayload(u, sendSegments, cfg);
     if (!payload.email && !payload.phone) continue;   // nothing for the CRM to key on
 
     const hash = contactHash(payload);
@@ -226,8 +288,9 @@ router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) 
   }
 
   job = {
-    running: true, mode, segments: wanted, total: queue.length,
-    processed: 0, pushed: 0, failed: 0, batches: 0, batchesFailed: 0,
+    running: true, mode, segments: wanted, onlySelectedSegments: onlySelected, total: queue.length,
+    processed: 0, pushed: 0, failed: 0, batches: 0, batchesFailed: 0, rateLimitHits: 0,
+    etaMs: Math.ceil(queue.length / cfg.batchSize) * batchIntervalMs(cfg.batchSize, cfg.rateLimitPerMin),
     startedAt: new Date().toISOString(), finishedAt: null, error: null, cancel: false,
   };
   res.json({ ok: true, started: true, total: queue.length, mode });
@@ -240,26 +303,48 @@ router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) 
       for (let i = 0; i < queue.length; i += size) {
         if (job.cancel) break;
         const slice = queue.slice(i, i + size);
-        const result = await postBatch(
+        const startedAt = Date.now();
+
+        const send = () => postBatch(
           slice.map((s) => s.payload),
           { index: job.batches, size: slice.length, total: totalBatches },
           cfg,
         );
 
+        // A 200 from n8n only means the batch arrived; the body says whether
+        // Twenty actually accepted it.
+        let result = await send();
+        let verdict = readWorkflowResult(result);
+
+        // Twenty's window is a minute, so waiting it out clears the block.
+        // One retry only — a second 429 means the batch size is simply too big.
+        if (verdict.rateLimited && !job.cancel) {
+          job.rateLimitHits = (job.rateLimitHits || 0) + 1;
+          job.lastError = 'Twenty rate limit hit — waiting 60s before retrying this batch.';
+          await delay(RATE_LIMIT_BACKOFF_MS);
+          if (!job.cancel) {
+            result = await send();
+            verdict = readWorkflowResult(result);
+          }
+        }
+
         for (const { payload, hash } of slice) {
           recordPush(payload.userId, {
             name: payload.name, email: payload.email, phone: payload.phone,
             segments: payload.segments, hash,
-            ok: result.ok, error: result.error,
+            ok: verdict.ok, error: verdict.ok ? null : verdict.error,
           });
         }
 
         job.batches += 1;
         job.processed += slice.length;
-        if (result.ok) job.pushed += slice.length;
-        else { job.failed += slice.length; job.batchesFailed += 1; }
+        if (verdict.ok) job.pushed += slice.length;
+        else { job.failed += slice.length; job.batchesFailed += 1; job.lastError = verdict.error; }
 
-        await delay(BATCH_PAUSE_MS);
+        // Hold the batch open for as long as Twenty's budget requires, minus
+        // the time the batch already took.
+        const minMs = batchIntervalMs(slice.length, cfg.rateLimitPerMin);
+        await delay(Math.max(0, minMs - (Date.now() - startedAt)));
       }
     } catch (err) {
       job.error = err.message;
@@ -274,7 +359,7 @@ router.post('/sync', auth, requireRole('superadmin', 'admin'), async (req, res) 
 
 // ── Logs ────────────────────────────────────────────────────────────────────
 
-router.get('/logs', auth, requireRole('superadmin', 'admin'), (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'crm_sync'), (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const onlyFailed = req.query.failed === '1';

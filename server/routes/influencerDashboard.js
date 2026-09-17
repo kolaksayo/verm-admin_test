@@ -1,10 +1,69 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDb } = require('../db');
+const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
+const { requireEditMode } = require('../middleware/auth');
 const { getBettingSet } = require('../utils/bettingSet');
 
 const router = express.Router();
+
+function getSetting(sqlite, key, def) {
+  const row = sqlite.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+  return row ? row.value : def;
+}
+
+function setSetting(sqlite, key, value) {
+  sqlite.prepare(`
+    INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, value);
+}
+
+// GET /api/influencer-dashboard/settings
+router.get('/settings', auth, (req, res) => {
+  try {
+    const sqlite = getSQLite();
+    const showFunnel   = getSetting(sqlite, 'influencer_show_funnel',   'true')  === 'true';
+    const showEarnings = getSetting(sqlite, 'influencer_show_earnings',  'false') === 'true';
+    const rates = sqlite.prepare('SELECT referral_code, rate, notes FROM influencer_rates').all()
+      .reduce((m, r) => { m[r.referral_code] = { rate: r.rate, notes: r.notes }; return m; }, {});
+    res.json({ showFunnel, showEarnings, rates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/influencer-dashboard/settings
+router.post('/settings', auth, requireEditMode, (req, res) => {
+  try {
+    const sqlite = getSQLite();
+    const { showFunnel, showEarnings } = req.body;
+    if (showFunnel   !== undefined) setSetting(sqlite, 'influencer_show_funnel',   showFunnel   ? 'true' : 'false');
+    if (showEarnings !== undefined) setSetting(sqlite, 'influencer_show_earnings', showEarnings ? 'true' : 'false');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/influencer-dashboard/rates/:referralCode
+router.post('/rates/:referralCode', auth, requireEditMode, (req, res) => {
+  try {
+    const sqlite = getSQLite();
+    const code   = req.params.referralCode.toUpperCase();
+    const rate   = parseFloat(req.body.rate);
+    const notes  = req.body.notes ? String(req.body.notes).slice(0, 200) : null;
+    if (isNaN(rate) || rate < 0) return res.status(400).json({ error: 'Invalid rate' });
+    sqlite.prepare(`
+      INSERT INTO influencer_rates (referral_code, rate, notes, updated_at) VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(referral_code) DO UPDATE SET rate = excluded.rate, notes = excluded.notes, updated_at = excluded.updated_at
+    `).run(code, rate, notes);
+    res.json({ ok: true, referralCode: code, rate, notes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 const DEPOSIT_FILTER = {
   type: { $regex: /^CREDIT$/i },
@@ -81,6 +140,10 @@ router.get('/', auth, async (req, res) => {
       };
     });
 
+    // Load per-influencer rates from SQLite
+    const rateMap = getSQLite().prepare('SELECT referral_code, rate FROM influencer_rates').all()
+      .reduce((m, r) => { m[r.referral_code] = { rate: r.rate }; return m; }, {});
+
     // 3. Build per-influencer stats
     const influencers = referrerIds.map((referrerId) => {
       const entries  = referrerMap[referrerId];
@@ -92,6 +155,10 @@ router.get('/', auth, async (req, res) => {
       const funded   = refereeIds.filter((id) => fundedSet.has(id)).length;
       const bet      = refereeIds.filter((id) => bettingSet.has(id)).length;
 
+      const rateCode = (userInfo.referralCode || '').toUpperCase();
+      const rateRow  = rateCode ? rateMap[rateCode] : null;
+      const rate     = rateRow?.rate ?? 0;
+
       return {
         referrerId,
         username:       userInfo.username,
@@ -102,6 +169,8 @@ router.get('/', auth, async (req, res) => {
         conversionRate: referred > 0 ? Math.round((bet / referred) * 1000) / 10 : 0,
         firstReferralAt: dates[0] || null,
         lastReferralAt:  dates[dates.length - 1] || null,
+        rate,
+        earnings: rate * bet,
       };
     }).sort((a, b) => b.referred - a.referred);
 

@@ -9,7 +9,12 @@ const { getDb: getSQLite } = require('./sqlite');
 // anything that did not come from this dashboard.
 
 const FETCH_TIMEOUT_MS = 30000;
-const DEFAULT_BATCH_SIZE = 50;
+// Each contact costs two Twenty calls (lookup, then create or update), and
+// Twenty's default limit is 100 requests per 60s. A 50-contact batch is
+// therefore 100 calls in a few seconds — at the ceiling on its own.
+const DEFAULT_BATCH_SIZE = 20;
+const CALLS_PER_CONTACT = 2;
+const DEFAULT_RATE_LIMIT_PER_MIN = 100;
 
 function getConfig() {
   try {
@@ -20,12 +25,20 @@ function getConfig() {
       webhookUrl:  (get('n8n_webhook_url') || process.env.N8N_WEBHOOK_URL || '').trim(),
       secret:       get('n8n_secret')      || process.env.N8N_SECRET      || '',
       batchSize:    Number.isFinite(batch) && batch > 0 ? Math.min(batch, 200) : DEFAULT_BATCH_SIZE,
+      rateLimitPerMin: (() => {
+        const n = Number(get('n8n_rate_limit_per_min'));
+        return Number.isFinite(n) && n > 0 ? n : DEFAULT_RATE_LIMIT_PER_MIN;
+      })(),
       autoPush:     get('n8n_auto_push') === '1',        // opt-in
       callingCode: (get('n8n_calling_code') || '234').replace(/\D/g, '') || '234',
       segmentConfig: safeJson(get('n8n_segment_config')),
     };
   } catch {
-    return { webhookUrl: '', secret: '', batchSize: DEFAULT_BATCH_SIZE, autoPush: false, callingCode: '234', segmentConfig: {} };
+    return {
+      webhookUrl: '', secret: '', batchSize: DEFAULT_BATCH_SIZE,
+      rateLimitPerMin: DEFAULT_RATE_LIMIT_PER_MIN,
+      autoPush: false, callingCode: '234', segmentConfig: {},
+    };
   }
 }
 
@@ -202,8 +215,17 @@ function pushStats() {
   }
 }
 
+/**
+ * How long a batch of this size must take to stay inside Twenty's budget.
+ * 80% of the limit leaves room for anything else talking to the same instance.
+ */
+function batchIntervalMs(contactCount, rateLimitPerMin = DEFAULT_RATE_LIMIT_PER_MIN) {
+  const budget = Math.max(1, Math.floor(rateLimitPerMin * 0.8));
+  return Math.ceil(((contactCount * CALLS_PER_CONTACT) / budget) * 60000);
+}
+
 module.exports = {
   getConfig, isConfigured, toContactPayload, contactName, splitName, splitPhone,
   postBatch, sign, contactHash, recordPush, pushedHashes, pushStats,
-  DEFAULT_BATCH_SIZE,
+  batchIntervalMs, DEFAULT_BATCH_SIZE, CALLS_PER_CONTACT, DEFAULT_RATE_LIMIT_PER_MIN,
 };

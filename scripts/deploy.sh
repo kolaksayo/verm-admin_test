@@ -4,7 +4,7 @@ set -e
 
 DEPLOY_DIR="/opt/verm-admin_test"
 REPO_URL="https://github.com/kolaksayo/verm-admin_test.git"
-BRANCH="claude/admin-center-mongodb-YPyBe"
+BRANCH="${DEPLOY_BRANCH:-zenith-ui}"
 SERVICE_NAME="verm-admin"
 
 echo ""

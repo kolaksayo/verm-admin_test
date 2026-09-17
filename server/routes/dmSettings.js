@@ -1,10 +1,11 @@
 const express = require('express');
-const { getConfig, sendDM, sendDirectMessage, stripHtml, isConfigured } = require('../whatsapp');
+const { sendDM, sendDirectMessage, sendWelcomeTemplate, stripHtml, isDmConfigured, checkDmHealth } = require('../whatsapp');
 const { getDb: getSQLite } = require('../sqlite');
 const { getDb } = require('../db');
 const { renderTemplate, hasUserDmSent, buildSettledBaseVars, getParticipantUserIds } = require('../gameBetWatcher');
 const { ObjectId } = require('mongodb');
 const auth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -23,23 +24,41 @@ function buildWelcomeText(name) {
 
 
 
-router.get('/config', auth, (req, res) => {
+router.get('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const db  = getSQLite();
     const get = (k) => db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value ?? null;
+    const rawDmKey = get('dm_evolution_api_key') || '';
+    const rawDmWhapiToken = get('dm_whapi_api_token') || '';
     res.json({
-      enabled:        get('whatsapp_dm_enabled') === '1',
-      groupLink:      get('whatsapp_group_link')  || '',
-      channelLink:    get('whatsapp_channel_link') || '',
-      countryCode:    get('whatsapp_country_code') || '',
-      welcomePreview: APPROVED_WELCOME_PREVIEW,
+      enabled:              get('whatsapp_dm_enabled') === '1',
+      groupLink:            get('whatsapp_group_link')      || '',
+      channelLink:          get('whatsapp_channel_link')    || '',
+      telegramLink:         get('dm_telegram_link')         || '',
+      countryCode:          get('whatsapp_country_code')    || '',
+      welcomePreview:       APPROVED_WELCOME_PREVIEW,
+      welcomeText:          get('dm_welcome_text')         || '',
+      welcomeTemplateName:  get('welcome_template_name')    || '',
+      welcomeTemplateLanguage: get('welcome_template_language') || '',
+      dmProvider:           get('dm_whatsapp_provider')     || 'evolution',
+      dmEvolutionUrl:       get('dm_evolution_api_url')     || '',
+      dmEvolutionInstance:  get('dm_evolution_instance')    || '',
+      dmEvolutionApiKeyPreview: rawDmKey ? rawDmKey.slice(0, 8) + '…' + rawDmKey.slice(-4) : '',
+      dmEvolutionApiKeySet: !!rawDmKey,
+      dmWhapiTokenPreview:  rawDmWhapiToken ? rawDmWhapiToken.slice(0, 8) + '…' + rawDmWhapiToken.slice(-4) : '',
+      dmWhapiTokenSet:      !!rawDmWhapiToken,
+      dmGowaUrl:            get('dm_gowa_api_url')           || '',
+      dmGowaBasicAuthPreview: (() => { const v = get('dm_gowa_basic_auth') || ''; return v ? v.slice(0, 4) + '…' : ''; })(),
+      dmGowaBasicAuthSet:   !!(get('dm_gowa_basic_auth') || ''),
+      dmGowaDeviceId:       get('dm_gowa_device_id')         || '',
+      dmEvolutionMethod:    get('dm_evolution_method')      || 'baileys',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/config', auth, (req, res) => {
+router.post('/config', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const db  = getSQLite();
     const set = (k, v) => db.prepare(`
@@ -48,11 +67,51 @@ router.post('/config', auth, (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(k, String(v));
 
-    const { enabled, groupLink, channelLink, countryCode } = req.body;
-    if (enabled != null)     set('whatsapp_dm_enabled',  enabled ? '1' : '0');
-    if (groupLink != null)   set('whatsapp_group_link',  groupLink);
-    if (channelLink != null) set('whatsapp_channel_link', channelLink);
-    if (countryCode != null) set('whatsapp_country_code', countryCode);
+    const { enabled, groupLink, channelLink, telegramLink, countryCode, welcomeText, welcomeTemplateName, welcomeTemplateLanguage,
+            dmEvolutionUrl, dmEvolutionApiKey, dmEvolutionInstance, dmEvolutionMethod, dmProvider, dmWhapiToken,
+            dmGowaUrl, dmGowaBasicAuth, dmGowaDeviceId } = req.body;
+
+    if (dmEvolutionMethod != null && !['baileys', 'cloud_api'].includes(dmEvolutionMethod)) {
+      return res.status(400).json({ ok: false, error: 'dmEvolutionMethod must be baileys or cloud_api' });
+    }
+    if (dmProvider != null && !['evolution', 'whapi', 'gowa'].includes(dmProvider)) {
+      return res.status(400).json({ ok: false, error: 'dmProvider must be evolution, whapi, or gowa' });
+    }
+    if (dmGowaBasicAuth != null && String(dmGowaBasicAuth).trim() !== '' && !/^[\x00-\x7F]+$/.test(String(dmGowaBasicAuth))) {
+      return res.status(400).json({ ok: false, error: 'GOWA basic auth contains invalid characters — enter it as user:pass.' });
+    }
+
+    if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '') {
+      if (!/^[\x00-\x7F]+$/.test(String(dmEvolutionApiKey))) {
+        return res.status(400).json({ ok: false, error: 'API key contains invalid characters — enter the full key, not the masked preview.' });
+      }
+    }
+    if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '') {
+      if (!/^[\x00-\x7F]+$/.test(String(dmWhapiToken))) {
+        return res.status(400).json({ ok: false, error: 'Whapi token contains invalid characters — enter the full token, not the masked preview.' });
+      }
+    }
+
+    if (enabled != null)               set('whatsapp_dm_enabled',      enabled ? '1' : '0');
+    if (welcomeText != null)           set('dm_welcome_text',           welcomeText);
+    if (groupLink != null)             set('whatsapp_group_link',       groupLink);
+    if (channelLink != null)           set('whatsapp_channel_link',     channelLink);
+    if (telegramLink != null)          set('dm_telegram_link',          telegramLink);
+    if (countryCode != null)           set('whatsapp_country_code',     countryCode);
+    if (welcomeTemplateName != null)   set('welcome_template_name',     welcomeTemplateName);
+    if (welcomeTemplateLanguage != null) set('welcome_template_language', welcomeTemplateLanguage);
+    if (dmEvolutionUrl != null)        set('dm_evolution_api_url',      String(dmEvolutionUrl).trim());
+    if (dmEvolutionApiKey != null && String(dmEvolutionApiKey).trim() !== '')
+                                       set('dm_evolution_api_key',      String(dmEvolutionApiKey).trim());
+    if (dmEvolutionInstance != null)   set('dm_evolution_instance',     String(dmEvolutionInstance).trim());
+    if (dmEvolutionMethod != null)     set('dm_evolution_method',       dmEvolutionMethod);
+    if (dmProvider != null)            set('dm_whatsapp_provider',      dmProvider);
+    if (dmWhapiToken != null && String(dmWhapiToken).trim() !== '')
+                                       set('dm_whapi_api_token',        String(dmWhapiToken).trim());
+    if (dmGowaUrl != null)             set('dm_gowa_api_url',           String(dmGowaUrl).trim());
+    if (dmGowaBasicAuth != null && String(dmGowaBasicAuth).trim() !== '')
+                                       set('dm_gowa_basic_auth',        String(dmGowaBasicAuth).trim());
+    if (dmGowaDeviceId != null)        set('dm_gowa_device_id',         String(dmGowaDeviceId).trim());
 
     res.json({ ok: true });
   } catch (err) {
@@ -62,7 +121,7 @@ router.post('/config', auth, (req, res) => {
 
 // ── Logs ───────────────────────────────────────────────────────────────────────
 
-router.get('/logs', auth, (req, res) => {
+router.get('/logs', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const rows  = getSQLite()
@@ -76,7 +135,7 @@ router.get('/logs', auth, (req, res) => {
 
 // ── Welcome DM status for a specific user ────────────────────────────────────
 
-router.get('/user-status/:userId', auth, (req, res) => {
+router.get('/user-status/:userId', auth, requirePermission('system', 'notifications'), (req, res) => {
   try {
     const row = getSQLite()
       .prepare("SELECT ok, error, sent_at FROM whatsapp_user_dms WHERE user_id = ? AND trigger = 'user_registered'")
@@ -90,7 +149,7 @@ router.get('/user-status/:userId', auth, (req, res) => {
 
 // ── Send welcome DM to a specific user ───────────────────────────────────────
 
-router.post('/send-welcome/:userId', auth, async (req, res) => {
+router.post('/send-welcome/:userId', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { userId } = req.params;
   try {
     const existing = getSQLite()
@@ -116,7 +175,7 @@ router.post('/send-welcome/:userId', auth, async (req, res) => {
     if (!phone) return res.status(400).json({ ok: false, reason: 'no_phone' });
 
     const username = user.username || user.name || user.displayName || 'there';
-    const result = await sendDM(userId, phone, username, buildWelcomeText(username), 'user_registered');
+    const result = await sendWelcomeTemplate(userId, phone, username);
     res.json(result);
   } catch (err) {
     console.error('[dmSettings] send-welcome error:', err.message);
@@ -126,19 +185,19 @@ router.post('/send-welcome/:userId', auth, async (req, res) => {
 
 // ── Test ───────────────────────────────────────────────────────────────────────
 
-router.post('/test', auth, async (req, res) => {
+router.post('/test', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
-  if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
+  if (!isDmConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
 
-  const result = await sendDM('__test__', phone, 'Test User', buildWelcomeText('Test User'), 'user_registered');
+  const result = await sendWelcomeTemplate('__test__', phone, 'Test User');
   res.json(result);
 });
 
 // ── Retry ──────────────────────────────────────────────────────────────────────
 
-router.post('/logs/:id/retry', auth, async (req, res) => {
+router.post('/logs/:id/retry', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { id } = req.params;
   try {
     const db  = getSQLite();
@@ -146,7 +205,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'log entry not found' });
 
     let result;
-    if (!isConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
+    if (!isDmConfigured()) return res.json({ ok: false, reason: 'whatsapp_not_configured' });
     if (row.trigger === 'user_registered') {
       let name = row.username || 'there';
       if (row.user_id && row.user_id !== '__test__') {
@@ -159,7 +218,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
           if (user) name = user.name || user.displayName || user.username || name;
         } catch { /* use cached name */ }
       }
-      result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
+      result = await sendWelcomeTemplate(row.user_id, row.phone, name);
     } else {
       const db2 = getSQLite();
       const get = (k) => db2.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
@@ -180,7 +239,7 @@ router.post('/logs/:id/retry', auth, async (req, res) => {
 
 // ── Retry all failed DMs ──────────────────────────────────────────────────────
 
-router.post('/retry-all-failed', auth, async (req, res) => {
+router.post('/retry-all-failed', auth, requirePermission('system', 'notifications'), async (req, res) => {
   try {
     const sqlDb   = getSQLite();
     const mongoDb = getDb();
@@ -193,7 +252,7 @@ router.post('/retry-all-failed', auth, async (req, res) => {
 
     for (const row of failed) {
       let result;
-      if (!isConfigured()) { failedCount++; continue; }
+      if (!isDmConfigured()) { failedCount++; continue; }
       if (row.trigger === 'user_registered') {
         let name = row.username || 'there';
         if (row.user_id && row.user_id !== '__test__') {
@@ -205,7 +264,7 @@ router.post('/retry-all-failed', auth, async (req, res) => {
             if (user) name = user.name || user.displayName || user.username || name;
           } catch { /* use cached name */ }
         }
-        result = await sendDM(row.user_id, row.phone, name, buildWelcomeText(name), 'user_registered');
+        result = await sendWelcomeTemplate(row.user_id, row.phone, name);
       } else {
         const get = (k) => sqlDb.prepare('SELECT value FROM admin_settings WHERE key = ?').get(k)?.value || '';
         const rendered = renderTemplate(get('whatsapp_welcome_template') || '{{name}}', {
@@ -227,11 +286,11 @@ router.post('/retry-all-failed', auth, async (req, res) => {
 
 // ── Test settled DM by booking code ───────────────────────────────────────────
 
-router.post('/test-settled', auth, async (req, res) => {
+router.post('/test-settled', auth, requirePermission('system', 'notifications'), async (req, res) => {
   const { bookingCode } = req.body;
   if (!bookingCode) return res.status(400).json({ error: 'bookingCode required' });
 
-  if (!isConfigured()) return res.status(400).json({ error: 'WhatsApp not configured' });
+  if (!isDmConfigured()) return res.status(400).json({ error: 'WhatsApp not configured' });
 
   try {
     const mongoDb = getDb();
@@ -286,6 +345,37 @@ router.post('/test-settled', auth, async (req, res) => {
   } catch (err) {
     console.error('[dmSettings] test-settled error:', err.message);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/stats', auth, requirePermission('system', 'notifications'), (req, res) => {
+  try {
+    const db = getSQLite();
+    const sentThisWeek   = db.prepare("SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE ok = 1 AND sent_at >= datetime('now', '-7 days')").get()?.c || 0;
+    const failedThisWeek = db.prepare("SELECT COUNT(*) as c FROM whatsapp_user_dms WHERE ok = 0 AND sent_at >= datetime('now', '-7 days')").get()?.c || 0;
+    const total = sentThisWeek + failedThisWeek;
+    const lastAutomated = db.prepare("SELECT sent_at FROM whatsapp_user_dms WHERE trigger = 'user_registered' AND ok = 1 ORDER BY id DESC LIMIT 1").get();
+    const lastTest = db.prepare("SELECT sent_at, ok FROM whatsapp_user_dms WHERE user_id = '__test__' ORDER BY id DESC LIMIT 1").get();
+    res.json({
+      sentThisWeek,
+      failedThisWeek,
+      deliveryRate7d: total > 0 ? Math.round(sentThisWeek / total * 100) : null,
+      lastAutomatedSend: lastAutomated?.sent_at || null,
+      lastTestAt: lastTest?.sent_at || null,
+      lastTestOk: lastTest ? lastTest.ok === 1 : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DM Evolution connection health ────────────────────────────────────────────
+
+router.get('/health', auth, requirePermission('system', 'notifications'), async (req, res) => {
+  try {
+    res.json(await checkDmHealth());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -7,18 +7,31 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
+function getSetting(db, key, defaultVal) {
+  const row = db.prepare('SELECT value FROM admin_settings WHERE key = ?').get(key);
+  return row ? row.value : defaultVal;
+}
+
+// Superadmin has no grant rows (permissions are meaningless for it — always full access).
+function loadPermissions(db, userId, role) {
+  if (role === 'superadmin') return [];
+  return db.prepare('SELECT category, subcategory FROM admin_permission_grants WHERE user_id = ?').all(userId);
+}
+
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
   }
 
   const db = getDb();
-  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  const user = db.prepare('SELECT * FROM admin_users WHERE email = ?').get(email.trim().toLowerCase());
 
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+
+  const enforceMfa = getSetting(db, 'enforce_mfa', 'false') === 'true';
 
   if (user.two_factor_enabled) {
     const tempToken = jwt.sign(
@@ -27,14 +40,21 @@ router.post('/login', (req, res) => {
       { expiresIn: '5m' }
     );
     return res.json({ requires2fa: true, tempToken });
+  } else if (enforceMfa && !user.two_factor_exempt) {
+    const tempToken = jwt.sign(
+      { id: user.id, username: user.username, pendingMfaSetup: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '30m' }
+    );
+    return res.json({ requiresMfaSetup: true, tempToken });
+  } else {
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    return res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
   }
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-  res.json({ token, username: user.username, role: user.role });
 });
 
 router.post('/verify-2fa', (req, res) => {
@@ -72,11 +92,38 @@ router.post('/verify-2fa', (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
-  res.json({ token, username: user.username, role: user.role });
+  res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
+});
+
+router.post('/complete-mfa-setup', (req, res) => {
+  const { tempToken } = req.body;
+  if (!tempToken) return res.status(400).json({ error: 'Token required' });
+  let payload;
+  try {
+    payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, please log in again' });
+  }
+  if (!payload.pendingMfaSetup) return res.status(400).json({ error: 'Invalid token type' });
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(payload.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  if (!user.two_factor_enabled) return res.status(400).json({ error: 'MFA setup not complete' });
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+  res.json({ token, username: user.username, role: user.role, permissions: loadPermissions(db, user.id, user.role) });
 });
 
 router.get('/me', authMiddleware, (req, res) => {
-  res.json({ username: req.user.username, role: req.user.role });
+  const db = getDb();
+  res.json({
+    username: req.user.username,
+    role: req.user.role,
+    permissions: loadPermissions(db, req.user.id, req.user.role),
+  });
 });
 
 const EDIT_DURATION_MINUTES = 10;
@@ -88,7 +135,7 @@ router.post('/elevate', authMiddleware, (req, res) => {
     return res.status(403).json({ error: 'Edit access requires admin role or higher' });
   }
 
-  const { reason } = req.body;
+  const reason = req.body.reason ? String(req.body.reason).slice(0, 500).trim() || null : null;
   const db = getDb();
 
   // Drop any existing active session for this user first

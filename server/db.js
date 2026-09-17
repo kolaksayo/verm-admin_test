@@ -36,4 +36,9 @@ function getWriteDb() {
   return writeDb || getDb();
 }
 
-module.exports = { connect, connectWrite, getDb, getWriteDb };
+function getLogDb() {
+  if (!client) throw new Error('Database not connected');
+  return client.db(process.env.MONGODB_LOG_DB || 'vermoLog-production');
+}
+
+module.exports = { connect, connectWrite, getDb, getWriteDb, getLogDb };

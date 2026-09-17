@@ -4,6 +4,8 @@ const { getDb, getWriteDb } = require('../db');
 const { getDb: getSQLite } = require('../sqlite');
 const auth = require('../middleware/auth');
 const { requireEditMode } = require('../middleware/auth');
+const { requireCollectionPermission, canAccess } = require('../middleware/permissions');
+const { COLLECTION_PERMISSION_MAP } = require('../permissionCategories');
 
 const router = express.Router();
 
@@ -22,8 +24,14 @@ const ALLOWED_COLLECTIONS = [
   'referrals', 'transactions', 'userchatsubscriptions', 'users', 'walletusers',
 ];
 
+// Only list collections the requester can actually access — otherwise a viewer
+// scoped to a single category could enumerate the names of every gated collection.
 router.get('/', auth, (req, res) => {
-  res.json(ALLOWED_COLLECTIONS);
+  const visible = ALLOWED_COLLECTIONS.filter((name) => {
+    const mapping = COLLECTION_PERMISSION_MAP[name];
+    return mapping && canAccess(req.user, mapping.category, mapping.subcategory);
+  });
+  res.json(visible);
 });
 
 // Enriched walletusers handler — joins email and mobile from the users collection
@@ -180,7 +188,7 @@ async function fetchTransactions(db, { page, limit, search, sortField, sortOrder
   return { docs, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
-router.get('/:name', auth, async (req, res) => {
+router.get('/:name', auth, requireCollectionPermission, async (req, res) => {
   const { name } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -189,7 +197,9 @@ router.get('/:name', auth, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
   const search = req.query.search ? req.query.search.trim() : '';
-  const sortField = req.query.sort || '_id';
+  const ALLOWED_SORT_FIELDS = ['_id', 'createdAt', 'updatedAt', 'username', 'email', 'mobile',
+    'amount', 'balance', 'walletBalance', 'type', 'status', 'name', 'bookingCode', 'rank', 'points'];
+  const sortField = ALLOWED_SORT_FIELDS.includes(req.query.sort) ? req.query.sort : '_id';
   const sortOrder = req.query.order === 'asc' ? 1 : -1;
 
   try {
@@ -262,7 +272,7 @@ router.get('/:name', auth, async (req, res) => {
   }
 });
 
-router.get('/:name/:id', auth, async (req, res) => {
+router.get('/:name/:id', auth, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -343,7 +353,7 @@ async function writeAuditLog(rDb, { adminUser, sessionId, action, collection, do
 }
 
 // PATCH /api/collections/:name/:id — update a document (edit mode required)
-router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
+router.patch('/:name/:id', auth, requireEditMode, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
@@ -391,7 +401,7 @@ router.patch('/:name/:id', auth, requireEditMode, async (req, res) => {
 });
 
 // DELETE /api/collections/:name/:id — delete a document (edit mode required)
-router.delete('/:name/:id', auth, requireEditMode, async (req, res) => {
+router.delete('/:name/:id', auth, requireEditMode, requireCollectionPermission, async (req, res) => {
   const { name, id } = req.params;
   if (!ALLOWED_COLLECTIONS.includes(name)) {
     return res.status(403).json({ error: 'Collection not allowed' });
