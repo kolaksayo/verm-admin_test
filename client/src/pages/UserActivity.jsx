@@ -375,30 +375,32 @@ export default function UserActivity() {
           {topBettors.length === 0 ? (
             <p className="text-vs-text-3 text-sm text-center py-8">No betting data in this period.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-vs-border">
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3 w-6">#</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">User</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-vs-purple">Bets</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Total Pts</th>
-                  <th className="px-3 py-2.5 w-24 hidden md:table-cell" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-vs-border">
-                {topBettors.map((b, i) => (
-                  <tr key={b.userId} className="hover:bg-vs-elevated/50 transition-colors">
-                    <td className="px-3 py-2.5 text-vs-text-3 text-xs">{i + 1}</td>
-                    <td className="px-3 py-2.5 text-xs font-mono font-medium text-vs-text">{b.username}</td>
-                    <td className="px-3 py-2.5 text-right font-bold text-vs-purple">{b.betCount}</td>
-                    <td className="px-3 py-2.5 text-right text-vs-text-3 text-xs">{b.totalScore.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 hidden md:table-cell">
-                      <MiniBar value={b.betCount} max={maxBets} color="#775CDF" />
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-vs-border">
+                    <th className="text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3 w-6">#</th>
+                    <th className="text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-vs-text-3">User</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-vs-purple">Bets</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Total Pts</th>
+                    <th className="px-3 py-2.5 w-24 hidden md:table-cell" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-vs-border">
+                  {topBettors.map((b, i) => (
+                    <tr key={b.userId} className="hover:bg-vs-elevated/50 transition-colors">
+                      <td className="px-3 py-2.5 text-vs-text-3 text-xs">{i + 1}</td>
+                      <td className="px-3 py-2.5 text-xs font-mono font-medium text-vs-text">{b.username}</td>
+                      <td className="px-3 py-2.5 text-right font-bold text-vs-purple">{b.betCount}</td>
+                      <td className="px-3 py-2.5 text-right text-vs-text-3 text-xs">{b.totalScore.toLocaleString()}</td>
+                      <td className="px-3 py-2.5 hidden md:table-cell">
+                        <MiniBar value={b.betCount} max={maxBets} color="#775CDF" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Sun, Moon, Menu, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -78,7 +78,7 @@ const ROLE_COLORS = {
 };
 
 const linkClass = ({ isActive }) =>
-  `flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-colors ${
+  `flex items-center justify-between px-3 py-2.5 lg:py-1.5 rounded-lg text-sm transition-colors ${
     isActive
       ? 'bg-[#775CDF]/15 text-[#B19CFF] font-medium'
       : 'text-[#9F9F9F] hover:bg-[#313038] hover:text-white'
@@ -100,7 +100,7 @@ function ElevationBanner({ expiry, onDrop }) {
   }, [tick]);
 
   return (
-    <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
+    <div className="flex-shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 px-4 sm:px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-xs">
       <span className="flex items-center gap-1.5 text-amber-400 font-medium">
         <AlertTriangle className="w-3.5 h-3.5" />
         Edit mode active — all changes are logged.
@@ -124,6 +124,25 @@ function isNavItemVisible(item, hasPermission) {
   return perm ? hasPermission(perm.category, perm.subcategory) : false;
 }
 
+// Tailwind's `lg` — the breakpoint at which the sidebar stops being a drawer.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+const isDesktop = () => typeof window === 'undefined' || window.matchMedia(DESKTOP_QUERY).matches;
+
+// Title for the mobile top bar, resolved against the nav so it always agrees
+// with the highlighted link.
+function pageTitle(pathname) {
+  if (pathname === '/profile') return 'Profile';
+  if (pathname === '/admin-users') return 'Admin Users';
+  const collection = pathname.match(/^\/collections\/([^/]+)/)?.[1];
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.path === pathname) return item.label;
+      if (collection && item.name === collection) return item.label;
+    }
+  }
+  return collection ? collection.replace(/_/g, ' ') : 'VermoSports Admin';
+}
+
 export default function Layout() {
   const { user, role, hasPermission, logout, editMode, elevationExpiry, dropElevation } = useAuth();
   const { theme, toggle } = useTheme();
@@ -132,7 +151,10 @@ export default function Layout() {
     .map((group) => ({ ...group, items: group.items.filter((item) => isNavItemVisible(item, hasPermission)) }))
     .filter((group) => group.items.length > 0);
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location = useLocation();
+  // Open by default on desktop (the flex-sibling sidebar), closed on mobile so
+  // the drawer never covers the page on first paint.
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktop);
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nav_collapsed') || '{}'); } catch { return {}; }
   });
@@ -145,6 +167,35 @@ export default function Layout() {
     fetchBadges();
     const id = setInterval(fetchBadges, 60000);
     return () => clearInterval(id);
+  }, []);
+
+  // The drawer is modal on mobile: it closes on navigation and Escape and
+  // freezes the page behind it. None of this applies to the desktop sidebar,
+  // hence the isDesktop() guards — collapsing it on every route change would
+  // be a regression.
+  useEffect(() => {
+    if (!isDesktop()) setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen || isDesktop()) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sidebarOpen]);
+
+  // Crossing the breakpoint resets to that size's default, so a window resized
+  // from phone width does not arrive on desktop with the sidebar collapsed.
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e) => setSidebarOpen(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const toggleGroup = (label) => {
@@ -161,9 +212,18 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-vs-bg">
-      {/* Sidebar — always dark (Gentelella signature dark-navy panel) */}
-      <aside style={{ backgroundColor: SIDEBAR_BG, borderColor: SIDEBAR_BORDER }} className={`${sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'} flex-shrink-0 flex flex-col transition-all duration-200 border-r`}>
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-vs-bg">
+      {/* Sidebar — always dark (Gentelella signature dark-navy panel).
+          Below lg it is a fixed drawer that slides in over the page; at lg+ it
+          is the flex sibling it always was, including the w-0 collapse. */}
+      <aside
+        id="app-sidebar"
+        aria-label="Sidebar"
+        style={{ backgroundColor: SIDEBAR_BG, borderColor: SIDEBAR_BORDER }}
+        className={`fixed inset-y-0 left-0 z-40 w-60 lg:static lg:inset-auto lg:z-auto lg:transform-none flex-shrink-0 flex flex-col transition-all duration-200 border-r ${
+          sidebarOpen ? 'translate-x-0 lg:w-60' : '-translate-x-full lg:w-0 lg:overflow-hidden'
+        }`}
+      >
         {/* Logo */}
         <div style={{ borderColor: SIDEBAR_BORDER }} className="flex items-center gap-2.5 px-4 py-4 border-b flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-vs-purple flex items-center justify-center flex-shrink-0">
@@ -259,18 +319,34 @@ export default function Layout() {
         </div>
       </aside>
 
+      {/* Drawer backdrop — mobile only. touch-none stops the page behind it
+          scrolling under a finger on iOS; taps still reach onClick. */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden touch-none"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-vs-card border-b border-vs-border">
+          {/* p-3.5 around a 16px icon is a 44px target; md: restores the desktop size */}
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="text-vs-text-3 hover:text-vs-text p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
+            className="text-vs-text-3 hover:text-vs-text p-3.5 md:p-1.5 rounded-lg hover:bg-vs-elevated transition-colors"
             aria-label="Toggle sidebar"
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
           >
             <Menu className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-1.5">
+          <span className="lg:hidden text-sm font-medium text-vs-text truncate min-w-0">
+            {pageTitle(location.pathname)}
+          </span>
+          <div className="hidden sm:flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-vs-success inline-block" />
             <span className="text-xs text-vs-text-3">vermo-production</span>
           </div>
@@ -279,7 +355,7 @@ export default function Layout() {
           <button
             onClick={toggle}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="ml-auto p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors"
+            className="ml-auto p-3.5 md:p-1.5 rounded-lg text-vs-text-3 hover:text-vs-text hover:bg-vs-elevated transition-colors"
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
@@ -289,7 +365,7 @@ export default function Layout() {
           <ElevationBanner expiry={elevationExpiry} onDrop={dropElevation} />
         )}
 
-        <main className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
           <Outlet />
         </main>
       </div>

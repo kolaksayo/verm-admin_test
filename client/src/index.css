@@ -46,6 +46,20 @@ html.light {
     font-size: 0.875rem;
     line-height: 1.4286;
   }
+
+  /* iOS Safari zooms the page when a focused control's font-size is under
+     16px, and does not zoom back out. Nearly every input here carries a
+     text-xs / text-sm utility, which outranks a plain element selector, so a
+     bare base-layer rule would lose to them on every field — hence !important,
+     scoped to these three elements only. Matched on width OR a coarse
+     pointer: a phone in landscape is 844px wide, past any phone-width cutoff,
+     but still a touch screen that zooms. Desktop (fine pointer, wide) keeps
+     the 14px rhythm untouched. */
+  @media (max-width: 767px), (pointer: coarse) {
+    input, select, textarea {
+      font-size: 1rem !important;
+    }
+  }
 }
 
 @layer utilities {

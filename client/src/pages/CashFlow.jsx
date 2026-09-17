@@ -727,36 +727,38 @@ export default function CashFlow() {
           <div className="px-4 py-3 border-b border-vs-border">
             <p className="text-xs text-vs-text-3">All type + description combinations in the transactions collection.</p>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vs-border">
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Type</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Description</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Count</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Total Amount</th>
-                <th className="px-4 py-3 text-left text-xs w-36 hidden md:table-cell" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-vs-border">
-              {typeBreakdown.map((row, i) => {
-                const isDeposit    = /^CREDIT$/i.test(row.type) && /^TOP\s*UP$/i.test(row.description);
-                const isWithdrawal = /^DEBIT$/i.test(row.type)  && /safehaven naira transfer/i.test(row.description);
-                return (
-                  <tr key={i} className="hover:bg-vs-elevated/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs bg-vs-elevated px-2 py-0.5 rounded text-vs-text-2">{row.type || '—'}</span>
-                      {isDeposit    && <span className="ml-2 text-xs text-vs-lime font-semibold">deposit</span>}
-                      {isWithdrawal && <span className="ml-2 text-xs text-vs-warning font-semibold">withdrawal</span>}
-                    </td>
-                    <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{row.description || '—'}</td>
-                    <td className="px-4 py-3 text-right text-vs-text font-medium">{row.count.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right text-vs-text-3">{fmtUSD(row.totalAmount)}</td>
-                    <td className="px-4 py-3 hidden md:table-cell"><MiniBar value={row.count} max={maxTxCount} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-vs-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-vs-text-3">Description</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Count</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-vs-text-3">Total Amount</th>
+                  <th className="px-4 py-3 text-left text-xs w-36 hidden md:table-cell" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-vs-border">
+                {typeBreakdown.map((row, i) => {
+                  const isDeposit    = /^CREDIT$/i.test(row.type) && /^TOP\s*UP$/i.test(row.description);
+                  const isWithdrawal = /^DEBIT$/i.test(row.type)  && /safehaven naira transfer/i.test(row.description);
+                  return (
+                    <tr key={i} className="hover:bg-vs-elevated/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs bg-vs-elevated px-2 py-0.5 rounded text-vs-text-2">{row.type || '—'}</span>
+                        {isDeposit    && <span className="ml-2 text-xs text-vs-lime font-semibold">deposit</span>}
+                        {isWithdrawal && <span className="ml-2 text-xs text-vs-warning font-semibold">withdrawal</span>}
+                      </td>
+                      <td className="px-4 py-3 text-vs-text-3 text-xs font-mono">{row.description || '—'}</td>
+                      <td className="px-4 py-3 text-right text-vs-text font-medium">{row.count.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right text-vs-text-3">{fmtUSD(row.totalAmount)}</td>
+                      <td className="px-4 py-3 hidden md:table-cell"><MiniBar value={row.count} max={maxTxCount} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
